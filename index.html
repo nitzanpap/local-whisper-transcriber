@@ -462,9 +462,14 @@ function formError(detail) {
 }
 
 async function browse(kind, target) {
-  const { path, reason } = await api("/pick?kind=" + kind);
+  let path, reason;
+  try {
+    ({ path, reason } = await api("/pick?kind=" + kind, {})); // POST, like the other actions
+  } catch (err) {
+    return formError(err.detail);
+  }
   if (reason) return formError({ message: reason });
-  if (!path) return;
+  if (!path) return; // cancelled
   $(target).value = path;
   if (target === "source") await inspect(); else paint();
 }

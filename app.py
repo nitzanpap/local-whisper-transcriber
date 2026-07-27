@@ -397,14 +397,26 @@ def reveal(body: PathIn) -> dict:
 @app.post("/api/pick")
 def pick(kind: str = "file") -> dict:
     """Native OS picker, so the user never types a path."""
+    folder = kind == "folder"
+    prompt = "Choose the output folder" if folder else "Choose a file"
     if sys.platform == "darwin":
-        verb = "choose folder" if kind == "folder" else "choose file"
-        cmd = ["osascript", "-e", f"POSIX path of ({verb})"]
+        verb = "choose folder" if folder else "choose file"
+        # `activate` first, or the dialog can open behind the browser window and the
+        # button looks dead. Bare activate targets osascript itself: no permissions.
+        cmd = ["osascript", "-e", "activate", "-e", f'POSIX path of ({verb} with prompt "{prompt}")']
     elif shutil.which("zenity"):
-        cmd = ["zenity", "--file-selection"] + (["--directory"] if kind == "folder" else [])
+        cmd = ["zenity", "--file-selection", f"--title={prompt}"] + (["--directory"] if folder else [])
     else:
-        return {"path": None, "reason": "No native picker available; paste the path instead."}
-    done = subprocess.run(cmd, capture_output=True, text=True)
+        return {"path": None, "reason": "No native picker available on this system; paste the path instead."}
+    try:
+        # A picker nobody answers must not hold the request open forever.
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return {"path": None, "reason": "The file picker timed out. Paste the path instead."}
+    if done.returncode != 0 and "-128" not in done.stderr:  # -128 is the user cancelling
+        raise HTTPException(500, {"code": "internal_error",
+                                  "message": "The file picker could not be opened. Paste the path instead.",
+                                  "details": done.stderr.strip()})
     return {"path": done.stdout.strip() or None}
 
 

@@ -118,6 +118,28 @@ async def main() -> None:
     check("no output written", not (out / "cancelled.txt").exists())
     check("child process gone", not process_alive(child))
 
+    if sys.platform == "darwin":
+        print("file picker")
+
+        class FakeRun:
+            def __init__(self, code, out="", err=""):
+                self.returncode, self.stdout, self.stderr = code, out, err
+
+        real_run = app.subprocess.run
+        try:
+            app.subprocess.run = lambda *a, **k: FakeRun(0, "/tmp/picked file.mp3\n")
+            check("chosen path returned", app.pick()["path"] == "/tmp/picked file.mp3")
+            app.subprocess.run = lambda *a, **k: FakeRun(1, "", "execution error: User canceled. (-128)")
+            check("cancel is not an error", app.pick()["path"] is None)
+            app.subprocess.run = lambda *a, **k: FakeRun(1, "", "osascript: no such thing")
+            try:
+                app.pick()
+                raise AssertionError("FAIL: a broken picker was reported as success")
+            except app.HTTPException as exc:
+                check("broken picker surfaced", exc.status_code == 500)
+        finally:
+            app.subprocess.run = real_run
+
     print("path validation")
     for bad in ("relative/path.mp3", str(TMP / "nope.mp3")):
         try:
