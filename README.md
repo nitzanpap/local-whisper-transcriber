@@ -17,10 +17,25 @@ brew install ffmpeg whisper-cpp
 python -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python app.py
 ```
 
-Run it from your own terminal and leave it running: if the backend dies, the job
-dies with it (there is no resume), and the page will say "backend not reachable".
-
 Then open http://127.0.0.1:8765 — loopback only, no CORS, no accounts.
+
+To keep it running for good — starts at login, restarts if it ever dies:
+
+```bash
+sed "s|__DIR__|$PWD|g" launchagent.plist > ~/Library/LaunchAgents/com.local-whisper-transcriber.plist && launchctl load ~/Library/LaunchAgents/com.local-whisper-transcriber.plist
+```
+
+## If a run is interrupted
+
+Killing the backend no longer costs you the transcription. whisper-cli prints each
+finished segment as it goes, so the run is checkpointed continuously; on restart the
+page offers **Resume**, which restarts whisper at the last finished segment with
+`--offset-t` and skips re-converting the audio. Timestamps stay absolute across the
+offset, so the two halves need no stitching — they are one segment stream.
+
+Cancel keeps its progress too. **Discard** throws it away. Anything still resumable
+survives seven days in `~/.local-whisper-transcriber/work/`; other scratch is swept
+after six hours.
 "Choose…" opens the native macOS/`zenity` picker, so paths never have to be typed.
 
 Self-check (fake `ffmpeg`/`whisper-cli`, no model needed, ~5s):
@@ -57,7 +72,11 @@ Self-check (fake `ffmpeg`/`whisper-cli`, no model needed, ~5s):
   second and gets the whole world back. Reconnect-after-refresh is free — it is just a
   GET. Add streaming if a poll ever costs something.
 - **No React/Vite/Tailwind/npm.** One `index.html`, no build step.
-- **No resume.** Falls out of the no-chunking decision above.
+- **No chunk-level resume machinery.** Resume needs no chunking: whisper-cli's
+  `--offset-t` emits absolute timestamps, so restarting at the last finished segment
+  continues the same stream. Outputs are written from that segment stream rather than
+  by `-otxt`/`-osrt`; verified byte-identical to whisper's own writers except that the
+  leading space on each line is stripped.
 - **No versions in the environment check** — resolved path plus the executable bit is
   what the code acts on.
 

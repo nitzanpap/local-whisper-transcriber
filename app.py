@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -124,18 +125,26 @@ async def capture(cmd: list[str], timeout: float = 60) -> tuple[int, str]:
     return p.returncode, out.decode("utf-8", "replace").strip()
 
 
-async def stream(cmd: list[str], job: dict, error_code: str) -> None:
-    """Run cmd, feed stderr into the job log, parse whisper progress, honour cancel."""
+async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | None = None) -> None:
+    """Run cmd, feed stderr into the job log, parse whisper progress, honour cancel.
+
+    whisper-cli prints finished segments to stdout as it goes and logs to stderr.
+    Appending stdout straight to a file keeps transcript text out of the log and
+    leaves a running record to resume from if this process dies.
+    """
     global PROC
     job["log"].append("$ " + shlex.join(cmd))
-    # stdout is discarded: whisper-cli prints the whole transcript there and logs
-    # to stderr. Draining it to DEVNULL keeps transcript text out of the log.
-    PROC = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
-        start_new_session=True,
-    )
+    sink = capture_to.open("ab") if capture_to else None
+    try:
+        PROC = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=sink or asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+    finally:
+        if sink:
+            sink.close()  # the child holds its own descriptor now
     assert PROC.stderr is not None
     async for raw in PROC.stderr:
         line = raw.decode("utf-8", "replace").rstrip()
@@ -163,6 +172,59 @@ def kill_process_group() -> None:
         os.killpg(os.getpgid(PROC.pid), signal.SIGTERM)
     except (ProcessLookupError, PermissionError, AttributeError, OSError):
         PROC.terminate()  # Windows / no process groups
+
+
+# --- segments ---------------------------------------------------------------
+
+# whisper-cli prints "[00:00:20.000 --> 00:00:29.980]   text" per finished segment.
+SEGMENT_RE = re.compile(
+    r"^\[(\d+):(\d\d):(\d\d)\.(\d{3}) --> (\d+):(\d\d):(\d\d)\.(\d{3})\]\s?(.*)$"
+)
+
+
+def parse_segments(path: Path) -> list[tuple[int, int, str]]:
+    """Absolute (start_ms, end_ms, text) triples. Malformed lines are dropped.
+
+    A line half-written when the process died fails the pattern, so a truncated
+    file simply yields one segment fewer.
+    """
+    out: list[tuple[int, int, str]] = []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        m = SEGMENT_RE.match(line.strip())
+        if not m:
+            continue
+        h1, m1, s1, ms1, h2, m2, s2, ms2, body = m.groups()
+        start = ((int(h1) * 60 + int(m1)) * 60 + int(s1)) * 1000 + int(ms1)
+        end = ((int(h2) * 60 + int(m2)) * 60 + int(s2)) * 1000 + int(ms2)
+        if end >= start and body.strip():
+            out.append((start, end, body.strip()))
+    return out
+
+
+def stamp(ms: int) -> str:
+    h, rest = divmod(ms, 3_600_000)
+    m, rest = divmod(rest, 60_000)
+    s, milli = divmod(rest, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{milli:03d}"
+
+
+def write_txt(segments: list[tuple[int, int, str]], path: Path) -> None:
+    path.write_text("\n".join(t for _, _, t in segments) + "\n", encoding="utf-8")
+
+
+def write_srt(segments: list[tuple[int, int, str]], path: Path) -> None:
+    blocks = [
+        f"{i}\n{stamp(start)} --> {stamp(end)}\n{text}\n"
+        for i, (start, end, text) in enumerate(segments, 1)
+    ]
+    # Trailing blank line terminates the last block, the way whisper's own writer
+    # does; strict SRT parsers expect it. Text is stripped of whisper's leading
+    # space, which is the one deliberate difference from its output.
+    path.write_text("\n".join(blocks) + "\n", encoding="utf-8")
 
 
 # --- pipeline ---------------------------------------------------------------
@@ -197,40 +259,67 @@ def make_job(source: str, model: str, out_dir: str, basename: str, *, language: 
     }
 
 
+def save(job: dict) -> None:
+    """Persist the job so a killed backend leaves something to resume from."""
+    work = WORK_DIR / job["id"]
+    record = {k: v for k, v in job.items() if k != "log"} | {"log": list(job["log"])[-40:]}
+    try:
+        work.mkdir(parents=True, exist_ok=True)
+        tmp = work / "job.json.tmp"
+        tmp.write_text(json.dumps(record), encoding="utf-8")
+        tmp.replace(work / "job.json")
+    except OSError:
+        pass  # a job that cannot checkpoint should still run
+
+
+def stage(job: dict, name: str) -> None:
+    job["stage"] = name
+    save(job)
+
+
 async def run_job(job: dict) -> None:
     work = WORK_DIR / job["id"]
     work.mkdir(parents=True, exist_ok=True)
+    wav = work / "audio.wav"
+    segments_file = work / "segments.txt"
     try:
-        job["stage"] = "converting"
-        wav = work / "audio.wav"
-        await stream(
-            [binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", job["source"],
-             "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(wav)],
-            job, "ffmpeg_failed",
-        )
+        if wav.exists() and wav.stat().st_size > 0:
+            job["log"].append(f"# reusing {wav.name} from the interrupted run")
+        else:
+            stage(job, "converting")
+            await stream(
+                [binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", job["source"],
+                 "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(wav)],
+                job, "ffmpeg_failed",
+            )
 
-        job["stage"] = "transcribing"
-        prefix = work / "out"
+        stage(job, "transcribing")
+        done = parse_segments(segments_file)
+        resume_ms = done[-1][1] if done else 0
         cmd = [binary("whisper-cli"), "-m", job["model"], "-f", str(wav),
-               "-l", job["language"], "-of", str(prefix), "--print-progress"]
-        if job["want_txt"]:
-            cmd.append("-otxt")
-        if job["want_srt"]:
-            cmd.append("-osrt")
+               "-l", job["language"], "--print-progress"]
+        if resume_ms:
+            # Timestamps stay absolute across an offset, so resumed output needs
+            # no stitching — it simply continues the same segment file.
+            cmd += ["--offset-t", str(resume_ms)]
+            job["log"].append(f"# resuming at {stamp(resume_ms)} ({len(done)} segments already done)")
         cmd += job["extra_args"]
-        await stream(cmd, job, "whisper_failed")
+        await stream(cmd, job, "whisper_failed", capture_to=segments_file)
 
-        job["stage"] = "saving"
+        stage(job, "saving")
         job["percent"] = 100.0
+        segments = parse_segments(segments_file)
+        if not segments:
+            raise Failed("malformed_chunk_output", "whisper-cli produced no transcript segments")
         out_dir = Path(job["out_dir"])
+        writers = {"txt": write_txt, "srt": write_srt}
         for ext, wanted in (("txt", job["want_txt"]), ("srt", job["want_srt"])):
             if not wanted:
                 continue
-            produced = prefix.with_suffix(f".{ext}")
-            if not produced.exists():
-                raise Failed("malformed_chunk_output", f"whisper-cli produced no .{ext} output")
             final = out_dir / f"{job['basename']}.{ext}"
-            shutil.move(str(produced), str(final))
+            staged = work / f"final.{ext}"
+            writers[ext](segments, staged)  # write aside, then move into place
+            shutil.move(str(staged), str(final))
             job["outputs"][ext] = str(final)
 
         if job["want_txt"]:
@@ -246,8 +335,10 @@ async def run_job(job: dict) -> None:
         job["error"] = {"code": "internal_error", "message": str(exc), "details": ""}
     finally:
         job["ended_at"] = time.time()
-        if not job["keep_intermediates"]:
+        if job["status"] == "completed" and not job["keep_intermediates"]:
             shutil.rmtree(work, ignore_errors=True)  # only ever the work dir
+        else:
+            save(job)  # cancelled or failed: keep the audio and segments to resume from
         append_history(job)
 
 
@@ -267,6 +358,42 @@ def append_history(job: dict) -> None:
             fh.write(json.dumps(row) + "\n")
     except OSError:
         pass
+
+
+def resumable() -> list[dict]:
+    """Runs whose work directory outlived the process that was doing them."""
+    out = []
+    for record in WORK_DIR.glob("*/job.json"):
+        try:
+            job = json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if job.get("id") == (JOB or {}).get("id"):
+            continue  # the live one
+        if job.get("status") not in ("running", "cancelling", "cancelled", "failed"):
+            continue
+        done = parse_segments(record.parent / "segments.txt")
+        out.append({
+            "id": job["id"], "source": job["source"], "basename": job["basename"],
+            "language": job.get("language", ""), "percent": job.get("percent", 0.0),
+            "reached_ms": done[-1][1] if done else 0,
+            "duration": job.get("duration"),
+            "was": "interrupted" if job.get("status") in ("running", "cancelling") else job["status"],
+        })
+    return sorted(out, key=lambda j: -j["reached_ms"])
+
+
+def load_job(job_id: str) -> dict:
+    record = WORK_DIR / job_id / "job.json"
+    try:
+        job = json.loads(record.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise HTTPException(404, {"code": "invalid_input_path", "message": "That run is no longer on disk."})
+    job["log"] = deque(job.get("log", []), maxlen=300)
+    job["status"], job["percent"] = "running", 0.0
+    job["error"], job["ended_at"] = None, None
+    job["started_at"] = time.time()
+    return job
 
 
 def history(limit: int = 30) -> list[dict]:
@@ -336,6 +463,7 @@ def state() -> dict:
         "environment": environment(),
         "settings": {"default_language": "he", **settings()},
         "models": find_models(str(Path(saved).parent) if saved else ""),
+        "resumable": resumable(),
         "default_extra_args": DEFAULT_EXTRA,
         "job": public,
         "history": history(),
@@ -409,6 +537,29 @@ async def start(body: StartIn) -> dict:
     return {"id": JOB["id"]}
 
 
+@app.post("/api/resume/{job_id}")
+async def resume(job_id: str) -> dict:
+    global JOB
+    if JOB is not None and JOB["status"] in ("running", "cancelling"):
+        raise HTTPException(409, {"code": "internal_error", "message": "A transcription is already running."})
+    if Path(job_id).name != job_id:
+        raise HTTPException(400, {"code": "invalid_input_path", "message": "Bad run id."})
+    job = load_job(job_id)
+    resolve_file(job["source"], "The media file", "invalid_input_path")
+    resolve_file(job["model"], "The model file", "model_not_found")
+    JOB = job
+    asyncio.create_task(run_job(JOB))
+    return {"id": job["id"]}
+
+
+@app.delete("/api/resume/{job_id}")
+def discard(job_id: str) -> dict:
+    if Path(job_id).name != job_id:
+        raise HTTPException(400, {"code": "invalid_input_path", "message": "Bad run id."})
+    shutil.rmtree(WORK_DIR / job_id, ignore_errors=True)  # scratch only, never outputs
+    return {"ok": True}
+
+
 @app.post("/api/cancel")
 def cancel() -> dict:
     if JOB is None or JOB["status"] != "running":
@@ -468,16 +619,22 @@ def clear_history() -> dict:
     return {"ok": True}
 
 
-def sweep_work_dirs(max_age_hours: float = 6) -> None:
-    """Drop scratch directories left behind by interrupted runs.
+def sweep_work_dirs(max_age_hours: float = 6, keep_resumable_days: float = 7) -> None:
+    """Drop stale scratch directories.
 
     A live job writes to its work directory continuously, so anything this old
     cannot belong to one — safe even with a second instance on another port.
+    Anything still resumable gets a much longer reprieve; that WAV and segment
+    file are the only way to avoid re-doing the work.
     """
-    cutoff = time.time() - max_age_hours * 3600
+    now = time.time()
+    keeping = {j["id"] for j in resumable()}
     for path in WORK_DIR.glob("*"):
         try:
-            if path.is_dir() and path.stat().st_mtime < cutoff:
+            if not path.is_dir():
+                continue
+            limit = keep_resumable_days * 86400 if path.name in keeping else max_age_hours * 3600
+            if now - path.stat().st_mtime > limit:
                 shutil.rmtree(path, ignore_errors=True)
         except OSError:
             continue

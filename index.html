@@ -225,6 +225,11 @@ pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); paddi
 <!-- ============ compose ============ -->
 <main id="screen-new">
 
+  <div class="note" id="resumable" hidden>
+    <h2>Unfinished transcription</h2>
+    <div id="resumable-list"></div>
+  </div>
+
   <section class="step">
     <span class="label" id="lbl-file">Source</span>
     <button class="invite" id="choose-file" hidden>
@@ -544,7 +549,7 @@ $("start").onclick = async () => {
 };
 
 $("job-cancel").onclick = async () => {
-  if (!confirm("Cancel this transcription? Nothing will be saved.")) return;
+  if (!confirm("Cancel this transcription? The part already transcribed is kept, so you can resume.")) return;
   try { await api("/cancel", {}); } catch (err) { formError(err.detail); }
   await refresh();
 };
@@ -606,6 +611,29 @@ function renderJob(job) {
 
 let lastState = null;
 
+function renderResumable(rows) {
+  show($("resumable"), rows.length > 0);
+  if (!rows.length) return;
+  $("resumable-list").innerHTML = rows.map(r => `
+    <p>${r.source.split("/").pop().replace(/</g, "&lt;")} — reached
+       <b>${clock(r.reached_ms / 1000)}</b>${r.duration ? " of " + clock(r.duration) : ""}, ${r.was}.
+       <button class="link" data-resume="${r.id}">Resume</button>
+       <button class="link" data-discard="${r.id}">Discard</button></p>`).join("");
+}
+
+document.addEventListener("click", async (e) => {
+  const resumeId = e.target.dataset && e.target.dataset.resume;
+  const discardId = e.target.dataset && e.target.dataset.discard;
+  try {
+    if (resumeId) { pinned = false; await api("/resume/" + resumeId, {}, "POST"); }
+    else if (discardId) {
+      if (!confirm("Discard this run's progress? The part already transcribed is lost.")) return;
+      await api("/resume/" + discardId, null, "DELETE");
+    } else return;
+    await refresh();
+  } catch (err) { formError(err.detail); }
+});
+
 function render(s) {
   lastState = s;
   const missing = Object.entries(s.environment).filter(([, v]) => !v.ok).map(([k]) => k);
@@ -627,6 +655,7 @@ function render(s) {
   show($("screen-job"), onJob);
   show($("screen-new"), !onJob);
   if (onJob) renderJob(job);
+  renderResumable(s.resumable || []);
 
   show($("history-box"), s.history.length > 0);
   $("history").innerHTML = s.history.map(r => `

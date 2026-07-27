@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.local-whisper-transcriber</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__DIR__/.venv/bin/python</string>
+    <string>__DIR__/app.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__DIR__</string>
+
+  <!-- Start at login and restart if it ever dies: the backend outliving every
+       terminal, editor and chat session is the whole point. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/local-whisper-transcriber.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/local-whisper-transcriber.log</string>
+</dict>
+</plist>

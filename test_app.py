@@ -26,17 +26,22 @@ FAKE_FFPROBE = """#!/bin/sh
 echo 123.5
 """
 
-# Writes the outputs whisper-cli would write, and reports progress on stderr.
+# Prints segments to stdout the way whisper-cli does, progress to stderr.
+# With --offset-t it emits the later half only, with absolute timestamps.
 FAKE_WHISPER = """#!/bin/sh
-prefix=""
+offset=0
 while [ $# -gt 0 ]; do
-  case "$1" in -of) prefix="$2"; shift ;; esac
+  case "$1" in --offset-t) offset="$2"; shift ;; esac
   shift
 done
 echo "whisper_print_progress_callback: progress =  50%" >&2
+if [ "$offset" = "0" ]; then
+  echo "[00:00:00.000 --> 00:00:02.000]   shalom olam"
+  echo "[00:00:02.000 --> 00:00:04.000]   ma nishma"
+  [ -n "$HALF" ] && exit 137  # as if the process were killed mid-run
+fi
 [ -n "$SLOW" ] && sleep 30
-printf 'shalom olam\\n' > "$prefix.txt"
-printf '1\\n00:00:00,000 --> 00:00:02,000\\nshalom olam\\n\\n' > "$prefix.srt"
+echo "[00:00:04.000 --> 00:01:06.500]   od segment"
 echo "whisper_print_progress_callback: progress = 100%" >&2
 exit ${FAIL_CODE:-0}
 """
@@ -83,7 +88,11 @@ async def main() -> None:
     check("srt written", (out / "meeting-transcript.srt").exists())
     check("srt timestamps intact", "00:00:00,000 --> 00:00:02,000" in (out / "meeting-transcript.srt").read_text())
     check("progress parsed", job["percent"] == 100.0, str(job["percent"]))
-    check("preview loaded", job["preview"].strip() == "shalom olam", repr(job["preview"]))
+    check("preview loaded", job["preview"].splitlines()[0] == "shalom olam", repr(job["preview"]))
+    check("all segments in txt", (out / "meeting-transcript.txt").read_text().splitlines() ==
+          ["shalom olam", "ma nishma", "od segment"])
+    check("srt numbered from 1", (out / "meeting-transcript.srt").read_text().startswith("1\n"))
+    check("srt hour rollover correct", "00:01:06,500" in (out / "meeting-transcript.srt").read_text())
     check("transcript kept out of the log", not any("shalom" in line for line in job["log"]))
     check("work dir cleaned", not (app.WORK_DIR / job["id"]).exists())
     check("source untouched", Path(src).read_bytes() == b"not really audio")
@@ -139,6 +148,31 @@ async def main() -> None:
                 check("broken picker surfaced", exc.status_code == 500)
         finally:
             app.subprocess.run = real_run
+
+    print("resume after an interrupted run")
+    os.environ["HALF"] = "1"  # whisper stops after two segments, as if killed
+    job = app.make_job(src, model, str(out), "resumed")
+    await app.run_job(job)
+    del os.environ["HALF"]
+    work = app.WORK_DIR / job["id"]
+    check("partial work kept", (work / "segments.txt").exists() and (work / "audio.wav").exists())
+    check("checkpoint written", (work / "job.json").exists())
+    offered = [r for r in app.resumable() if r["id"] == job["id"]]
+    check("offered for resume", len(offered) == 1)
+    check("reports how far it got", offered[0]["reached_ms"] == 4000, str(offered[0]))
+
+    resumed = app.load_job(job["id"])
+    await app.run_job(resumed)
+    check("resumed run completed", resumed["status"] == "completed", resumed.get("error") or "")
+    check("conversion was skipped", any("reusing" in line for line in resumed["log"]))
+    check("resumed from the right point", any("--offset-t" in line and "4000" in line
+                                              for line in resumed["log"]))
+    final = (out / "resumed.txt").read_text().splitlines()
+    check("both halves present exactly once", final == ["shalom olam", "ma nishma", "od segment"], str(final))
+    srt = (out / "resumed.srt").read_text()
+    check("resumed srt renumbered 1..3", [b.split("\n")[0] for b in srt.strip().split("\n\n")] == ["1", "2", "3"])
+    check("resumed srt keeps absolute times", "00:00:04,000 --> 00:01:06,500" in srt)
+    check("no longer offered", not [r for r in app.resumable() if r["id"] == job["id"]])
 
     print("work dir sweep")
     app.WORK_DIR.mkdir(parents=True, exist_ok=True)
