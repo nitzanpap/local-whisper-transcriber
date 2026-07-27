@@ -57,7 +57,8 @@ def write_fakes() -> dict:
         p.chmod(0o755)
         paths[name] = str(p)
     app.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    app.SETTINGS.write_text(json.dumps({f"{k}_path": v for k, v in paths.items()}))
+    # settings keys are underscored: whisper-cli -> whisper_cli_path
+    app.SETTINGS.write_text(json.dumps({f"{k.replace('-', '_')}_path": v for k, v in paths.items()}))
     return paths
 
 
@@ -148,6 +149,68 @@ async def main() -> None:
                 check("broken picker surfaced", exc.status_code == 500)
         finally:
             app.subprocess.run = real_run
+
+    print("queue")
+    first = app.make_job(src, model, str(out), "q-one")
+    second = app.make_job(src, model, str(out), "q-two")
+    app.enqueue(first)
+    app.enqueue(second)
+    check("both waiting", len(app.QUEUE) == 2, str(len(app.QUEUE)))
+    await app.PUMP
+    check("first ran", first["status"] == "completed" and (out / "q-one.txt").exists())
+    check("second ran", second["status"] == "completed" and (out / "q-two.txt").exists())
+    check("ran in order", first["started_at"] <= second["started_at"])
+    check("queue drained", app.QUEUE == [])
+    check("both in history", len([h for h in app.history() if "/q-" in str(h["outputs"])]) == 2)
+
+    waiting = app.make_job(src, model, str(out), "never-runs")
+    app.QUEUE.append(waiting)  # appended directly: enqueue would start it
+    app.dequeue(waiting["id"])
+    check("removed from the queue", app.QUEUE == [])
+    try:
+        app.dequeue(waiting["id"])
+        raise AssertionError("FAIL: removing a job twice was not rejected")
+    except app.HTTPException as exc:
+        check("second removal rejected", exc.status_code == 404)
+
+    print("finding tools without a useful PATH")
+    real_path = os.environ["PATH"]
+    real_dirs = app.BIN_DIRS
+    try:
+        os.environ["PATH"] = "/usr/bin:/bin"  # what launchd hands us
+        app.BIN_DIRS = (str(TMP / "bin"),)    # stand in for /opt/homebrew/bin
+        app.SETTINGS.unlink()                 # no overrides to fall back on
+        check("found off PATH", app.locate("ffmpeg") == str(TMP / "bin" / "ffmpeg"))
+        check("environment agrees", app.environment()["whisper-cli"]["ok"])
+        app.SETTINGS.write_text(json.dumps({"whisper_cli_path": "/somewhere/whisper-cli"}))
+        check("hyphenated override honoured", app.locate("whisper-cli") == "/somewhere/whisper-cli")
+    finally:
+        os.environ["PATH"] = real_path
+        app.BIN_DIRS = real_dirs
+        write_fakes()
+
+    print("queue survives a restart")
+    pending = app.make_job(src, model, str(out), "after-restart")
+    app.QUEUE.append(pending)  # appended directly so the pump leaves it alone
+    app.save(pending)
+    pending["status"] = "queued"
+    app.save(pending)
+    app.QUEUE.clear()
+    app.restore_queue()  # what the lifespan hook does on boot
+    check("backlog picked back up", [j["id"] for j in app.QUEUE] == [pending["id"]],
+          str([j["id"] for j in app.QUEUE]))
+    await app.PUMP
+    check("restored job ran", (out / "after-restart.txt").exists())
+
+    print("a removed job stays removed")
+    dropped = app.make_job(src, model, str(out), "dropped")
+    dropped["status"] = "queued"
+    app.save(dropped)
+    app.QUEUE.append(dropped)
+    app.dequeue(dropped["id"])
+    app.QUEUE.clear()
+    app.restore_queue()
+    check("not resurrected by a restart", app.QUEUE == [], str(app.QUEUE))
 
     print("resume after an interrupted run")
     os.environ["HALF"] = "1"  # whisper stops after two segments, as if killed

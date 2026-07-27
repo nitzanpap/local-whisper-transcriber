@@ -14,6 +14,14 @@
   <key>WorkingDirectory</key>
   <string>__DIR__</string>
 
+  <!-- launchd's default PATH has no Homebrew, and ffmpeg/whisper-cli live there.
+       The app also searches these directories itself, so this is belt and braces. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
   <!-- Start at login and restart if it ever dies: the backend outliving every
        terminal, editor and chat session is the whole point. -->
   <key>RunAtLoad</key>

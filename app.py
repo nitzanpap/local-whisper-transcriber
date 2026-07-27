@@ -17,6 +17,7 @@ import sys
 import time
 import uuid
 from collections import deque
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -32,12 +33,23 @@ SETTINGS = DATA_DIR / "settings.json"
 BINARIES = ("ffmpeg", "ffprobe", "whisper-cli")
 DEFAULT_EXTRA = "--temperature 0 --entropy-thold 3.0 --max-context 64"
 
-# ponytail: one job at a time, in memory. A restart loses the in-flight run but
-# never the finished files. Add a jobs table when concurrent jobs are real.
+# ponytail: one job at a time, in memory, with the rest waiting in a list. A
+# restart loses the queue but never a finished file, and interrupted work stays
+# resumable on disk. Add a jobs table when jobs must survive a restart.
 JOB: dict | None = None
+QUEUE: list[dict] = []
+PUMP: asyncio.Task | None = None
 PROC: asyncio.subprocess.Process | None = None
 
-app = FastAPI(title="Local Whisper Transcriber")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    sweep_work_dirs()
+    restore_queue()  # pick the backlog back up after a restart
+    yield
+
+
+app = FastAPI(title="Local Whisper Transcriber", lifespan=lifespan)
 
 
 class Failed(Exception):
@@ -60,8 +72,27 @@ def settings() -> dict:
         return {}
 
 
+# Where package managers put things. launchd starts us with a minimal PATH that
+# has none of them, so PATH alone is not enough to find the tools.
+BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/home/linuxbrew/.linuxbrew/bin")
+
+
+def locate(name: str) -> str | None:
+    override = settings().get(f"{name.replace('-', '_')}_path")
+    if override:
+        return override
+    found = shutil.which(name)
+    if found:
+        return found
+    for directory in BIN_DIRS:
+        candidate = Path(directory) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
 def binary(name: str) -> str:
-    path = settings().get(f"{name}_path") or shutil.which(name)
+    path = locate(name)
     if not path or not os.access(path, os.X_OK):
         raise Failed("dependency_not_found", f"{name} was not found on PATH. Set its path in settings.")
     return path
@@ -104,7 +135,7 @@ def environment() -> dict:
     # subprocesses and tell us nothing we act on.
     out = {}
     for name in BINARIES:
-        path = settings().get(f"{name}_path") or shutil.which(name)
+        path = locate(name)
         out[name] = {"path": path, "ok": bool(path) and os.access(path or "", os.X_OK)}
     return out
 
@@ -278,6 +309,8 @@ def stage(job: dict, name: str) -> None:
 
 
 async def run_job(job: dict) -> None:
+    job["status"] = "running"
+    job["started_at"] = time.time()
     work = WORK_DIR / job["id"]
     work.mkdir(parents=True, exist_ok=True)
     wav = work / "audio.wav"
@@ -343,6 +376,42 @@ async def run_job(job: dict) -> None:
         # Also sweep here, not just at startup: under launchd this process can run
         # for weeks, and a startup-only sweep would never fire.
         sweep_work_dirs()
+
+
+async def pump() -> None:
+    """Run queued jobs one at a time. Sequential on purpose: two whisper runs on
+    one machine finish no sooner and fight over memory."""
+    global JOB
+    while QUEUE:
+        JOB = QUEUE.pop(0)
+        await run_job(JOB)
+
+
+def enqueue(job: dict) -> None:
+    global PUMP
+    job["status"] = "queued"
+    save(job)  # so a backlog survives a restart, not just the job in flight
+    QUEUE.append(job)
+    if PUMP is None or PUMP.done():
+        PUMP = asyncio.create_task(pump())
+
+
+def restore_queue() -> None:
+    """Re-enqueue jobs that were still waiting when the process last stopped."""
+    waiting = []
+    for record in WORK_DIR.glob("*/job.json"):
+        try:
+            job = json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if job.get("status") == "queued":
+            job["log"] = deque(job.get("log", []), maxlen=300)
+            waiting.append(job)
+    for job in sorted(waiting, key=lambda j: j.get("started_at") or 0):
+        QUEUE.append(job)
+    if waiting:
+        global PUMP
+        PUMP = asyncio.create_task(pump())
 
 
 def read_preview(path: Path, limit: int = 200_000) -> str:
@@ -469,6 +538,8 @@ def state() -> dict:
         "resumable": resumable(),
         "default_extra_args": DEFAULT_EXTRA,
         "job": public,
+        "queue": [{"id": j["id"], "source": j["source"], "basename": j["basename"],
+                   "language": j["language"]} for j in QUEUE],
         "history": history(),
     }
 
@@ -503,10 +574,6 @@ def collisions(body: StartIn) -> dict:
 
 @app.post("/api/start")
 async def start(body: StartIn) -> dict:
-    global JOB
-    if JOB is not None and JOB["status"] in ("running", "cancelling"):
-        raise HTTPException(409, {"code": "internal_error", "message": "A transcription is already running."})
-
     source = resolve_file(body.source, "The media file", "invalid_input_path")
     model = resolve_file(body.model, "The model file", "model_not_found")
     out_dir = Path(body.out_dir).expanduser().resolve()
@@ -530,29 +597,39 @@ async def start(body: StartIn) -> dict:
             raise HTTPException(400, {"code": "dependency_not_found",
                                       "message": f"{name} was not found. Check Settings."})
 
-    JOB = make_job(
+    queued = make_job(
         str(source), str(model), str(out_dir), basename,
         language=body.language, want_txt=body.want_txt, want_srt=body.want_srt,
         keep_intermediates=body.keep_intermediates, extra_args=body.extra_args,
         duration=await duration_seconds(source),
     )
-    asyncio.create_task(run_job(JOB))
-    return {"id": JOB["id"]}
+    enqueue(queued)
+    return {"id": queued["id"], "queued_behind": len(QUEUE) - 1}
+
+
+@app.delete("/api/queue/{job_id}")
+def dequeue(job_id: str) -> dict:
+    """Drop a job that has not started. The running one is Cancel's business."""
+    before = len(QUEUE)
+    QUEUE[:] = [j for j in QUEUE if j["id"] != job_id]
+    if len(QUEUE) == before:
+        raise HTTPException(404, {"code": "invalid_input_path", "message": "That job is not waiting any more."})
+    # Drop the checkpoint too, or a restart would bring the job back from the dead.
+    shutil.rmtree(WORK_DIR / Path(job_id).name, ignore_errors=True)
+    return {"ok": True}
 
 
 @app.post("/api/resume/{job_id}")
 async def resume(job_id: str) -> dict:
-    global JOB
-    if JOB is not None and JOB["status"] in ("running", "cancelling"):
-        raise HTTPException(409, {"code": "internal_error", "message": "A transcription is already running."})
     if Path(job_id).name != job_id:
         raise HTTPException(400, {"code": "invalid_input_path", "message": "Bad run id."})
+    if any(j["id"] == job_id for j in QUEUE) or (JOB or {}).get("id") == job_id:
+        raise HTTPException(409, {"code": "internal_error", "message": "That run is already queued."})
     job = load_job(job_id)
     resolve_file(job["source"], "The media file", "invalid_input_path")
     resolve_file(job["model"], "The model file", "model_not_found")
-    JOB = job
-    asyncio.create_task(run_job(JOB))
-    return {"id": job["id"]}
+    enqueue(job)
+    return {"id": job["id"], "queued_behind": len(QUEUE) - 1}
 
 
 @app.delete("/api/resume/{job_id}")
@@ -587,14 +664,24 @@ def reveal(body: PathIn) -> dict:
 def pick(kind: str = "file") -> dict:
     """Native OS picker, so the user never types a path."""
     folder = kind == "folder"
-    prompt = "Choose the output folder" if folder else "Choose a file"
+    many = kind == "files"
+    prompt = "Choose the output folder" if folder else "Choose audio or video files"
     if sys.platform == "darwin":
         verb = "choose folder" if folder else "choose file"
+        script = (
+            'set picked to {verb} with prompt "{prompt}"{multi}\n'
+            'set out to ""\n'
+            "repeat with one in (picked as list)\n"
+            "  set out to out & POSIX path of one & linefeed\n"
+            "end repeat\n"
+            "return out"
+        ).format(verb=verb, prompt=prompt, multi=" with multiple selections allowed" if many else "")
         # `activate` first, or the dialog can open behind the browser window and the
         # button looks dead. Bare activate targets osascript itself: no permissions.
-        cmd = ["osascript", "-e", "activate", "-e", f'POSIX path of ({verb} with prompt "{prompt}")']
+        cmd = ["osascript", "-e", "activate", "-e", script]
     elif shutil.which("zenity"):
-        cmd = ["zenity", "--file-selection", f"--title={prompt}"] + (["--directory"] if folder else [])
+        cmd = ["zenity", "--file-selection", f"--title={prompt}", "--separator=\n"]
+        cmd += ["--directory"] if folder else (["--multiple"] if many else [])
     else:
         return {"path": None, "reason": "No native picker available on this system; paste the path instead."}
     try:
@@ -606,7 +693,8 @@ def pick(kind: str = "file") -> dict:
         raise HTTPException(500, {"code": "internal_error",
                                   "message": "The file picker could not be opened. Paste the path instead.",
                                   "details": done.stderr.strip()})
-    return {"path": done.stdout.strip() or None}
+    paths = [line for line in done.stdout.splitlines() if line.strip()]
+    return {"path": paths[0] if paths else None, "paths": paths}
 
 
 @app.put("/api/settings")
@@ -631,7 +719,9 @@ def sweep_work_dirs(max_age_hours: float = 6, keep_resumable_days: float = 7) ->
     file are the only way to avoid re-doing the work.
     """
     now = time.time()
-    keeping = {j["id"] for j in resumable()}
+    # Queued jobs are spared too: a long backlog can outlive the short limit while
+    # its checkpoint is still the only record that the job was ever asked for.
+    keeping = {j["id"] for j in resumable()} | {j["id"] for j in QUEUE}
     for path in WORK_DIR.glob("*"):
         try:
             if not path.is_dir():

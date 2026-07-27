@@ -246,6 +246,7 @@ pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); paddi
         <button class="link" id="change-file">Change</button>
       </div>
       <p class="meta" id="file-meta"></p>
+      <p class="hint" id="batch-note" hidden></p>
     </div>
   </section>
 
@@ -371,6 +372,12 @@ pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); paddi
   </details>
 </main>
 
+<!-- ============ queue (visible while composing and while running) ============ -->
+<section class="step" id="queue-box" hidden style="margin-top:2.5rem">
+  <span class="label">Waiting</span>
+  <div id="queue-list"></div>
+</section>
+
 <!-- ============ history ============ -->
 <section id="history-box" hidden style="margin-top:3.5rem">
   <span class="label" style="color:var(--ink-soft)">Recent</span>
@@ -429,6 +436,9 @@ const form = () => ({
 // Output values we filled in ourselves, so a new source file replaces them but a
 // value the user typed is never stomped.
 let auto = { out_dir: "", basename: "" };
+// Files picked alongside the first one. They inherit this form's settings and are
+// written next to their own sources. Declared here because paint() reads it.
+let extras = [];
 let pinned = false;      // user asked for the compose screen while a finished job exists
 let bootstrapped = false; // defaults from the server applied once
 
@@ -439,6 +449,8 @@ function paint() {
     ? `<i>…/${tail(f.out_dir).replace(/&/g, "&amp;").replace(/</g, "&lt;")}/</i><b>${f.basename.replace(/</g, "&lt;")}</b><i>.${exts.join(" + .")}</i>`
     : `<i>Choose a file to see where the transcript will be written.</i>`;
   $("start").disabled = !(f.source && f.model && f.out_dir && f.basename && exts.length);
+  $("start").firstChild.textContent = extras.length
+    ? `Start ${extras.length + 1} transcriptions` : "Start transcription";
   show($("choose-file"), !f.source);
   show($("paste-row"), !f.source);
   show($("file-card"), !!f.source);
@@ -505,26 +517,40 @@ $("model-pick").addEventListener("change", () => {
   paint();
 });
 
+function renderBatchNote() {
+  show($("batch-note"), extras.length > 0);
+  if (extras.length) {
+    $("batch-note").textContent = `+ ${extras.length} more queued after this one, ` +
+      `each written next to its own file with the same settings.`;
+  }
+}
+
 async function browse(kind, target) {
-  let path, reason;
+  let path, paths, reason;
   try {
-    ({ path, reason } = await api("/pick?kind=" + kind, {})); // POST, like the other actions
+    ({ path, paths, reason } = await api("/pick?kind=" + kind, {})); // POST, like the other actions
   } catch (err) {
     return formError(err.detail);
   }
   if (reason) return formError({ message: reason });
   if (!path) return; // cancelled
+  if (target === "source") {
+    extras = (paths || []).slice(1);
+    renderBatchNote();
+  }
   $(target).value = path;
   if (target === "source") await inspect(); else paint();
 }
-$("choose-file").onclick = () => browse("file", "source");
+$("choose-file").onclick = () => browse("files", "source");
 $("choose-model").onclick = () => browse("file", "model");
 $("choose-dir").onclick = () => browse("folder", "out-dir");
-$("change-file").onclick = () => browse("file", "source");
+$("change-file").onclick = () => browse("files", "source");
 
 $("reset").onclick = () => {
   ["source", "model", "out-dir", "basename"].forEach(id => ($(id).value = ""));
   auto = { out_dir: "", basename: "" };
+  extras = [];
+  renderBatchNote();
   formError(null);
   paint();
 };
@@ -538,10 +564,23 @@ $("start").onclick = async () => {
       body.overwrite = true;
     }
     await api("/start", body);
+    // The rest of the batch keeps these settings but lands next to its own files.
+    const failed = [];
+    for (const source of extras) {
+      try {
+        const info = await api("/inspect", { path: source });
+        await api("/start", { ...body, source, out_dir: info.out_dir, basename: info.basename });
+      } catch (err) {
+        failed.push(`${source.split("/").pop()}: ${err.detail.message}`);
+      }
+    }
+    extras = [];
+    renderBatchNote();
     // Remember what was just used, so the next launch starts one field lighter.
     api("/settings", { default_model_path: body.model, default_language: body.language }, "PUT").catch(() => {});
     pinned = false;
-    formError(null);
+    formError(failed.length ? { message: `${failed.length} file(s) could not be queued.`,
+                                details: failed.join("\n") } : null);
     await refresh();
   } catch (err) {
     formError(err.detail);
@@ -556,6 +595,7 @@ $("job-cancel").onclick = async () => {
 $("job-again").onclick = () => { pinned = true; render(lastState); };
 
 const STAGES = {
+  queued: "Waiting to start",
   starting: "Getting ready",
   converting: "Preparing 16 kHz mono audio",
   transcribing: "Transcribing",
@@ -611,6 +651,15 @@ function renderJob(job) {
 
 let lastState = null;
 
+function renderQueue(rows) {
+  show($("queue-box"), rows.length > 0);
+  if (!rows.length) return;
+  $("queue-list").innerHTML = rows.map((r, i) => `
+    <div class="artifact"><span class="ext">${i + 1}</span>
+      <code>${r.source.split("/").pop().replace(/</g, "&lt;")}</code>
+      <button class="link" data-dequeue="${r.id}">Remove</button></div>`).join("");
+}
+
 function renderResumable(rows) {
   show($("resumable"), rows.length > 0);
   if (!rows.length) return;
@@ -624,8 +673,10 @@ function renderResumable(rows) {
 document.addEventListener("click", async (e) => {
   const resumeId = e.target.dataset && e.target.dataset.resume;
   const discardId = e.target.dataset && e.target.dataset.discard;
+  const dequeueId = e.target.dataset && e.target.dataset.dequeue;
   try {
-    if (resumeId) { pinned = false; await api("/resume/" + resumeId, {}, "POST"); }
+    if (dequeueId) await api("/queue/" + dequeueId, null, "DELETE");
+    else if (resumeId) { pinned = false; await api("/resume/" + resumeId, {}, "POST"); }
     else if (discardId) {
       if (!confirm("Discard this run's progress? The part already transcribed is lost.")) return;
       await api("/resume/" + discardId, null, "DELETE");
@@ -648,13 +699,15 @@ function render(s) {
     paint();
   }
 
+  // Stay on the compose screen once asked for it, even as queued jobs come and
+  // go — otherwise queueing more files while one runs is impossible. Starting or
+  // resuming something clears the pin and jumps back to the job screen.
   const job = s.job;
-  const live = job && (job.status === "running" || job.status === "cancelling");
-  if (live) pinned = false;
   const onJob = !!job && !pinned;
   show($("screen-job"), onJob);
   show($("screen-new"), !onJob);
   if (onJob) renderJob(job);
+  renderQueue(s.queue || []);
   renderResumable(s.resumable || []);
 
   show($("history-box"), s.history.length > 0);
