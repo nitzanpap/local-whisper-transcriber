@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Whisper Transcriber</title>
+<style>
+  :root { color-scheme: light dark; --line: color-mix(in srgb, currentColor 20%, transparent); }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 0 auto; padding: 1.5rem; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  header { display: flex; align-items: baseline; gap: .75rem; border-bottom: 1px solid var(--line); padding-bottom: .75rem; }
+  header p { margin: 0; opacity: .7; font-size: .85rem; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 1rem 0; padding: 1rem; }
+  legend { padding: 0 .4rem; font-weight: 600; }
+  label { display: block; margin-top: .75rem; font-weight: 500; }
+  input[type=text], select, textarea { width: 100%; padding: .45rem .55rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  .row { display: flex; gap: .5rem; align-items: end; }
+  .row input { flex: 1; }
+  .checks { display: flex; gap: 1.25rem; margin-top: .75rem; flex-wrap: wrap; }
+  .checks label { display: flex; gap: .4rem; align-items: center; margin: 0; font-weight: 400; }
+  button { font: inherit; padding: .45rem .8rem; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+  button.primary { background: currentColor; border-color: currentColor; }
+  button.primary span { color: Canvas; }
+  button[disabled] { opacity: .45; cursor: not-allowed; }
+  progress { width: 100%; height: 1.1rem; }
+  pre { background: color-mix(in srgb, currentColor 7%, transparent); padding: .7rem; border-radius: 6px; overflow: auto; max-height: 16rem; font-size: .8rem; white-space: pre-wrap; }
+  .alert { border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; padding: .7rem; margin: 1rem 0; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  td, th { text-align: start; border-bottom: 1px solid var(--line); padding: .35rem .3rem; }
+  .muted { opacity: .7; }
+  .hidden { display: none; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Local Whisper Transcriber</h1>
+  <p>Your media stays on this computer.</p>
+</header>
+
+<div id="deps" class="alert hidden" role="alert"></div>
+
+<!-- Screen A: new job -->
+<section id="screen-new">
+  <fieldset>
+    <legend>Source</legend>
+    <label for="source">Audio or video file</label>
+    <div class="row">
+      <input type="text" id="source" placeholder="/path/to/recording.mp3" spellcheck="false">
+      <button type="button" id="pick-source">Choose…</button>
+    </div>
+    <p class="muted" id="source-info" aria-live="polite"></p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Transcription</legend>
+    <label for="model">whisper.cpp model</label>
+    <div class="row">
+      <input type="text" id="model" placeholder="/path/to/ggml-large-v3.bin" spellcheck="false">
+      <button type="button" id="pick-model">Choose…</button>
+    </div>
+    <label for="language">Language</label>
+    <select id="language">
+      <option value="he">Hebrew (he)</option>
+      <option value="en">English (en)</option>
+      <option value="ar">Arabic (ar)</option>
+      <option value="ru">Russian (ru)</option>
+      <option value="es">Spanish (es)</option>
+      <option value="fr">French (fr)</option>
+      <option value="de">German (de)</option>
+      <option value="auto">Detect automatically</option>
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <legend>Output</legend>
+    <label for="out-dir">Folder</label>
+    <div class="row">
+      <input type="text" id="out-dir" spellcheck="false">
+      <button type="button" id="pick-dir">Choose…</button>
+    </div>
+    <label for="basename">File name (without extension)</label>
+    <input type="text" id="basename" spellcheck="false">
+    <div class="checks">
+      <label><input type="checkbox" id="want-txt" checked> Plain text (.txt)</label>
+      <label><input type="checkbox" id="want-srt" checked> Subtitles (.srt)</label>
+      <label><input type="checkbox" id="keep"> Keep intermediate audio</label>
+    </div>
+  </fieldset>
+
+  <details>
+    <summary>Advanced</summary>
+    <label for="extra">Extra whisper-cli arguments</label>
+    <input type="text" id="extra" spellcheck="false">
+    <p class="muted">Passed as separate tokens. Never run through a shell.</p>
+  </details>
+
+  <p style="margin-top:1rem"><button class="primary" id="start" disabled><span>Start transcription</span></button>
+  <button type="button" id="reset">Reset</button></p>
+</section>
+
+<!-- Screen B/C/D: active + result -->
+<section id="screen-job" class="hidden">
+  <p id="job-source" class="muted"></p>
+  <p><strong id="job-stage" aria-live="polite"></strong> <span id="job-eta" class="muted"></span></p>
+  <progress id="job-bar" max="100" value="0" aria-labelledby="job-stage"></progress>
+  <p><button id="job-cancel">Cancel transcription</button>
+     <button id="job-again" class="hidden">Start another transcription</button></p>
+
+  <div id="job-error" class="alert hidden" role="alert">
+    <strong id="job-error-msg"></strong>
+    <details><summary>Technical details</summary><pre id="job-error-details"></pre></details>
+  </div>
+
+  <div id="job-done" class="hidden">
+    <ul id="job-files"></ul>
+    <p><button id="job-reveal">Open output folder</button>
+       <button id="job-copy">Copy transcript</button></p>
+    <pre id="job-preview"></pre>
+  </div>
+
+  <details id="job-log-box"><summary>Log</summary><pre id="job-log"></pre></details>
+</section>
+
+<h2 style="font-size:1rem">Recent jobs</h2>
+<table id="history"><tbody></tbody></table>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = s => s == null ? "?" : new Date(s * 1000).toLocaleString();
+const dur = s => s == null ? "?" : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
+
+async function api(path, body, method) {
+  const res = await fetch("/api" + path, {
+    method: method || (body ? "POST" : "GET"),
+    headers: body ? { "content-type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error("request failed"), { detail: data.detail || { message: res.statusText } });
+  return data;
+}
+
+const form = () => ({
+  source: $("source").value.trim(),
+  model: $("model").value.trim(),
+  language: $("language").value,
+  out_dir: $("out-dir").value.trim(),
+  basename: $("basename").value.trim(),
+  want_txt: $("want-txt").checked,
+  want_srt: $("want-srt").checked,
+  keep_intermediates: $("keep").checked,
+  extra_args: $("extra").value,
+});
+
+function validate() {
+  const f = form();
+  $("start").disabled = !(f.source && f.model && f.out_dir && f.basename && (f.want_txt || f.want_srt));
+}
+document.addEventListener("input", validate);
+
+async function picked(kind, target) {
+  const { path, reason } = await api("/pick?kind=" + kind);
+  if (reason) return alert(reason);
+  if (!path) return;
+  $(target).value = path;
+  if (target === "source") await inspect();
+  validate();
+}
+$("pick-source").onclick = () => picked("file", "source");
+$("pick-model").onclick = () => picked("file", "model");
+$("pick-dir").onclick = () => picked("folder", "out-dir");
+$("source").onchange = inspect;
+
+async function inspect() {
+  const path = $("source").value.trim();
+  if (!path) return;
+  try {
+    const info = await api("/inspect", { path });
+    $("source-info").textContent =
+      `${info.name} · ${(info.size / 1e6).toFixed(1)} MB · ${dur(info.duration)}`;
+    if (!$("out-dir").value) $("out-dir").value = info.out_dir;
+    if (!$("basename").value) $("basename").value = info.basename;
+  } catch (err) {
+    $("source-info").textContent = err.detail.message;
+  }
+  validate();
+}
+
+$("reset").onclick = () => {
+  ["source", "model", "out-dir", "basename"].forEach(id => ($(id).value = ""));
+  $("source-info").textContent = "";
+  validate();
+};
+
+$("start").onclick = async () => {
+  const body = form();
+  const { existing } = await api("/collisions", body);
+  if (existing.length) {
+    if (!confirm("Files with this output name already exist. Replace them?\n\n" + existing.join("\n"))) return;
+    body.overwrite = true;
+  }
+  try {
+    await api("/start", body);
+    await refresh();
+  } catch (err) {
+    const box = $("deps");
+    box.textContent = err.detail.message + (err.detail.details ? "\n" + err.detail.details : "");
+    box.classList.remove("hidden");
+    box.setAttribute("tabindex", "-1");
+    box.focus();
+  }
+};
+
+$("job-cancel").onclick = async () => {
+  if (!confirm("Cancel this transcription? Nothing will be saved.")) return;
+  await api("/cancel", {});
+  await refresh();
+};
+$("job-again").onclick = () => { showNew(); };
+
+function showNew() {
+  $("screen-job").classList.add("hidden");
+  $("screen-new").classList.remove("hidden");
+  window.newScreenPinned = true;
+}
+
+function renderJob(job) {
+  if (window.newScreenPinned && job.status !== "running" && job.status !== "cancelling") return;
+  window.newScreenPinned = false;
+  $("screen-new").classList.add("hidden");
+  $("screen-job").classList.remove("hidden");
+
+  const running = job.status === "running" || job.status === "cancelling";
+  const stages = {
+    starting: "Starting…", converting: "Preparing 16 kHz mono audio…",
+    transcribing: `Transcribing (${job.percent.toFixed(0)}%)…`, saving: "Saving transcript…",
+    completed: "Transcription completed.", cancelled: "Transcription cancelled.",
+    cancelling: "Cancelling…", failed: "Transcription failed.",
+  };
+  $("job-source").textContent = `${job.source} · ${dur(job.duration)} · ${job.language}`;
+  $("job-stage").textContent = stages[job.stage] || job.stage;
+  $("job-bar").value = job.percent;
+  $("job-eta").textContent = running
+    ? `elapsed ${dur((Date.now() / 1000) - job.started_at)}`
+    : `took ${dur((job.ended_at || 0) - job.started_at)}`;
+  $("job-cancel").classList.toggle("hidden", !running);
+  $("job-again").classList.toggle("hidden", running);
+  $("job-log").textContent = job.log.join("\n");
+
+  $("job-error").classList.toggle("hidden", !job.error);
+  if (job.error) {
+    $("job-error-msg").textContent = job.error.message;
+    $("job-error-details").textContent = `${job.error.code}\n\n${job.error.details}`;
+  }
+
+  const done = job.status === "completed";
+  $("job-done").classList.toggle("hidden", !done);
+  if (done) {
+    $("job-files").innerHTML = Object.entries(job.outputs)
+      .map(([ext, p]) => `<li><code>${p}</code></li>`).join("");
+    $("job-preview").textContent = job.preview;
+    $("job-reveal").onclick = () => api("/reveal", { path: job.out_dir });
+    $("job-copy").onclick = () => navigator.clipboard.writeText(job.preview);
+  }
+}
+
+function renderHistory(rows) {
+  $("history").querySelector("tbody").innerHTML = rows.map(r => `
+    <tr><td>${r.source.split("/").pop()}</td><td>${r.status}</td>
+        <td>${r.language}</td><td class="muted">${fmt(r.ended_at)}</td></tr>`).join("")
+    || `<tr><td class="muted">No jobs yet.</td></tr>`;
+}
+
+async function refresh() {
+  const s = await api("/state");
+  const missing = Object.entries(s.environment).filter(([, v]) => !v.ok).map(([k]) => k);
+  $("deps").classList.toggle("hidden", !missing.length);
+  if (missing.length) $("deps").textContent =
+    `Not found on PATH: ${missing.join(", ")}. Install them, then reload.`;
+
+  if (!$("extra").value) $("extra").value = s.default_extra_args;
+  if (!$("model").value && s.settings.default_model_path) $("model").value = s.settings.default_model_path;
+  if (s.settings.default_language) $("language").value = s.settings.default_language;
+
+  if (s.job) renderJob(s.job); else showNew();
+  renderHistory(s.history);
+  validate();
+}
+
+refresh();
+setInterval(refresh, 1000);  // polling a local server is free; no SSE needed
+</script>
+</body>
+</html>
