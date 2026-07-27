@@ -173,6 +173,10 @@ $("pick-model").onclick = () => picked("file", "model");
 $("pick-dir").onclick = () => picked("folder", "out-dir");
 $("source").onchange = inspect;
 
+// Auto-filled output values, so a new source file replaces them but a value the
+// user typed themselves is never stomped.
+let auto = { out_dir: "", basename: "" };
+
 async function inspect() {
   const path = $("source").value.trim();
   if (!path) return;
@@ -180,8 +184,10 @@ async function inspect() {
     const info = await api("/inspect", { path });
     $("source-info").textContent =
       `${info.name} · ${(info.size / 1e6).toFixed(1)} MB · ${dur(info.duration)}`;
-    if (!$("out-dir").value) $("out-dir").value = info.out_dir;
-    if (!$("basename").value) $("basename").value = info.basename;
+    for (const [id, key] of [["out-dir", "out_dir"], ["basename", "basename"]]) {
+      if (!$(id).value || $(id).value === auto[key]) $(id).value = info[key];
+      auto[key] = info[key];
+    }
   } catch (err) {
     $("source-info").textContent = err.detail.message;
   }
