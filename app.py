@@ -468,8 +468,24 @@ def clear_history() -> dict:
     return {"ok": True}
 
 
+def sweep_work_dirs(max_age_hours: float = 6) -> None:
+    """Drop scratch directories left behind by interrupted runs.
+
+    A live job writes to its work directory continuously, so anything this old
+    cannot belong to one — safe even with a second instance on another port.
+    """
+    cutoff = time.time() - max_age_hours * 3600
+    for path in WORK_DIR.glob("*"):
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
 if __name__ == "__main__":
     import uvicorn
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
+    sweep_work_dirs()
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("LWT_PORT", 8765)))

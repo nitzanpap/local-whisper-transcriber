@@ -140,6 +140,16 @@ async def main() -> None:
         finally:
             app.subprocess.run = real_run
 
+    print("work dir sweep")
+    app.WORK_DIR.mkdir(parents=True, exist_ok=True)
+    stale, fresh = app.WORK_DIR / "stale", app.WORK_DIR / "fresh"
+    stale.mkdir(exist_ok=True)
+    fresh.mkdir(exist_ok=True)
+    os.utime(stale, (0, 0))
+    app.sweep_work_dirs()
+    check("stale scratch removed", not stale.exists())
+    check("live scratch kept", fresh.exists())
+
     print("path validation")
     for bad in ("relative/path.mp3", str(TMP / "nope.mp3")):
         try:

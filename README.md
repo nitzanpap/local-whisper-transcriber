@@ -17,6 +17,9 @@ brew install ffmpeg whisper-cpp
 python -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python app.py
 ```
 
+Run it from your own terminal and leave it running: if the backend dies, the job
+dies with it (there is no resume), and the page will say "backend not reachable".
+
 Then open http://127.0.0.1:8765 — loopback only, no CORS, no accounts.
 "Choose…" opens the native macOS/`zenity` picker, so paths never have to be typed.
 

@@ -635,7 +635,19 @@ function render(s) {
         <td>${r.language}</td><td><time>${when(r.ended_at)}</time></td></tr>`).join("");
 }
 
-const refresh = () => api("/state").then(render).catch(() => {});
+// A dead backend used to look like a frozen page: the poll failed silently and
+// the percentage just stopped moving. Say so instead.
+function offline() {
+  $("env").className = "pill bad";
+  $("env").textContent = "backend not reachable";
+  const job = lastState && lastState.job;
+  if (job && (job.status === "running" || job.status === "cancelling")) {
+    $("job-stage").textContent = "Lost contact with the backend. Restart it, then start again.";
+    $("job-tape").classList.remove("idle");
+  }
+}
+
+const refresh = () => api("/state").then(render).catch(offline);
 refresh();
 setInterval(refresh, 1000); // polling a loopback server is free; no SSE needed
 </script>
