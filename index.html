@@ -249,11 +249,17 @@ pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); paddi
       <span class="label">Transcription</span>
       <div class="grid two">
         <div class="field">
-          <label class="label" for="model">whisper.cpp model</label>
-          <div class="line">
-            <input type="text" id="model" spellcheck="false" placeholder="ggml-large-v3.bin">
+          <label class="label" for="model-pick">whisper.cpp model</label>
+          <div class="line" id="model-line">
+            <select id="model-pick"></select>
+          </div>
+          <div class="line" id="model-line-manual" hidden>
+            <input type="text" id="model" spellcheck="false" placeholder="/path/to/ggml-large-v3.bin"
+                   aria-label="whisper.cpp model path">
             <button class="link" id="choose-model">Browse</button>
           </div>
+          <p class="hint" id="model-hint" hidden>No models found. Put a <code>ggml-*.bin</code> file in
+            <code>~/whisper-models</code>, or point at one.</p>
         </div>
         <div class="field">
           <label class="label" for="language">Language</label>
@@ -398,9 +404,14 @@ async function api(path, body, method) {
   return data;
 }
 
+// The model is a dropdown of what was found on disk; the text field is the
+// fallback when nothing was found or the user picked "somewhere else".
+const manualModel = () => !$("model-line-manual").hidden;
+const modelPath = () => (manualModel() ? $("model").value : $("model-pick").value).trim();
+
 const form = () => ({
   source: $("source").value.trim(),
-  model: $("model").value.trim(),
+  model: modelPath(),
   language: $("language").value,
   out_dir: $("out-dir").value.trim(),
   basename: $("basename").value.trim(),
@@ -460,6 +471,34 @@ function formError(detail) {
   show($("form-error-details"), !!detail.details);
   $("form-error").focus();
 }
+
+const OTHER = "__other__";
+
+function useManualModel(on) {
+  show($("model-line"), !on);
+  show($("model-line-manual"), on);
+}
+
+function fillModels(models, saved) {
+  const sel = $("model-pick");
+  const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  sel.innerHTML = models.map(m =>
+    `<option value="${esc(m.path)}">${esc(m.name)} · ${size(m.size)}</option>`)
+    .join("") + `<option value="${OTHER}">Somewhere else…</option>`;
+  show($("model-hint"), !models.length);
+  // Largest model is first and therefore preselected; a saved default wins.
+  if (saved && models.some(m => m.path === saved)) sel.value = saved;
+  else if (saved || !models.length) { useManualModel(true); $("model").value = saved || ""; return; }
+  useManualModel(false);
+}
+
+$("model-pick").addEventListener("change", () => {
+  if ($("model-pick").value !== OTHER) return paint();
+  useManualModel(true);
+  $("model").value = "";
+  $("model").focus();
+  paint();
+});
 
 async function browse(kind, target) {
   let path, reason;
@@ -576,7 +615,7 @@ function render(s) {
   if (!bootstrapped) {
     bootstrapped = true;
     $("extra").value = s.default_extra_args;
-    if (s.settings.default_model_path) $("model").value = s.settings.default_model_path;
+    fillModels(s.models, s.settings.default_model_path);
     if (s.settings.default_language) $("language").value = s.settings.default_language;
     paint();
   }

@@ -28,6 +28,11 @@ Self-check (fake `ffmpeg`/`whisper-cli`, no model needed, ~5s):
 
 ## Config
 
+- Models are found automatically: any `ggml-*.bin` under `~/whisper-models`, `~/models`,
+  `~/.cache/whisper`, `~/whisper.cpp/models`, `/opt/homebrew/share/whisper-cpp`,
+  `/usr/local/share/whisper-cpp`, or the folder of the last model you used. Largest wins
+  by default; pick "Somewhere else…" for anything outside those. The scan runs once per
+  process, so restart after adding a model to a known folder.
 - `~/.local-whisper-transcriber/` — `settings.json` (optional binary path overrides,
   `default_model_path`, `default_language`), `history.jsonl`, `work/` (scratch WAVs).
 - `LWT_DATA_DIR`, `LWT_PORT` override the location and port.

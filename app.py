@@ -16,6 +16,7 @@ import sys
 import time
 import uuid
 from collections import deque
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -63,6 +64,38 @@ def binary(name: str) -> str:
     if not path or not os.access(path, os.X_OK):
         raise Failed("dependency_not_found", f"{name} was not found on PATH. Set its path in settings.")
     return path
+
+
+MODEL_DIRS = (
+    Path.home() / "whisper-models",
+    Path.home() / "models",
+    Path.home() / ".cache" / "whisper",
+    Path.home() / "whisper.cpp" / "models",
+    Path("/opt/homebrew/share/whisper-cpp"),
+    Path("/usr/local/share/whisper-cpp"),
+)
+
+
+@lru_cache(maxsize=8)
+def find_models(extra_dir: str = "") -> tuple[dict, ...]:
+    """whisper.cpp models in the usual places, largest first.
+
+    Cached per extra_dir, so saving a model from a new folder re-scans. A model
+    added to a known folder mid-session needs a restart, or paste its path.
+    """
+    found: dict[str, int] = {}
+    dirs = [*MODEL_DIRS, Path(extra_dir)] if extra_dir else list(MODEL_DIRS)
+    for directory in dirs:
+        try:
+            for path in directory.glob("ggml-*.bin"):
+                if path.is_file():
+                    found[str(path.resolve())] = path.stat().st_size
+        except OSError:
+            continue
+    return tuple(
+        {"path": p, "name": Path(p).stem.removeprefix("ggml-"), "size": s}
+        for p, s in sorted(found.items(), key=lambda kv: -kv[1])
+    )
 
 
 def environment() -> dict:
@@ -298,9 +331,11 @@ def state() -> dict:
     public = None
     if JOB is not None:
         public = {k: v for k, v in JOB.items() if k != "log"} | {"log": list(JOB["log"])}
+    saved = settings().get("default_model_path", "")
     return {
         "environment": environment(),
         "settings": {"default_language": "he", **settings()},
+        "models": find_models(str(Path(saved).parent) if saved else ""),
         "default_extra_args": DEFAULT_EXTRA,
         "job": public,
         "history": history(),
