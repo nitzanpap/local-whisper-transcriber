@@ -340,6 +340,9 @@ async def run_job(job: dict) -> None:
         else:
             save(job)  # cancelled or failed: keep the audio and segments to resume from
         append_history(job)
+        # Also sweep here, not just at startup: under launchd this process can run
+        # for weeks, and a startup-only sweep would never fire.
+        sweep_work_dirs()
 
 
 def read_preview(path: Path, limit: int = 200_000) -> str:
