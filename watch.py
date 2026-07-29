@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 import jobs
-from config import HISTORY, MEDIA_EXTS, TRANSCRIPT_SUFFIX, settings
+from config import DEFAULT_EXTRA, HISTORY, MEDIA_EXTS, TRANSCRIPT_SUFFIX, settings
 from transcribe import duration_seconds
 
 SWEEP_SECONDS = 300          # how often watched folders are re-scanned
@@ -86,7 +86,9 @@ async def queue_folder(folder: Path) -> dict:
         job = jobs.make_job(
             str(path), model, str(path.parent), f"{path.stem}{TRANSCRIPT_SUFFIX}",
             language=conf.get("default_language", "he"),
-            extra_args=conf.get("default_extra_args", ""),
+            # Fall back to the same defaults the form uses; an unattended job must
+            # not quietly run with different settings from a hand-started one.
+            extra_args=conf.get("default_extra_args") or DEFAULT_EXTRA,
             vad_model=conf.get("vad_model_path", ""),
             duration=await duration_seconds(path),
         )

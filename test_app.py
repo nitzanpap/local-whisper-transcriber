@@ -22,6 +22,7 @@ import config  # noqa: E402
 import jobs  # noqa: E402
 import library  # noqa: E402
 import tools  # noqa: E402
+import transcribe  # noqa: E402
 import watch  # noqa: E402
 
 FAKE_FFMPEG = """#!/bin/sh
@@ -314,10 +315,25 @@ async def main() -> None:
     config.save_settings({"default_language": "he", "vad_model_path": ""})
     check("keeps what was already there", config.settings().get("whisper_cli_path", "").endswith("whisper-cli"))
     check("stores a new value", config.settings()["default_language"] == "he")
+    models_dir = TMP / "models"
+    models_dir.mkdir(exist_ok=True)
+    (models_dir / "ggml-medium.bin").write_bytes(b"x" * 900)
+    (models_dir / "ggml-silero-v5.1.2.bin").write_bytes(b"x" * 100)  # a VAD model, not a transcriber
+    real_model_dirs = tools.MODEL_DIRS
+    try:
+        tools.MODEL_DIRS = (models_dir,)
+        tools.find_models.cache_clear()
+        names = [m["name"] for m in tools.find_models()]
+        check("offers real models", "medium" in names, str(names))
+        check("never offers the vad model as a transcriber", "silero-v5.1.2" not in names, str(names))
+    finally:
+        tools.MODEL_DIRS = real_model_dirs
+        tools.find_models.cache_clear()
+
     vad_job = jobs.make_job(src, model, str(out), "vad", vad_model="/models/silero.bin")
-    cmd = " ".join(__import__("transcribe").whisper_command(vad_job, Path("/tmp/a.wav")))
+    cmd = " ".join(transcribe.whisper_command(vad_job, Path("/tmp/a.wav")))
     check("vad flags only when a model is set", "--vad --vad-model /models/silero.bin" in cmd, cmd)
-    plain = " ".join(__import__("transcribe").whisper_command(job, Path("/tmp/a.wav")))
+    plain = " ".join(transcribe.whisper_command(job, Path("/tmp/a.wav")))
     check("no vad flags otherwise", "--vad" not in plain)
 
     print("work dir sweep")

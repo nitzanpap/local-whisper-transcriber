@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import subprocess
 import sys
 from contextlib import asynccontextmanager
@@ -209,8 +210,6 @@ async def resume(job_id: str) -> dict:
 
 @app.delete("/api/resume/{job_id}")
 def discard(job_id: str) -> dict:
-    import shutil
-
     shutil.rmtree(WORK_DIR / safe_id(job_id), ignore_errors=True)  # scratch only, never outputs
     return {"ok": True}
 

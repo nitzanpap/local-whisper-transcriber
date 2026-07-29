@@ -65,6 +65,11 @@ def environment() -> dict:
     return out
 
 
+# A VAD model is a ggml-*.bin sitting in the same folder, but it cannot transcribe
+# anything, so it must never be offered as a choice of model.
+NOT_A_TRANSCRIPTION_MODEL = ("silero", "vad")
+
+
 @lru_cache(maxsize=8)
 def find_models(extra_dir: str = "") -> tuple[dict, ...]:
     """whisper.cpp models in the usual places, largest first.
@@ -77,6 +82,8 @@ def find_models(extra_dir: str = "") -> tuple[dict, ...]:
     for directory in dirs:
         try:
             for path in directory.glob("ggml-*.bin"):
+                if any(hint in path.stem.lower() for hint in NOT_A_TRANSCRIPTION_MODEL):
+                    continue
                 if path.is_file():
                     found[str(path.resolve())] = path.stat().st_size
         except OSError:

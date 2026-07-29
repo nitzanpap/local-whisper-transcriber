@@ -46,17 +46,28 @@ anything past 25 files in one sweep. Whatever it skipped is reported, never drop
 
 ## Transcript quality
 
-whisper invents speech during silence. Three minutes of silence from a real meeting came
-back as `תודה רבה.` ("thank you very much") six times, once every 30 seconds — identically
-with and without `--max-context`. Voice activity detection is the fix. Download the model
-once, then set it in Settings:
+**Use VAD.** whisper invents speech during silence, and worse, it does so *instead of*
+transcribing quiet speech. Measured on three minutes of a real meeting:
+
+| | result |
+|---|---|
+| VAD off | 6 segments, every one the invented `תודה רבה.` ("thank you very much") |
+| VAD on | 17 segments of the actual conversation, starting at 1:48 |
+
+The non-VAD run did not merely add noise — it replaced real dialogue with a hallucinated
+pleasantry. On dense speech VAD costs nothing: 78 segments against 88, but slightly *more*
+transcribed text (1533 characters against 1502) and fewer repeated lines.
+
+Download the model once, then set it in Settings (leave the field empty to keep VAD off):
 
 ```bash
 curl -L -o ~/whisper-models/ggml-silero-v5.1.2.bin \
   https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
 ```
 
-Leave the VAD field empty to keep it off.
+A VAD model lives among the transcription models and is named the same way, so the model
+scanner deliberately refuses to offer anything called `*silero*` or `*vad*` as a model to
+transcribe with.
 
 On `--max-context 64`, inherited untested from the PRD: over three minutes of real Hebrew
 speech it changed nothing that matters — 88 segments against 85, the same three repeated
