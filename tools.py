@@ -33,6 +33,10 @@ MODEL_DIRS = (
 # The child process of the moment, so cancel can reach it.
 PROC: asyncio.subprocess.Process | None = None
 
+# One line per detected speech segment is thousands of lines on a long recording,
+# which pushed the command itself out of a 300-line log. Nothing acts on them.
+LOG_NOISE = ("vad_segment_info",)
+
 
 def locate(name: str) -> str | None:
     override = settings().get(f"{name.replace('-', '_')}_path")
@@ -130,7 +134,7 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
     assert PROC.stderr is not None
     async for raw in PROC.stderr:
         line = raw.decode("utf-8", "replace").rstrip()
-        if not line:
+        if not line or any(noise in line for noise in LOG_NOISE):
             continue
         if "progress =" in line:
             try:
