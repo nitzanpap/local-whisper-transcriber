@@ -131,57 +131,41 @@ $("save-settings").onclick = async () => {
 
 // --- backup -----------------------------------------------------------------
 
-$("export-settings").onclick = async () => {
-  let conf;
+$("export-settings").onclick = async (e) => {
   try {
-    conf = await api("/settings");
+    // A native Save panel, so the file lands where you put it and the app can
+    // name the place afterwards. A browser download would land silently in
+    // whatever folder the browser happens to use.
+    const { path, reason } = await pickPath("save", e.currentTarget);
+    if (reason) return formError({ message: reason });
+    if (!path) return note("backup-result", t("set.exportCancelled"));
+    const saved = await api("/settings/export", {
+      path,
+      display: { reading_size: display("reading_size", ""), reading_face: display("reading_face", ""),
+                 language: display("ui_language", "") },
+    });
+    note("backup-result", t("set.exported", { path: saved.path }));
   } catch (err) {
-    return formError(err.detail);
+    formError(err.detail);
   }
-  const payload = {
-    kind: "local-whisper-transcriber-settings",
-    saved_at: new Date().toISOString(),
-    settings: conf,
-    display: { reading_size: display("reading_size", ""), reading_face: display("reading_face", ""),
-               language: display("ui_language", "") },
-  };
-  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)],
-                                           { type: "application/json" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "local-whisper-transcriber-settings.json";
-  a.click();
-  URL.revokeObjectURL(url);
-  note("backup-result", t("set.exported"));
 };
 
-$("import-settings").onclick = () => $("import-file").click();
-
-$("import-file").onchange = async () => {
-  const file = $("import-file").files[0];
-  if (!file) return;
-  let payload;
+$("import-settings").onclick = async (e) => {
   try {
-    payload = JSON.parse(await file.text());
-  } catch {
-    return formError({ message: t("set.importNotJson") });
-  }
-  if (payload.kind !== "local-whisper-transcriber-settings" || !payload.settings) {
-    return formError({ message: t("set.importWrongFile") });
-  }
-  try {
-    await api("/settings", payload.settings, "PUT");
+    const { path, reason } = await pickPath("file", e.currentTarget);
+    if (reason) return formError({ message: reason });
+    if (!path) return;
+    const loaded = await api("/settings/import", { path });
+    for (const [key, value] of Object.entries(loaded.display || {})) {
+      if (value) localStorage.setItem("lwt." + key, value);
+    }
+    applyDisplay();
+    if (loaded.display && loaded.display.language) setLanguage(loaded.display.language);
+    await openSettings();
+    note("backup-result", t("set.imported", { path: loaded.path }));
   } catch (err) {
-    return formError(err.detail);
+    formError(err.detail);
   }
-  for (const [key, value] of Object.entries(payload.display || {})) {
-    if (value) localStorage.setItem("lwt." + key, value);
-  }
-  applyDisplay();
-  if (payload.display && payload.display.language) setLanguage(payload.display.language);
-  await openSettings();
-  note("backup-result", t("set.imported"));
-  $("import-file").value = "";
 };
 
 function note(id, text) {
@@ -196,7 +180,7 @@ document.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-browse]");
   if (!btn) return;
   try {
-    const { path, reason } = await api("/pick?kind=" + btn.dataset.browse, {}, "POST");
+    const { path, reason } = await pickPath(btn.dataset.browse, btn);
     if (reason) return formError({ message: reason });
     if (path) $(btn.dataset.into).value = path;
   } catch (err) {
@@ -204,9 +188,9 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-$("add-watch").onclick = async () => {
+$("add-watch").onclick = async (e) => {
   try {
-    const { path, reason } = await api("/pick?kind=folder", {}, "POST");
+    const { path, reason } = await pickPath("folder", e.currentTarget);
     if (reason) return formError({ message: reason });
     if (!path) return;
     const current = $("set-watch").value.split("\n").map(s => s.trim()).filter(Boolean);
@@ -217,9 +201,9 @@ $("add-watch").onclick = async () => {
   }
 };
 
-$("queue-folder").onclick = async () => {
+$("queue-folder").onclick = async (e) => {
   try {
-    const { path, reason } = await api("/pick?kind=folder", {}, "POST");
+    const { path, reason } = await pickPath("folder", e.currentTarget);
     if (reason) return formError({ message: reason });
     if (!path) return;
     note("folder-result", t("set.looking"));

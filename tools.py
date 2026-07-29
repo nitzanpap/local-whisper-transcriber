@@ -179,12 +179,23 @@ def kill_process_group() -> None:
         PROC.terminate()  # Windows / no process groups
 
 
+BACKUP_NAME = "local-whisper-transcriber-settings.json"
+
+
 def picker_command(kind: str) -> tuple[list[str] | None, str]:
-    """The native file/folder picker for this OS, or (None, why not)."""
+    """The native file/folder/save picker for this OS, or (None, why not)."""
     folder = kind == "folder"
     many = kind == "files"
-    prompt = "Choose the output folder" if folder else "Choose audio or video files"
+    saving = kind == "save"
+    prompt = ("Save your settings as" if saving else
+              "Choose the output folder" if folder else "Choose audio or video files")
     if sys.platform == "darwin":
+        if saving:
+            # `choose file name` is the Save panel: the user picks the place, so
+            # afterwards the app can say exactly where the file went.
+            return ["osascript", "-e", "activate", "-e",
+                    f'POSIX path of (choose file name with prompt "{prompt}" '
+                    f'default name "{BACKUP_NAME}")'], ""
         verb = "choose folder" if folder else "choose file"
         script = (
             'set picked to {verb} with prompt "{prompt}"{multi}\n'
@@ -199,7 +210,10 @@ def picker_command(kind: str) -> tuple[list[str] | None, str]:
         return ["osascript", "-e", "activate", "-e", script], ""
     if shutil.which("zenity"):
         cmd = ["zenity", "--file-selection", f"--title={prompt}", "--separator=\n"]
-        cmd += ["--directory"] if folder else (["--multiple"] if many else [])
+        if saving:
+            cmd += ["--save", "--confirm-overwrite", f"--filename={BACKUP_NAME}"]
+        else:
+            cmd += ["--directory"] if folder else (["--multiple"] if many else [])
         return cmd, ""
     return None, "No native picker available on this system; paste the path instead."
 

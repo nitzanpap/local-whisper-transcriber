@@ -118,7 +118,7 @@ and **Expert** below for file paths and flags.
 | **Words it keeps getting wrong** | Names and jargon, so it reaches for them instead of guessing. |
 | **Skip silence** | On unless you turn it off. Stops it inventing speech during quiet stretches. |
 | **Transcript text** | Size and typeface for reading transcripts. |
-| **Backup** | Save every setting to a file, or load one back. Transcripts are not included — they are already files. |
+| **Backup** | Save every setting to a file you choose with a normal Save dialog, or load one back. The app tells you the exact path afterwards. Transcripts are not included — they are already files. |
 | **Expert** | Model and silence-model paths, extra `whisper-cli` arguments, and where `ffmpeg` lives. Normally untouched. |
 
 The interface itself is in English or Hebrew — the **EN / עב** switch sits at the top. In

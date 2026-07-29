@@ -427,6 +427,29 @@ async def main() -> None:
                                        Path("/tmp/a.wav"))
     check("whitespace is not a vocabulary", "--prompt" not in blank)
 
+    print("saving and loading settings as a file")
+    backup = TMP / "backup.json"
+    config.save_settings({"vocabulary": "before-backup"})
+    written = app.export_settings(app.BackupIn(path=str(backup), display={"reading_size": "1.18rem"}))
+    check("written where asked", Path(written["path"]) == backup and backup.exists())
+    check("it is our own kind of file", json.loads(backup.read_text())["kind"] == app.BACKUP_KIND)
+    check("a missing .json is added", Path(app.export_settings(
+        app.BackupIn(path=str(TMP / "noext"), display={}))["path"]).suffix == ".json")
+
+    config.save_settings({"vocabulary": "after-backup"})
+    loaded = app.import_settings(app.PathIn(path=str(backup)))
+    check("settings come back", config.settings()["vocabulary"] == "before-backup")
+    check("display preferences travel too", loaded["display"]["reading_size"] == "1.18rem")
+
+    junk = TMP / "junk.json"
+    junk.write_text('{"hello": 1}')
+    for bad, why in ((junk, "someone else's json"), (TMP / "ggml-tiny.bin", "not json at all")):
+        try:
+            app.import_settings(app.PathIn(path=str(bad)))
+            raise AssertionError(f"FAIL: accepted {why}")
+        except app.HTTPException as exc:
+            check(f"refuses {why}", exc.status_code == 400)
+
     print("work dir sweep")
     config.WORK_DIR.mkdir(parents=True, exist_ok=True)
     stale, fresh = config.WORK_DIR / "stale", config.WORK_DIR / "fresh"

@@ -14,10 +14,12 @@ external binaries).
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -64,6 +66,8 @@ async def lifespan(_: FastAPI):
     for task in background:
         task.cancel()
 
+
+BACKUP_KIND = "local-whisper-transcriber-settings"
 
 app = FastAPI(title="Local Whisper Transcriber", lifespan=lifespan)
 
@@ -346,6 +350,45 @@ def put_settings(body: SettingsIn) -> dict:
         if folders is not None:
             values["source_folders"] = [str(Path(f).expanduser()) for f in folders if f.strip()]
     return save_settings(values)
+
+
+class BackupIn(PathIn):
+    display: dict = {}
+
+
+@app.post("/api/settings/export")
+def export_settings(body: BackupIn) -> dict:
+    """Write every setting to a file the user picked, and say where it went."""
+    path = Path(body.path).expanduser()
+    if path.suffix.lower() != ".json":
+        path = path.with_suffix(".json")
+    payload = {"kind": BACKUP_KIND, "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+               "settings": settings(), "display": body.display}
+    try:
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(400, {"code": "insufficient_permissions",
+                                  "message": f"Could not write there: {exc.strerror or exc}"})
+    return {"path": str(path)}
+
+
+@app.post("/api/settings/import")
+def import_settings(body: PathIn) -> dict:
+    """Read a backup the user picked. Only our own files, and only small ones."""
+    path = resolve_file(body.path, "The settings file", "invalid_input_path")
+    if path.stat().st_size > 1_000_000:
+        raise HTTPException(400, {"code": "unsupported_media",
+                                  "message": "That file is far too big to be settings."})
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise HTTPException(400, {"code": "unsupported_media",
+                                  "message": "That file is not settings — it is not even JSON."})
+    if not isinstance(payload, dict) or payload.get("kind") != BACKUP_KIND:
+        raise HTTPException(400, {"code": "unsupported_media",
+                                  "message": "That is a JSON file, but not one of ours."})
+    put_settings(SettingsIn(**payload.get("settings", {})))  # same rules as saving by hand
+    return {"path": str(path), "display": payload.get("display") or {}}
 
 
 @app.delete("/api/history")

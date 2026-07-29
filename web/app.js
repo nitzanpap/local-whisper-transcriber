@@ -130,20 +130,27 @@ function renderBatchNote() {
   }
 }
 
-async function browse(kind, target, button) {
-  // Opening a native dialog takes a second or two. Without saying so, the app
-  // looks broken and invites a second click that opens a second dialog.
-  const busy = button && button.textContent;
+// Opening a native dialog takes a second or two. Without saying so the app looks
+// broken, and a second click opens a second dialog. Every caller goes through
+// here so no button anywhere is left looking dead.
+async function pickPath(kind, button) {
+  const label = button && button.textContent;
   if (button) { button.disabled = true; button.dataset.busy = "1"; button.textContent = t("picker.opening"); }
   document.body.classList.add("waiting");
-  let path, paths, reason;
   try {
-    ({ path, paths, reason } = await api("/pick?kind=" + kind, {})); // POST, like the other actions
-  } catch (err) {
-    return formError(err.detail);
+    return await api("/pick?kind=" + kind, {}); // POST, like the other actions
   } finally {
     document.body.classList.remove("waiting");
-    if (button) { button.disabled = false; delete button.dataset.busy; if (busy) button.textContent = busy; }
+    if (button) { button.disabled = false; delete button.dataset.busy; if (label) button.textContent = label; }
+  }
+}
+
+async function browse(kind, target, button) {
+  let path, paths, reason;
+  try {
+    ({ path, paths, reason } = await pickPath(kind, button));
+  } catch (err) {
+    return formError(err.detail);
   }
   if (reason) return formError({ message: reason });
   if (!path) return; // cancelled
