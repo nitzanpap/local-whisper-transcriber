@@ -294,3 +294,30 @@ textarea:focus { outline: none; border-color: var(--ink); }
 [dir="rtl"] input[type=text], [dir="rtl"] .artifact code {
   direction: ltr; text-align: left;
 }
+
+/* --- globe language menu ----------------------------------------------------- */
+#lang-switch { display: flex; align-items: center; gap: .3rem; color: var(--ink-soft); }
+#lang-switch:hover { color: var(--ink); }
+#lang-switch svg {
+  width: 1rem; height: 1rem; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.5;
+}
+#lang-switch select {
+  font: 500 .68rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  color: inherit; padding: .2rem 1.1rem .2rem 0; cursor: pointer; width: auto;
+  background-size: .5rem;
+}
+[dir="rtl"] #lang-switch select { padding: .2rem 0 .2rem 1.1rem; }
+
+/* --- how a transcript was made ---------------------------------------------- */
+.facts {
+  display: grid; grid-template-columns: auto 1fr; gap: .35rem 1.2rem;
+  margin: .4rem 0 .2rem; font-size: .86rem;
+}
+.facts dt { color: var(--ink-soft); font: 500 .68rem/1.6 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* Waiting on a native dialog: say so, and refuse a second click. */
+body.waiting { cursor: progress; }
+body.waiting main, body.waiting .note { pointer-events: none; opacity: .6; transition: opacity .15s; }
+button[data-busy] { position: relative; }

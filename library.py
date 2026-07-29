@@ -57,6 +57,16 @@ def entries() -> list[dict]:
             "has_text": bool(txt and Path(txt).exists()),
             "has_cues": bool(srt and Path(srt).exists()),
             "has_media": Path(row["source"]).exists(),
+            # What the run cost, for anyone who opens "How this was made".
+            "model": row.get("model", ""),
+            "work_seconds": row.get("work_seconds"),
+            "cpu_seconds": row.get("cpu_seconds"),
+            "peak_memory_mb": row.get("peak_memory_mb"),
+            # None means the run predates this being recorded, which is not the
+            # same as "it was off" — the panel says so rather than guessing.
+            "vad_model": row.get("vad_model"),
+            "vocabulary": row.get("vocabulary"),
+            "extra_args": row.get("extra_args") or [],
         })
     return out
 

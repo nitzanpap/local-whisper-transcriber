@@ -78,10 +78,35 @@ async function showEntry(id, seekMs) {
     $("cues").innerHTML = `<pre class="sheet plain">${esc(detail.text)}</pre>`;
   }
 
+  renderFacts(detail);
   show($("reader"), true);
   show($("entries-box"), false);
   show($("hits-box"), false);
   if (seekMs) seekTo(seekMs);
+}
+
+// What the run cost. Nobody needs it to read a transcript, which is why it is
+// folded away — but "why did that take 40 minutes" deserves an answer.
+function renderFacts(d) {
+  const unknown = t("fact.unknown");
+  const secs = n => (n == null ? unknown : clock(n));
+  const speed = d.duration && d.work_seconds
+    ? t("fact.speedValue", { n: (d.duration / d.work_seconds).toFixed(1) }) : unknown;
+  const rows = [
+    ["fact.took", secs(d.work_seconds)],
+    ["fact.audio", secs(d.duration)],
+    ["fact.speed", speed],
+    ["fact.cpu", d.cpu_seconds == null ? unknown : clock(d.cpu_seconds)],
+    ["fact.memory", d.peak_memory_mb == null ? unknown : `${d.peak_memory_mb} MB`],
+    ["fact.model", (d.model || "").split("/").pop() || unknown],
+    ["fact.language", d.language || unknown],
+    ["fact.silence", d.vad_model == null ? unknown : (d.vad_model ? t("fact.yes") : t("fact.no"))],
+    ["fact.vocabulary", d.vocabulary == null ? unknown : (d.vocabulary || "—")],
+    ["fact.args", (d.extra_args || []).join(" ") || "—"],
+    ["fact.when", when(d.ended_at)],
+  ];
+  $("reader-facts").innerHTML = rows
+    .map(([key, value]) => `<dt>${esc(t(key))}</dt><dd>${esc(value)}</dd>`).join("");
 }
 
 function stampOf(ms) {

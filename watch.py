@@ -1,24 +1,23 @@
-"""Watched folders: transcribe new recordings without being asked.
+"""Source folders: where new recordings turn up.
 
-This is the only part of the app that starts work on its own, so the rules about
-what it will *not* touch matter more than the scan itself.
+Nothing here runs on a timer. The app looks once when it opens, says what it
+found, and waits to be told to go ahead — so transcription only ever starts
+because somebody asked for it.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 from pathlib import Path
 
 import jobs
 from config import (AUDIO_EXTS, DEFAULT_EXTRA, HISTORY, MEDIA_EXTS, TRANSCRIPT_SUFFIX,
-                    VIDEO_EXTS, settings)
+                    VIDEO_EXTS, settings, source_folders)
 from transcribe import duration_seconds
 
-SWEEP_SECONDS = 300          # how often watched folders are re-scanned
 QUIET_SECONDS = 120          # a file still being written is left alone
-MAX_PER_SWEEP = 25           # a first scan must not queue a hundred jobs silently
+MAX_PER_SWEEP = 25           # one scan must not queue a hundred jobs at once
 MAX_DEPTH = 4                # deep enough for Zoom's folder-per-meeting layout
 
 
@@ -122,7 +121,7 @@ async def queue_folder(folder: Path, dry_run: bool = False) -> dict:
                 "names": [p.name for p in found]}
     for path in found:
         job = jobs.make_job(
-            str(path), model, str(path.parent), f"{path.stem}{TRANSCRIPT_SUFFIX}",
+            str(path), model, output_folder_for(path), f"{path.stem}{TRANSCRIPT_SUFFIX}",
             language=conf.get("default_language", "he"),
             # Fall back to the same defaults the form uses; an unattended job must
             # not quietly run with different settings from a hand-started one.
@@ -136,15 +135,45 @@ async def queue_folder(folder: Path, dry_run: bool = False) -> dict:
             "names": [p.name for p in found]}
 
 
-async def watcher() -> None:
-    """Re-scan the watched folders forever, one sweep at a time."""
-    while True:
-        await asyncio.sleep(SWEEP_SECONDS)
-        for raw in settings().get("watch_folders", []):
-            folder = Path(raw).expanduser()
-            if not folder.is_dir():
-                continue
-            try:
-                await queue_folder(folder)
-            except Exception:  # noqa: BLE001 - a bad folder must not kill the watcher
-                continue
+def output_folder_for(source: Path) -> str:
+    """Where a transcript goes: the configured folder, or beside the recording."""
+    chosen = settings().get("output_folder", "").strip()
+    if chosen:
+        folder = Path(chosen).expanduser()
+        if folder.is_dir():
+            return str(folder)
+    return str(source.parent)
+
+
+def pending() -> dict:
+    """What is sitting in the source folders waiting to be transcribed.
+
+    Answered on demand — when the app opens, or when asked again — never on a
+    timer, and never acted on without being told to.
+    """
+    names, skipped, folders = [], [], []
+    for raw in source_folders():
+        folder = Path(raw).expanduser()
+        if not folder.is_dir():
+            skipped.append(f"{raw}: not a folder any more")
+            continue
+        found, why = candidates(folder)
+        names += [p.name for p in found]
+        skipped += why
+        if found:
+            folders.append(str(folder))
+    return {"count": len(names), "names": names, "skipped": skipped, "folders": folders}
+
+
+async def queue_pending() -> dict:
+    """Queue everything the source folders are holding."""
+    queued, names, skipped = 0, [], []
+    for raw in source_folders():
+        folder = Path(raw).expanduser()
+        if not folder.is_dir():
+            continue
+        result = await queue_folder(folder)
+        queued += result["queued"]
+        names += result.get("names", [])
+        skipped += result.get("skipped", [])
+    return {"queued": queued, "names": names, "skipped": skipped}

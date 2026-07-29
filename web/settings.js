@@ -9,6 +9,7 @@ const SETTING_FIELDS = {
   "set-extra": "default_extra_args",
   "set-vad": "vad_model_path",
   "set-vocab": "vocabulary",
+  "set-output": "output_folder",
   "set-ffmpeg": "ffmpeg_path",
   "set-ffprobe": "ffprobe_path",
   "set-whisper": "whisper_cli_path",
@@ -46,7 +47,9 @@ async function openSettings() {
     return formError(err.detail);
   }
   for (const [id, key] of Object.entries(SETTING_FIELDS)) $(id).value = conf[key] || "";
-  $("set-watch").value = (conf.watch_folders || []).join("\n");
+  $("set-watch").value = (conf.source_folders || []).join("\n");
+  $("set-output-mode").value = conf.output_folder ? "folder" : "beside";
+  show($("output-folder-row"), !!conf.output_folder);
 
   knownModels = state.models || [];
   const chosen = conf.default_model_path || (knownModels[0] || {}).path || "";
@@ -112,8 +115,10 @@ applyDisplay();
 // --- saving -----------------------------------------------------------------
 
 $("save-settings").onclick = async () => {
-  const body = { watch_folders: $("set-watch").value.split("\n").map(s => s.trim()).filter(Boolean) };
+  const body = { source_folders: $("set-watch").value.split("\n").map(s => s.trim()).filter(Boolean) };
   for (const [id, key] of Object.entries(SETTING_FIELDS)) body[key] = $(id).value.trim();
+  // "Next to each recording" means no folder at all, not the last one typed.
+  if ($("set-output-mode").value === "beside") body.output_folder = "";
   try {
     await api("/settings", body, "PUT");
   } catch (err) {
@@ -222,6 +227,24 @@ $("queue-folder").onclick = async () => {
     note("folder-result", result.queued
       ? t("set.queuedN", { n: result.queued, names: result.names.join(", ") })
       : t("set.queuedNone") + (result.skipped.length ? " " + result.skipped.join("; ") : ""));
+  } catch (err) {
+    show($("folder-result"), false);
+    formError(err.detail);
+  }
+};
+
+$("set-output-mode").addEventListener("change", () => {
+  show($("output-folder-row"), $("set-output-mode").value === "folder");
+});
+
+$("check-now").onclick = async () => {
+  note("folder-result", t("set.looking"));
+  try {
+    const found = await api("/pending");
+    note("folder-result", found.count
+      ? t("pending.what", { n: found.count, names: found.names.slice(0, 8).join(", ") })
+      : t("pending.none"));
+    if (found.count) { pendingDismissed = false; lookForNewRecordings(); }
   } catch (err) {
     show($("folder-result"), false);
     formError(err.detail);

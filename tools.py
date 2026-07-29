@@ -131,6 +131,7 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
     finally:
         if sink:
             sink.close()  # the child holds its own descriptor now
+    sampler = asyncio.create_task(watch_memory(PROC.pid, job))
     assert PROC.stderr is not None
     async for raw in PROC.stderr:
         line = raw.decode("utf-8", "replace").rstrip()
@@ -144,11 +145,29 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
         else:
             job["log"].append(line)
     code = await PROC.wait()
+    sampler.cancel()
     PROC = None
     if job["status"] == "cancelling":
         raise Cancelled()
     if code != 0:
         raise Failed(error_code, f"{Path(cmd[0]).name} exited with code {code}")
+
+
+async def watch_memory(pid: int, job: dict, every: float = 2.0) -> None:
+    """Follow the child's memory so a finished job can say what it cost.
+
+    Sampled rather than measured: ru_maxrss for children is a high-water mark
+    across every child ever waited for, so it cannot answer "this job".
+    """
+    while True:
+        try:
+            out = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)],
+                                 capture_output=True, text=True, timeout=5).stdout.strip()
+            if out:
+                job["peak_memory_mb"] = max(job.get("peak_memory_mb") or 0, round(int(out) / 1024))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        await asyncio.sleep(every)
 
 
 def kill_process_group() -> None:

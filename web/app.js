@@ -130,12 +130,20 @@ function renderBatchNote() {
   }
 }
 
-async function browse(kind, target) {
+async function browse(kind, target, button) {
+  // Opening a native dialog takes a second or two. Without saying so, the app
+  // looks broken and invites a second click that opens a second dialog.
+  const busy = button && button.textContent;
+  if (button) { button.disabled = true; button.dataset.busy = "1"; button.textContent = t("picker.opening"); }
+  document.body.classList.add("waiting");
   let path, paths, reason;
   try {
     ({ path, paths, reason } = await api("/pick?kind=" + kind, {})); // POST, like the other actions
   } catch (err) {
     return formError(err.detail);
+  } finally {
+    document.body.classList.remove("waiting");
+    if (button) { button.disabled = false; delete button.dataset.busy; if (busy) button.textContent = busy; }
   }
   if (reason) return formError({ message: reason });
   if (!path) return; // cancelled
@@ -146,10 +154,10 @@ async function browse(kind, target) {
   $(target).value = path;
   if (target === "source") await inspect(); else paint();
 }
-$("choose-file").onclick = () => browse("files", "source");
-$("choose-model").onclick = () => browse("file", "model");
-$("choose-dir").onclick = () => browse("folder", "out-dir");
-$("change-file").onclick = () => browse("files", "source");
+$("choose-file").onclick = (e) => browse("files", "source", e.currentTarget);
+$("choose-model").onclick = (e) => browse("file", "model", e.currentTarget);
+$("choose-dir").onclick = (e) => browse("folder", "out-dir", e.currentTarget);
+$("change-file").onclick = (e) => browse("files", "source", e.currentTarget);
 
 $("reset").onclick = () => {
   ["source", "model", "out-dir", "basename"].forEach(id => ($(id).value = ""));
@@ -308,7 +316,7 @@ function render(s) {
   renderResumable(s.resumable || []);
 
   show($("history-box"), s.history.length > 0);
-  $("history").innerHTML = s.history.map(r => `
+  if ($("history")) $("history").innerHTML = s.history.map(r => `
     <tr><td>${r.source.split("/").pop().replace(/</g, "&lt;")}</td>
         <td class="st" style="${r.status === "completed" ? "" : "color:var(--accent)"}">${r.status}</td>
         <td>${r.language}</td><td><time>${when(r.ended_at)}</time></td></tr>`).join("");
@@ -325,6 +333,38 @@ function offline() {
     $("job-tape").classList.remove("idle");
   }
 }
+
+// --- new recordings sitting in the source folders --------------------------
+
+let pendingDismissed = false;
+
+async function lookForNewRecordings() {
+  if (pendingDismissed) return;
+  let found;
+  try {
+    found = await api("/pending");
+  } catch {
+    return;  // nothing to say if the backend is not answering
+  }
+  show($("pending"), found.count > 0);
+  if (!found.count) return;
+  $("pending-what").textContent = t("pending.what", {
+    n: found.count, names: found.names.slice(0, 6).join(", ") + (found.count > 6 ? "…" : ""),
+  });
+}
+
+$("pending-later").onclick = () => { pendingDismissed = true; show($("pending"), false); };
+$("pending-go").onclick = async () => {
+  pendingDismissed = true;
+  show($("pending"), false);
+  try {
+    await api("/queue-pending", {});
+    pinned = false;
+    await refresh();
+  } catch (err) {
+    formError(err.detail);
+  }
+};
 
 // --- views -------------------------------------------------------------------
 
@@ -354,4 +394,5 @@ routeChanged();
 applyTranslations();
 const refresh = () => api("/state").then(render).catch(offline);
 refresh();
+lookForNewRecordings();  // once, when the app opens — never on a timer
 setInterval(refresh, 1000); // polling a loopback server is free; no SSE needed

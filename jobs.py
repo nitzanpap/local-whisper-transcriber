@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import resource
 import shlex
 import shutil
 import time
@@ -43,6 +44,9 @@ def make_job(source: str, model: str, out_dir: str, basename: str, *, language: 
         "duration": duration,
         "started_at": time.time(), "ended_at": None,
         "outputs": {}, "preview": "", "error": None,
+        # What the run cost, filled in as it goes. Nobody needs these to read a
+        # transcript, but "why did that take 40 minutes" deserves an answer.
+        "peak_memory_mb": None, "cpu_seconds": None, "work_seconds": None,
         "log": deque(maxlen=300),
     }
 
@@ -73,9 +77,15 @@ def read_preview(path: Path, limit: int = 200_000) -> str:
         return ""
 
 
+def cpu_seconds_used() -> float:
+    used = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return used.ru_utime + used.ru_stime
+
+
 async def run_job(job: dict) -> None:
     job["status"] = "running"
     job["started_at"] = time.time()
+    cpu_before = cpu_seconds_used()
     work = WORK_DIR / job["id"]
     work.mkdir(parents=True, exist_ok=True)
     wav = work / "audio.wav"
@@ -110,6 +120,10 @@ async def run_job(job: dict) -> None:
         job["error"] = {"code": "internal_error", "message": str(exc), "details": ""}
     finally:
         job["ended_at"] = time.time()
+        # Children are counted cumulatively, so the delta is this job's share —
+        # true only because jobs run one at a time.
+        job["cpu_seconds"] = round(cpu_seconds_used() - cpu_before, 1)
+        job["work_seconds"] = round(job["ended_at"] - job["started_at"], 1)
         if job["status"] == "completed" and not job["keep_intermediates"]:
             shutil.rmtree(work, ignore_errors=True)  # only ever the work dir
         else:
@@ -203,8 +217,10 @@ def load_job(job_id: str) -> dict | None:
 
 
 def append_history(job: dict) -> None:
-    row = {k: job[k] for k in ("id", "source", "model", "language", "status",
-                               "started_at", "ended_at", "outputs", "duration")}
+    row = {k: job.get(k) for k in ("id", "source", "model", "language", "status",
+                                   "started_at", "ended_at", "outputs", "duration",
+                                   "peak_memory_mb", "cpu_seconds", "work_seconds",
+                                   "vad_model", "vocabulary", "extra_args")}
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         with HISTORY.open("a", encoding="utf-8") as fh:

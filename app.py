@@ -30,7 +30,7 @@ import jobs
 import library
 import watch
 from config import (BINARIES, DEFAULT_EXTRA, Failed, HISTORY, TRANSCRIPT_SUFFIX,
-                    WEB_DIR, WORK_DIR, save_settings, settings)
+                    WEB_DIR, WORK_DIR, save_settings, settings, source_folders)
 from tools import environment, find_models, kill_process_group, run_picker
 from transcribe import duration_seconds
 
@@ -55,7 +55,8 @@ async def lifespan(_: FastAPI):
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     jobs.sweep_work_dirs()
     jobs.restore_queue()  # pick the backlog back up after a restart
-    background = [asyncio.create_task(watch.watcher())]
+    # Nothing runs on a timer. Source folders are looked at when the app asks.
+    background = []
     parent = os.environ.get("LWT_PARENT_PID")
     if parent and parent.isdigit():
         background.append(asyncio.create_task(follow_parent(int(parent))))
@@ -100,7 +101,9 @@ class SettingsIn(BaseModel):
     default_extra_args: str = ""
     vad_model_path: str = ""
     vocabulary: str = ""
-    watch_folders: list[str] | None = None
+    output_folder: str = ""
+    source_folders: list[str] | None = None
+    watch_folders: list[str] | None = None  # what source_folders used to be called
 
 
 def resolve_file(raw: str, what: str, code: str) -> Path:
@@ -132,7 +135,7 @@ def state() -> dict:
     return {
         "environment": environment(),
         "settings": {"default_language": "he", "default_extra_args": DEFAULT_EXTRA,
-                     "watch_folders": [], **conf},
+                     "output_folder": "", **conf, "source_folders": source_folders()},
         "models": find_models(str(Path(saved).parent) if saved else ""),
         "resumable": jobs.resumable(),
         "default_extra_args": DEFAULT_EXTRA,
@@ -154,14 +157,15 @@ async def inspect(body: PathIn) -> dict:
         raise HTTPException(400, {"code": "media_probe_failed",
                                   "message": "ffprobe could not read a duration from this file."})
     basename = f"{path.stem}{TRANSCRIPT_SUFFIX}"
+    out_dir = Path(watch.output_folder_for(path))
     existing = [
-        str(path.parent / f"{basename}.{ext}")
+        str(out_dir / f"{basename}.{ext}")
         for ext in ("txt", "srt")
-        if (path.parent / f"{basename}.{ext}").exists()
+        if (out_dir / f"{basename}.{ext}").exists()
     ]
     return {
         "path": str(path), "name": path.name, "size": path.stat().st_size,
-        "duration": seconds, "out_dir": str(path.parent), "basename": basename,
+        "duration": seconds, "out_dir": str(out_dir), "basename": basename,
         "existing": existing,
     }
 
@@ -284,6 +288,17 @@ def search(q: str = "") -> dict:
 # --- folders -----------------------------------------------------------------
 
 
+@app.get("/api/pending")
+def pending() -> dict:
+    """What the source folders are holding. Looked at on demand, never on a timer."""
+    return watch.pending()
+
+
+@app.post("/api/queue-pending")
+async def queue_pending() -> dict:
+    return await watch.queue_pending()
+
+
 @app.post("/api/queue-folder")
 async def queue_folder(body: FolderIn) -> dict:
     folder = Path(body.path).expanduser()
@@ -317,7 +332,7 @@ def pick(kind: str = "file") -> dict:
 @app.get("/api/settings")
 def get_settings() -> dict:
     return {"default_language": "he", "default_extra_args": DEFAULT_EXTRA,
-            "watch_folders": [], **settings()}
+            "output_folder": "", **settings(), "source_folders": source_folders()}
 
 
 @app.put("/api/settings")
@@ -326,9 +341,10 @@ def put_settings(body: SettingsIn) -> dict:
     # field sent empty is cleared. Without this, saving two fields from one screen
     # would blank every field on the others.
     values = body.model_dump(exclude_unset=True)
-    folders = values.pop("watch_folders", None)
-    if folders is not None:
-        values["watch_folders"] = [str(Path(f).expanduser()) for f in folders if f.strip()]
+    for key in ("source_folders", "watch_folders"):
+        folders = values.pop(key, None)
+        if folders is not None:
+            values["source_folders"] = [str(Path(f).expanduser()) for f in folders if f.strip()]
     return save_settings(values)
 
 

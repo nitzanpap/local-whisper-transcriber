@@ -109,6 +109,25 @@ const STRINGS = {
     "set.clearHistory": "Clear the list of past transcriptions",
     "set.clearConfirm": "Clear the list of past transcriptions?\n\nThe transcript files themselves are not touched.",
 
+    "lib.details": "How this was made",
+    "fact.took": "Time taken", "fact.audio": "Recording length",
+    "fact.speed": "Speed", "fact.speedValue": "{n}× faster than real time",
+    "fact.cpu": "Processor time", "fact.memory": "Peak memory",
+    "fact.model": "Model", "fact.language": "Language",
+    "fact.silence": "Silence skipped", "fact.vocabulary": "Vocabulary",
+    "fact.args": "Extra arguments", "fact.when": "Finished",
+    "fact.yes": "yes", "fact.no": "no", "fact.unknown": "not recorded",
+    "pending.title": "New recordings",
+    "pending.what": "{n} in your source folders have no transcript yet: {names}",
+    "pending.go": "Transcribe them", "pending.later": "Not now",
+    "pending.none": "Nothing new in your source folders.",
+    "picker.opening": "Opening…",
+    "set.sources": "Where your recordings are",
+    "set.sourcesHint": "Folders you record into — Zoom, Meet, voice memos, anywhere. When you open the app it looks once and offers to transcribe anything new. It never looks while you are away.",
+    "set.output": "Where transcripts go",
+    "set.outputBeside": "Next to each recording",
+    "set.outputFolder": "All in one folder",
+    "set.checkNow": "Check for new recordings now",
     "quality.best": "Best", "quality.good": "Good",
     "quality.quick": "Quick", "quality.roughest": "Roughest",
   },
@@ -215,11 +234,33 @@ const STRINGS = {
     "set.clearHistory": "ניקוי רשימת התמלולים הקודמים",
     "set.clearConfirm": "לנקות את רשימת התמלולים הקודמים?\n\nקבצי התמלילים עצמם לא נוגעים בהם.",
 
+    "lib.details": "איך זה נוצר",
+    "fact.took": "זמן שלקח", "fact.audio": "אורך ההקלטה",
+    "fact.speed": "מהירות", "fact.speedValue": "פי {n} מהזמן האמיתי",
+    "fact.cpu": "זמן מעבד", "fact.memory": "שיא זיכרון",
+    "fact.model": "מודל", "fact.language": "שפה",
+    "fact.silence": "דילוג על שקט", "fact.vocabulary": "אוצר מילים",
+    "fact.args": "ארגומנטים נוספים", "fact.when": "הסתיים",
+    "fact.yes": "כן", "fact.no": "לא", "fact.unknown": "לא נרשם",
+    "pending.title": "הקלטות חדשות",
+    "pending.what": "‏{n} בתיקיות המקור עדיין בלי תמליל: {names}",
+    "pending.go": "לתמלל אותן", "pending.later": "לא עכשיו",
+    "pending.none": "אין שום דבר חדש בתיקיות המקור.",
+    "picker.opening": "נפתח…",
+    "set.sources": "איפה ההקלטות שלכם",
+    "set.sourcesHint": "התיקיות שאליהן אתם מקליטים — זום, מיט, הקלטות קוליות, כל מקום. כשפותחים את האפליקציה היא מסתכלת פעם אחת ומציעה לתמלל כל דבר חדש. היא לא מסתכלת כשאתם לא כאן.",
+    "set.output": "לאן הולכים התמלילים",
+    "set.outputBeside": "ליד כל הקלטה",
+    "set.outputFolder": "הכול בתיקייה אחת",
+    "set.checkNow": "לבדוק עכשיו אם יש הקלטות חדשות",
     "quality.best": "הטוב ביותר", "quality.good": "טוב",
     "quality.quick": "מהיר", "quality.roughest": "גס",
   },
 };
 
+// Shown in the globe menu. Adding a language means adding a block above and a
+// line here — nothing else changes.
+const LANGUAGE_NAMES = { en: "English", he: "עברית" };
 const RTL_UI = new Set(["he"]);
 
 let LANG = localStorage.getItem("lwt.ui_language") ||
@@ -241,9 +282,12 @@ function applyTranslations(root) {
   }
   document.documentElement.lang = LANG;
   document.documentElement.dir = RTL_UI.has(LANG) ? "rtl" : "ltr";
-  for (const btn of document.querySelectorAll("#lang-switch [data-lang]")) {
-    btn.setAttribute("aria-pressed", String(btn.dataset.lang === LANG));
+  const menu = document.getElementById("lang");
+  if (menu && !menu.options.length) {
+    menu.innerHTML = Object.entries(LANGUAGE_NAMES)
+      .map(([code, name]) => `<option value="${code}">${name}</option>`).join("");
   }
+  if (menu) menu.value = LANG;
 }
 
 function setLanguage(lang) {
@@ -257,7 +301,6 @@ function setLanguage(lang) {
   if (typeof openLibrary === "function" && currentView() === "library") openLibrary();
 }
 
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-lang]");
-  if (btn) setLanguage(btn.dataset.lang);
+document.addEventListener("change", (e) => {
+  if (e.target.id === "lang") setLanguage(e.target.value);
 });

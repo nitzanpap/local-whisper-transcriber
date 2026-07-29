@@ -18,9 +18,12 @@
       <a href="#/settings" data-view="settings" data-i18n="nav.settings">Settings</a>
     </nav>
     <div class="head-right">
-      <div id="lang-switch" role="group" aria-label="Interface language">
-        <button type="button" data-lang="en" aria-pressed="false">EN</button>
-        <button type="button" data-lang="he" aria-pressed="false">עב</button>
+      <div id="lang-switch">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>
+          <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>
+        </svg>
+        <select id="lang" aria-label="Interface language"></select>
       </div>
       <p class="pill" id="env" aria-live="polite"></p>
     </div>
@@ -31,6 +34,15 @@
 
 <!-- ============ compose ============ -->
 <main id="screen-new">
+
+  <div class="note" id="pending" hidden>
+    <h2 data-i18n="pending.title">New recordings</h2>
+    <p id="pending-what"></p>
+    <div class="actions">
+      <button class="solid" id="pending-go" data-i18n="pending.go">Transcribe them</button>
+      <button class="link" id="pending-later" data-i18n="pending.later">Not now</button>
+    </div>
+  </div>
 
   <div class="note" id="resumable" hidden>
     <h2 data-i18n="job.unfinished">Unfinished transcription</h2>
@@ -185,17 +197,6 @@
   <div id="queue-list"></div>
 </section>
 
-<!-- ============ recent activity ============ -->
-<section id="history-box" hidden style="margin-top:3.5rem">
-  <span class="label" style="color:var(--ink-soft)" data-i18n="job.recent">Recent</span>
-  <div class="scroller">
-    <table class="history">
-      <thead><tr><th data-i18n="th.file">File</th><th data-i18n="th.status">Status</th><th data-i18n="th.lang">Lang</th><th data-i18n="th.finished">Finished</th></tr></thead>
-      <tbody id="history"></tbody>
-    </table>
-  </div>
-</section>
-
 </div><!-- /view-transcribe -->
 
 <!-- ============ library ============ -->
@@ -218,6 +219,16 @@
     <div id="entries"></div>
   </section>
 
+  <details class="tight" id="history-box" hidden>
+    <summary data-i18n="job.recent">Recent activity</summary>
+    <div class="scroller">
+      <table class="history">
+        <thead><tr><th data-i18n="th.file">File</th><th data-i18n="th.status">Status</th><th data-i18n="th.lang">Lang</th><th data-i18n="th.finished">Finished</th></tr></thead>
+        <tbody id="history"></tbody>
+      </table>
+    </div>
+  </details>
+
   <section id="reader" hidden>
     <div class="reader-head">
       <div>
@@ -232,6 +243,10 @@
       <button id="reader-copy" data-i18n="job.copy">Copy transcript</button>
       <button id="reader-reveal" data-i18n="job.openFolder">Open folder</button>
     </div>
+    <details class="tight">
+      <summary data-i18n="lib.details">How this was made</summary>
+      <dl class="facts" id="reader-facts"></dl>
+    </details>
     <div class="cues" id="cues" tabindex="0" aria-label="Transcript"></div>
   </section>
 </div>
@@ -309,25 +324,35 @@
     </div>
   </section>
 
-  <details class="tight">
-    <summary data-i18n="set.automatic">Transcribe new recordings on their own</summary>
-    <div>
-      <p class="hint" data-i18n="set.watchHint">Folders listed here are checked every few
-        minutes and anything new inside is transcribed without asking. That uses your
-        graphics card and memory while you are doing something else, so leave this empty
-        unless you want it. It only ever runs while this app is open.</p>
-      <div class="field">
-        <label class="label sr" for="set-watch">Watched folders</label>
-        <textarea id="set-watch" rows="2" spellcheck="false"
-                  placeholder="/Users/you/Documents/Zoom"></textarea>
-      </div>
-      <div class="actions">
-        <button id="add-watch" data-i18n="set.addFolder">Add a folder…</button>
-        <button id="queue-folder" data-i18n="set.queueFolder">Transcribe a folder now…</button>
-      </div>
-      <p class="hint" id="folder-result" hidden></p>
+  <section class="step">
+    <span class="label" data-i18n="set.sources">Where your recordings are</span>
+    <p class="hint" data-i18n="set.sourcesHint"></p>
+    <div class="field" style="margin-top:.8rem">
+      <label class="label sr" for="set-watch">Source folders</label>
+      <textarea id="set-watch" rows="2" spellcheck="false"
+                placeholder="/Users/you/Documents/Zoom"></textarea>
     </div>
-  </details>
+    <div class="actions" style="margin-top:.8rem">
+      <button id="add-watch" data-i18n="set.addFolder">Add a folder…</button>
+      <button id="check-now" data-i18n="set.checkNow">Check for new recordings now</button>
+      <button id="queue-folder" data-i18n="set.queueFolder">Transcribe a folder now…</button>
+    </div>
+    <p class="hint" id="folder-result" hidden></p>
+
+    <div class="field" style="margin-top:1.4rem">
+      <label class="label" for="set-output-mode" data-i18n="set.output">Where transcripts go</label>
+      <div class="line">
+        <select id="set-output-mode">
+          <option value="beside" data-i18n="set.outputBeside">Next to each recording</option>
+          <option value="folder" data-i18n="set.outputFolder">All in one folder</option>
+        </select>
+      </div>
+      <div class="line" id="output-folder-row" hidden style="margin-top:.5rem">
+        <input type="text" id="set-output" spellcheck="false">
+        <button class="link" data-browse="folder" data-into="set-output" data-i18n="browse">Browse</button>
+      </div>
+    </div>
+  </section>
 
   <details class="tight">
     <summary data-i18n="set.expert">Expert</summary>

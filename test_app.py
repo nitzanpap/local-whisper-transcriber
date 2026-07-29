@@ -353,6 +353,36 @@ async def main() -> None:
     check("caps one sweep", len(found) == watch.MAX_PER_SWEEP, str(len(found)))
     check("says what it left behind", any("left for the next sweep" in s for s in skipped), str(skipped))
 
+    print("what a run cost")
+    costed = jobs.make_job(src, model, str(out), "costed")
+    await jobs.run_job(costed)
+    check("wall time recorded", costed["work_seconds"] is not None and costed["work_seconds"] >= 0)
+    check("cpu time recorded", costed["cpu_seconds"] is not None and costed["cpu_seconds"] >= 0)
+    check("it reaches history", any(h.get("work_seconds") is not None for h in jobs.history()))
+    shown = library.find(costed["id"])
+    check("and the library can show it", shown and shown["work_seconds"] is not None, str(shown))
+
+    print("source folders, looked at on demand")
+    config.save_settings({"source_folders": [str(TMP / "watched")], "output_folder": ""})
+    waiting_now = watch.pending()
+    check("reports what is waiting", waiting_now["count"] > 0, str(waiting_now)[:120])
+    check("names them", len(waiting_now["names"]) == waiting_now["count"])
+    config.save_settings({"source_folders": []})
+    check("nothing configured means nothing waiting", watch.pending()["count"] == 0)
+
+    print("where transcripts go")
+    elsewhere = TMP / "all-transcripts"
+    elsewhere.mkdir(exist_ok=True)
+    config.save_settings({"output_folder": str(elsewhere)})
+    check("a chosen folder is used", watch.output_folder_for(Path(src)) == str(elsewhere))
+    config.save_settings({"output_folder": ""})
+    check("otherwise it sits beside the recording",
+          watch.output_folder_for(Path(src)) == str(Path(src).parent))
+    config.save_settings({"output_folder": "/no/such/folder"})
+    check("a folder that vanished falls back rather than failing",
+          watch.output_folder_for(Path(src)) == str(Path(src).parent))
+    config.save_settings({"output_folder": ""})
+
     print("settings")
     config.save_settings({"default_language": "he", "vad_model_path": "/models/silero.bin"})
     check("keeps what was already there", config.settings().get("whisper_cli_path", "").endswith("whisper-cli"))

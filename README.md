@@ -128,13 +128,20 @@ right where they belong.
 
 ---
 
-## 4. Transcribe automatically
+## 4. Source folders
 
-Put a folder in **Watched folders** — `~/Documents/Zoom`, say — and anything new that lands
-there is transcribed on its own, checked about every five minutes. Finish a call, come back
-to a transcript.
+List the folders you record into — Zoom, Meet, voice memos, wherever. **When you open the
+app** it looks once and offers to transcribe anything new:
 
-It deliberately leaves alone:
+> **New recordings** — 2 in your source folders have no transcript yet: team-sync.m4a, …
+> [Transcribe them] [Not now]
+
+It looks when you open it, and when you press **Check for new recordings now**. Never on a
+timer, never while the app is closed. Nothing is transcribed until you say so.
+
+Transcripts go next to each recording by default, or all into one folder if you set one.
+
+The scan deliberately leaves alone:
 
 - files modified in the last two minutes (still being written)
 - files that already have a transcript beside them
@@ -145,8 +152,7 @@ It deliberately leaves alone:
 
 Whatever it skipped is reported, never dropped quietly.
 
-**Queue a folder now…** runs the same scan once, on demand, and tells you what it would pick
-up before you commit to it.
+**Transcribe a folder now…** runs the same scan against any folder you choose, one time.
 
 ---
 

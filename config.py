@@ -25,6 +25,12 @@ MEDIA_EXTS = AUDIO_EXTS + VIDEO_EXTS
 TRANSCRIPT_SUFFIX = "-transcript"
 
 
+def source_folders() -> list[str]:
+    """Folders to look in for new recordings. `watch_folders` was the old name."""
+    conf = settings()
+    return conf.get("source_folders") or conf.get("watch_folders") or []
+
+
 class Failed(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
