@@ -275,6 +275,16 @@ async def main() -> None:
     check("sends exactly the bytes asked for", part.content == Path(src).read_bytes()[:4], str(part.content))
     check("unknown id is refused", client.get("/api/media/deadbeefdead").status_code == 404)
 
+    print("serving the page")
+    page = client.get("/")
+    check("index is served", page.status_code == 200 and "<title>" in page.text)
+    check("page must be revalidated, never served stale",
+          page.headers.get("cache-control") == "no-cache", str(page.headers))
+    check("but an unchanged file still costs nothing",
+          client.get("/", headers={"If-None-Match": page.headers["etag"]}).status_code == 304)
+    check("scripts get the same treatment",
+          client.get("/app.js").headers.get("cache-control") == "no-cache")
+
     print("watched folders")
     watched = TMP / "watched" / "meeting one"
     watched.mkdir(parents=True, exist_ok=True)

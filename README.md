@@ -1,145 +1,228 @@
-# local-whisper-transcriber
+# Local Whisper Transcriber
 
-A local web UI over `ffmpeg` + whisper.cpp's `whisper-cli`. Pick a file, pick a model,
-get `.txt` and `.srt` next to it. Nothing leaves your computer.
+Turn recordings into transcripts on your own machine. Pick a file — or point it at a folder
+and forget about it — and get a `.txt` and a `.srt` next to the recording.
 
-## Requirements
+Nothing is uploaded. No account, no cloud, no telemetry. It is a small web page talking to a
+local process that runs `ffmpeg` and whisper.cpp's `whisper-cli` for you.
 
-`ffmpeg`, `ffprobe`, `whisper-cli` on `PATH`, a whisper.cpp model file, and `uv`.
+---
+
+## 1. Install what it needs
 
 ```bash
 brew install ffmpeg whisper-cpp uv
 ```
 
-## Run
+Then a whisper model — `large-v3` is the accurate one, about 3 GB:
 
 ```bash
-uv run --script app.py
+mkdir -p ~/whisper-models
+curl -L -o ~/whisper-models/ggml-large-v3.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin
 ```
 
-Python dependencies are declared inline in `app.py` (PEP 723), so there is no virtualenv
-to create and nothing to install first.
-
-Then open http://127.0.0.1:8765 — loopback only, no CORS, no accounts.
-
-To keep it running for good — starts at login, restarts if it ever dies:
-
-```bash
-sed "s|__DIR__|$PWD|g" launchagent.plist > ~/Library/LaunchAgents/com.local-whisper-transcriber.plist && launchctl load ~/Library/LaunchAgents/com.local-whisper-transcriber.plist
-```
-
-## The three views
-
-**Transcribe** — pick a file (or several; the rest queue behind the first), watch progress,
-cancel or resume. **Library** — everything transcribed so far, searchable across all of it;
-open one to read the cues beside the audio, click a line to jump there, and the line being
-spoken highlights and follows. **Settings** — the defaults every new job inherits, watched
-folders, VAD, and tool paths.
-
-## Watched folders
-
-Point Settings at a folder and anything new inside is transcribed on its own, roughly every
-five minutes. It deliberately leaves alone: files modified in the last two minutes (still
-being written), files with a transcript already beside them, files already in history, and
-anything past 25 files in one sweep. Whatever it skipped is reported, never dropped quietly.
-"Queue a folder now…" runs the same scan once, on demand.
-
-## Transcript quality
-
-**Use VAD.** whisper invents speech during silence, and worse, it does so *instead of*
-transcribing quiet speech. Measured on three minutes of a real meeting:
-
-| | result |
-|---|---|
-| VAD off | 6 segments, every one the invented `תודה רבה.` ("thank you very much") |
-| VAD on | 17 segments of the actual conversation, starting at 1:48 |
-
-The non-VAD run did not merely add noise — it replaced real dialogue with a hallucinated
-pleasantry. On dense speech VAD costs nothing: 78 segments against 88, but slightly *more*
-transcribed text (1533 characters against 1502) and fewer repeated lines.
-
-Download the model once, then set it in Settings (leave the field empty to keep VAD off):
+And the voice-activity model, under 1 MB. **Get this one** — without it whisper invents
+speech during silence and, worse, replaces quiet talking with it:
 
 ```bash
 curl -L -o ~/whisper-models/ggml-silero-v5.1.2.bin \
   https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
 ```
 
-**Give it a vocabulary.** Names, jargon and product terms whisper keeps mangling go in the
-Vocabulary field, and are handed to the model as context before every window (`--prompt`
-with `--carry-initial-prompt`; the prompt alone would only prime the first half minute of a
-40-minute meeting). On three minutes of a real meeting this produced about 10% more
-transcribed text in fewer, longer segments, and the right words started appearing —
-`אסקלציה` instead of `אסקלט`. Keep it short: whisper truncates a long prompt, and a list of
-words unrelated to the recording makes the result worse rather than better.
+The app finds models in `~/whisper-models` by itself. Nothing to configure.
 
-A VAD model lives among the transcription models and is named the same way, so the model
-scanner deliberately refuses to offer anything called `*silero*` or `*vad*` as a model to
-transcribe with.
+---
 
-On `--max-context 64`, inherited untested from the PRD: over three minutes of real Hebrew
-speech it changed nothing that matters — 88 segments against 85, the same three repeated
-lines, slightly more fragmented phrasing with it than without. Not enough to justify
-changing the default, and a three-minute sample cannot test the thing max-context actually
-guards against, which is repetition loops on hour-long audio. Left as it is, deliberately.
-
-## If a run is interrupted
-
-Killing the backend no longer costs you the transcription. whisper-cli prints each
-finished segment as it goes, so the run is checkpointed continuously; on restart the
-page offers **Resume**, which restarts whisper at the last finished segment with
-`--offset-t` and skips re-converting the audio. Timestamps stay absolute across the
-offset, so the two halves need no stitching — they are one segment stream.
-
-Cancel keeps its progress too. **Discard** throws it away. Anything still resumable
-survives seven days in `~/.local-whisper-transcriber/work/`; other scratch is swept
-after six hours.
-"Choose…" opens the native macOS/`zenity` picker, so paths never have to be typed.
-
-Self-check (fake `ffmpeg`/`whisper-cli`, no model needed, ~5s):
+## 2. Run it
 
 ```bash
-uv run --script test_app.py
+uv run --script app.py
 ```
 
-## Config
+That is the whole command. Dependencies are declared inside `app.py` (PEP 723), so `uv`
+installs them on first run — there is no virtualenv to create and no `pip install` step.
 
-- Models are found automatically: any `ggml-*.bin` under `~/whisper-models`, `~/models`,
-  `~/.cache/whisper`, `~/whisper.cpp/models`, `/opt/homebrew/share/whisper-cpp`,
-  `/usr/local/share/whisper-cpp`, or the folder of the last model you used. Largest wins
-  by default; pick "Somewhere else…" for anything outside those. The scan runs once per
-  process, so restart after adding a model to a known folder.
-- `~/.local-whisper-transcriber/` — `settings.json` (optional binary path overrides,
-  `default_model_path`, `default_language`), `history.jsonl`, `work/` (scratch WAVs).
-- `LWT_DATA_DIR`, `LWT_PORT` override the location and port.
-- Advanced → extra `whisper-cli` args, default `--temperature 0 --entropy-thold 3.0
-  --max-context 64`, split into tokens with `shlex` and passed as an argv array.
+Then open **http://127.0.0.1:8765**
 
-## Deliberate omissions vs. the PRD
+To stop it: `Ctrl-C`.
 
-- **No chunking, no SRT merger.** `whisper-cli` streams a file of any length in
-  bounded memory and emits correct timestamps for the whole thing, so the chunk
-  manifest, offset arithmetic, block renumbering and per-chunk state have no job to
-  do. `--print-progress` supplies the progress percentage that chunking was there to
-  approximate. Ceiling: cancelling a 3-hour job loses the whole run. Add chunking (and
-  with it, resume) when that actually bites.
-- **No SQLite, no repositories, no migrations.** History is an append-only JSONL file;
-  in-flight job state is one dict. Add a database when there are concurrent jobs to
-  coordinate.
-- **No SSE, no event schema, no event IDs.** The UI polls `GET /api/state` once a
-  second and gets the whole world back. Reconnect-after-refresh is free — it is just a
-  GET. Add streaming if a poll ever costs something.
-- **No React/Vite/Tailwind/npm.** Three static files in `web/`, no build step.
-- **No chunk-level resume machinery.** Resume needs no chunking: whisper-cli's
-  `--offset-t` emits absolute timestamps, so restarting at the last finished segment
-  continues the same stream. Outputs are written from that segment stream rather than
-  by `-otxt`/`-osrt`; verified byte-identical to whisper's own writers except that the
-  leading space on each line is stripped.
-- **No versions in the environment check** — resolved path plus the executable bit is
-  what the code acts on.
+### Keep it running always
 
-Kept because removing them would be a bug, not a simplification: argv arrays and never
-a shell, loopback binding, path validation, `basename` traversal stripping, explicit
-overwrite consent, process-group kill on cancel, outputs written to a work directory
-and only moved into place once complete, transcript text kept out of the log,
-`ffmpeg`/`whisper` stderr drained continuously.
+Better for day-to-day use: install it as a launch agent. It starts at login, restarts if it
+ever crashes, and survives closing your terminal.
+
+```bash
+sed "s|__DIR__|$PWD|g" launchagent.plist > ~/Library/LaunchAgents/com.local-whisper-transcriber.plist
+launchctl load ~/Library/LaunchAgents/com.local-whisper-transcriber.plist
+```
+
+Managing it afterwards:
+
+```bash
+launchctl list | grep whisper                                    # is it running?
+launchctl kickstart -k gui/$(id -u)/com.local-whisper-transcriber # restart it
+tail -f /tmp/local-whisper-transcriber.log                        # what is it doing?
+launchctl unload ~/Library/LaunchAgents/com.local-whisper-transcriber.plist  # turn it off
+```
+
+Re-run the `sed` line whenever you pull changes to `launchagent.plist`.
+
+---
+
+## 3. Use it
+
+The page has three views.
+
+### Transcribe
+
+Choose a file — or several at once, and the rest queue up behind the first. Each transcript
+is written next to its own recording. You can queue more while one is running.
+
+While it works you get the stage, a percentage, elapsed time and a log. **Cancel** stops it
+and keeps what was transcribed so far, so you can resume later.
+
+### Library
+
+Everything ever transcribed, newest first, searchable across all of it at once. Open one and
+the transcript appears beside an audio player: click any line to jump to that moment, and
+the line being spoken highlights and scrolls itself into view as it plays. Searching and
+clicking a result jumps straight to that sentence in that recording.
+
+### Settings
+
+The defaults every new job inherits.
+
+| Setting | What it does |
+|---|---|
+| **Model** | Which whisper model to use. Found automatically. |
+| **Language** | The language of your recordings. **Check this before a batch** — Hebrew audio transcribed as English comes out as nonsense, and whatever you used last becomes the default. |
+| **Extra arguments** | Passed to `whisper-cli` as-is. |
+| **Watched folders** | Folders to transcribe automatically. See below. |
+| **Vocabulary** | Names and jargon whisper keeps mangling. See below. |
+| **VAD model** | Path to the silero model. Empty turns VAD off. |
+| **Tool paths** | Only if `ffmpeg` or `whisper-cli` live somewhere unusual. |
+
+---
+
+## 4. Transcribe automatically
+
+Put a folder in **Watched folders** — `~/Documents/Zoom`, say — and anything new that lands
+there is transcribed on its own, checked about every five minutes. Finish a call, come back
+to a transcript.
+
+It deliberately leaves alone:
+
+- files modified in the last two minutes (still being written)
+- files that already have a transcript beside them
+- files it has transcribed before, even if you deleted the transcript
+- the video file when the same folder holds audio (Zoom writes both; the audio is the better
+  input and transcribing both is the same words twice)
+- anything past 25 files in one sweep
+
+Whatever it skipped is reported, never dropped quietly.
+
+**Queue a folder now…** runs the same scan once, on demand, and tells you what it would pick
+up before you commit to it.
+
+---
+
+## 5. Getting better transcripts
+
+**Use VAD.** Set the VAD model path in Settings. Measured on three minutes of a real meeting:
+
+| | result |
+|---|---|
+| VAD off | 6 segments, every one an invented `תודה רבה.` ("thank you very much") |
+| VAD on | 17 segments of the actual conversation |
+
+It does not merely add noise — without VAD, real dialogue is *replaced* by a hallucinated
+pleasantry. On dense speech it costs nothing.
+
+**Fill in the Vocabulary.** Names, jargon, product terms — the words whisper keeps getting
+wrong. They are given to the model as context before every window, so the right words are
+already in mind. On a real meeting this produced about 10% more transcribed text and the
+correct terms started appearing.
+
+Keep it to a couple of lines. whisper truncates a long prompt, and words unrelated to the
+recording make the result worse rather than better.
+
+---
+
+## 6. When something goes wrong
+
+**The page says "backend not reachable."** The server is not running. Start it (section 2),
+or `launchctl kickstart -k gui/$(id -u)/com.local-whisper-transcriber` if you use the agent.
+
+**A transcription was interrupted.** Nothing is lost. Each finished segment is written as it
+happens, so the page offers **Resume**, which restarts whisper where it stopped and skips
+re-converting the audio. Cancelled and failed runs keep their progress for seven days;
+**Discard** throws it away.
+
+**"missing ffmpeg, whisper-cli."** They are not on `PATH`. Install them, or set the paths in
+Settings → Tool paths.
+
+**A model you just downloaded is not listed.** The scan runs once per process — restart it.
+
+**The output is in the wrong language.** Settings → Language. Whatever ran last became the
+default.
+
+---
+
+## 7. Where things are
+
+```
+~/.local-whisper-transcriber/
+├── settings.json     your defaults
+├── history.jsonl     every job that has run
+└── work/             scratch: converted audio, partial transcripts
+```
+
+Transcripts themselves are written next to your recordings and are never touched by cleanup.
+Scratch is swept after six hours, or seven days if it is still resumable.
+
+`LWT_DATA_DIR` and `LWT_PORT` override the location and the port.
+
+---
+
+## 8. Working on it
+
+```bash
+uv run --script test_app.py     # ~80 checks, fake binaries, no model needed, ~5s
+```
+
+| File | What lives there |
+|---|---|
+| `app.py` | HTTP routes and wiring, nothing else |
+| `config.py` | Paths, constants, settings |
+| `tools.py` | Finding and running ffmpeg/whisper-cli, the native file picker |
+| `transcribe.py` | Media to segments, segments to txt/srt |
+| `jobs.py` | The queue, checkpoints, resume, history |
+| `library.py` | Browsing, reading and searching past transcripts |
+| `watch.py` | Watched folders |
+| `web/` | `index.html`, `app.js`, `library.js`, `settings.js`, `styles.css` — no build step |
+
+The test suite uses fake `ffmpeg` and `whisper-cli` scripts, so it runs in seconds and needs
+no model.
+
+---
+
+## Design notes
+
+Things that are deliberately absent, with the reason:
+
+- **No chunking and no SRT merging.** `whisper-cli` handles a file of any length and emits
+  correct timestamps for the whole thing. Resume does not need chunks either: `--offset-t`
+  keeps timestamps absolute, so a resumed run just continues the same segment stream.
+- **No database.** History is an append-only JSONL file; the running job is one dict.
+- **No SSE or WebSockets.** The page polls once a second and gets the whole state back,
+  which also makes reconnecting after a refresh free.
+- **No npm, React, or build step.** Five static files.
+- **No Docker.** whisper uses Metal on Apple silicon; a Linux VM cannot, and measured here
+  that is 4.8× slower (105s of audio: 17.9s with Metal, 85.1s without). It would also lose
+  the native file picker.
+
+Kept because removing them would be a bug: argv arrays and never a shell, loopback-only
+binding, path validation, explicit consent before overwriting, process-group kill on cancel,
+outputs staged in scratch and moved into place only when complete, transcript text kept out
+of logs.

@@ -319,8 +319,23 @@ def clear_history() -> dict:
     return {"ok": True}
 
 
+class FreshFiles(StaticFiles):
+    """Serve the page, but always check whether it changed first.
+
+    StaticFiles sends an etag and no Cache-Control, which lets a browser apply
+    heuristic caching and skip revalidation — so an edited page kept showing the
+    old one until a hard reload. `no-cache` means "revalidate", not "do not
+    store": the etag still turns an unchanged file into a 304.
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["cache-control"] = "no-cache"
+        return response
+
+
 # Mounted last so /api/* wins; html=True serves index.html at /.
-app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+app.mount("/", FreshFiles(directory=WEB_DIR, html=True), name="web")
 
 
 if __name__ == "__main__":
