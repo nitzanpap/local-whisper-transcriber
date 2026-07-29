@@ -5,17 +5,20 @@ get `.txt` and `.srt` next to it. Nothing leaves your computer.
 
 ## Requirements
 
-`ffmpeg`, `ffprobe`, `whisper-cli` on `PATH`, and a whisper.cpp model file.
+`ffmpeg`, `ffprobe`, `whisper-cli` on `PATH`, a whisper.cpp model file, and `uv`.
 
 ```bash
-brew install ffmpeg whisper-cpp
+brew install ffmpeg whisper-cpp uv
 ```
 
 ## Run
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python app.py
+uv run --script app.py
 ```
+
+Python dependencies are declared inline in `app.py` (PEP 723), so there is no virtualenv
+to create and nothing to install first.
 
 Then open http://127.0.0.1:8765 — loopback only, no CORS, no accounts.
 
@@ -41,7 +44,7 @@ after six hours.
 Self-check (fake `ffmpeg`/`whisper-cli`, no model needed, ~5s):
 
 ```bash
-.venv/bin/python test_app.py
+uv run --script test_app.py
 ```
 
 ## Config

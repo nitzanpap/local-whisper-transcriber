@@ -1,6 +1,10 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["fastapi", "uvicorn"]
+# ///
 """Local Whisper Transcriber: ffmpeg + whisper-cli behind a small local web UI.
 
-Run: python app.py   ->  http://127.0.0.1:8765
+Run: uv run --script app.py   ->  http://127.0.0.1:8765
 """
 
 from __future__ import annotations

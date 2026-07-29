@@ -1,6 +1,10 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["fastapi", "uvicorn", "httpx"]
+# ///
 """Self-check: runs the real pipeline against fake ffmpeg/whisper-cli binaries.
 
-    python test_app.py
+    uv run --script test_app.py
 """
 
 import asyncio

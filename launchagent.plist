@@ -5,9 +5,13 @@
   <key>Label</key>
   <string>com.local-whisper-transcriber</string>
 
+  <!-- uv resolves the dependencies declared inline in app.py, so there is no venv
+       to create or keep in sync. Absolute path: launchd has no useful PATH. -->
   <key>ProgramArguments</key>
   <array>
-    <string>__DIR__/.venv/bin/python</string>
+    <string>/opt/homebrew/bin/uv</string>
+    <string>run</string>
+    <string>--script</string>
     <string>__DIR__/app.py</string>
   </array>
 
