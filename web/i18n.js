@@ -4,6 +4,7 @@
 
 const STRINGS = {
   en: {
+    "nav.record": "Record",
     "nav.transcribe": "Transcribe", "nav.library": "Library", "nav.settings": "Settings",
     "kicker": "Audio in, transcript out · nothing leaves this computer",
     "env.ready": "ffmpeg + whisper-cli ready",
@@ -35,7 +36,64 @@ const STRINGS = {
     "new.batch": "+ {n} more queued after this one, each written next to its own file with the same settings.",
     "new.outEmpty": "Choose a file to see where the transcript will be written.",
 
+    // Record
+    "rec.sources": "What to record",
+    "rec.voice": "Your voice",
+    "rec.voiceHint": "Your microphone. Kept in the left channel.",
+    "rec.computer": "Your computer's audio",
+    "rec.computerHint": "Everyone else in the meeting, and anything playing. Kept in the right channel.",
+    "rec.nothing": "Nothing",
+    "rec.start": "Start recording",
+    "rec.refresh": "Look again",
+    "rec.stop": "Stop and transcribe",
+    "rec.throw": "Stop and throw it away",
+    "rec.throwConfirm": "Stop recording and delete what was recorded? This cannot be undone.",
+    "rec.clear": "Dismiss",
+    "rec.recorded": "recorded",
+    "rec.planBoth": "one file, {voice} on the left and {computer} on the right",
+    "rec.planOne": "one file, a single voice, no speaker labels",
+    "rec.planNothing": "Choose at least one thing to record.",
+    "rec.twoChannels": "{voice} + {computer}, kept apart",
+    "rec.oneChannel": "one source",
+    "rec.stopsAfter": "stops by itself after {n} min",
+    "rec.status.recording": "Recording",
+    "rec.status.stopping": "Finishing the file",
+    "rec.status.saving": "Saving",
+    "rec.savedTitle": "Recorded {at}",
+    "rec.savedQueued": "Saved to {path}, and queued for transcription.",
+    "rec.savedOnly": "Saved to {path}.",
+    "rec.needLoopbackTitle": "Your computer's audio cannot be recorded yet",
+    "rec.needLoopbackWhat": "macOS offers apps the microphone and nothing else — there is no " +
+      "input device carrying what your speakers are playing until you install one. Your voice " +
+      "alone will record fine in the meantime.",
+    "rec.noDevicesTitle": "No audio inputs found",
+    "rec.noDevicesWhat": "ffmpeg listed no recording devices at all. On macOS this usually " +
+      "means the app has not been allowed to use the microphone yet: System Settings → " +
+      "Privacy & Security → Microphone.",
+    "rec.howTo": "How to set that up",
+    "rec.loopbackSteps":
+      "1. Install a loopback driver:\n" +
+      "     brew install blackhole-2ch\n\n" +
+      "2. Open Audio MIDI Setup and make a Multi-Output Device.\n" +
+      "   Tick your speakers or headphones AND BlackHole 2ch.\n" +
+      "   Put the built-in output at the top as the clock source, and\n" +
+      "   turn on Drift Correction for BlackHole. Set both to 48000 Hz.\n\n" +
+      "3. In System Settings → Sound, choose that Multi-Output Device\n" +
+      "   as your output. You still hear everything; BlackHole now\n" +
+      "   receives a copy.\n\n" +
+      "4. Come back here and press Look again. BlackHole 2ch will be\n" +
+      "   in the second dropdown.\n\n" +
+      "You do NOT need an Aggregate Device. One concatenates channels\n" +
+      "instead of mixing them, which is why recorders fed one come back\n" +
+      "with the microphone alone. The mixing happens here instead.",
+    "rec.orphanTitle": "Recording that was never saved",
+    "rec.orphanWhat": "{at} of audio ({size}) was captured but never written out — the app " +
+      "stopped before it could be.",
+    "rec.orphanKeep": "Save it",
+    "rec.orphanDropConfirm": "Throw this recording away? The audio is lost.",
+
     // Job
+    "job.track": "{stage} · {label} ({n} of {of})",
     "job.queued": "Waiting to start", "job.starting": "Getting ready",
     "job.converting": "Preparing the audio", "job.transcribing": "Transcribing",
     "job.saving": "Writing transcript", "job.completed": "Done",
@@ -94,6 +152,20 @@ const STRINGS = {
     "set.looking": "Looking…",
     "set.queuedN": "Queued {n}: {names}",
     "set.queuedNone": "Nothing new to transcribe there.",
+    "set.recording": "Recording",
+    "set.recordingHint": "What the Record view does when you press the button. Your voice and " +
+      "your computer's audio are kept in separate channels of one file, which is what lets the " +
+      "transcript say who said each line.",
+    "set.recFolder": "Where recordings go",
+    "set.recLabelVoice": "What to call you in the transcript",
+    "set.recLabelComputer": "What to call everyone else",
+    "set.recLabelsHint": "Used only when both sources are recorded, because only then is it " +
+      "known who said which line.",
+    "set.recAuto": "When a recording stops",
+    "set.recAutoOn": "Transcribe it straight away",
+    "set.recAutoOff": "Just keep the file",
+    "set.recMax": "Stop by itself after",
+    "set.recMaxHint": "Minutes. A recording nobody stopped would fill the disk.",
     "set.expert": "Expert",
     "set.modelFile": "Model file",
     "set.silenceModel": "Silence-detection model",
@@ -134,6 +206,7 @@ const STRINGS = {
   },
 
   he: {
+    "nav.record": "הקלטה",
     "nav.transcribe": "תמלול", "nav.library": "ספרייה", "nav.settings": "הגדרות",
     "kicker": "הקלטה נכנסת, תמליל יוצא · שום דבר לא יוצא מהמחשב הזה",
     "env.ready": "ffmpeg ו‑whisper‑cli מוכנים",
@@ -164,6 +237,58 @@ const STRINGS = {
     "new.batch": "‏+{n} נוספים בתור אחרי זה, כל אחד נשמר ליד הקובץ שלו ובאותן הגדרות.",
     "new.outEmpty": "בחרו קובץ כדי לראות היכן ייכתב התמליל.",
 
+    "rec.sources": "מה להקליט",
+    "rec.voice": "הקול שלכם",
+    "rec.voiceHint": "המיקרופון שלכם. נשמר בערוץ השמאלי.",
+    "rec.computer": "האודיו של המחשב",
+    "rec.computerHint": "כל השאר בפגישה, וכל דבר שמתנגן. נשמר בערוץ הימני.",
+    "rec.nothing": "כלום",
+    "rec.start": "התחלת הקלטה",
+    "rec.refresh": "לבדוק שוב",
+    "rec.stop": "עצירה ותמלול",
+    "rec.throw": "עצירה ומחיקה",
+    "rec.throwConfirm": "לעצור את ההקלטה ולמחוק את מה שהוקלט? אין דרך לשחזר.",
+    "rec.clear": "לסגור",
+    "rec.recorded": "הוקלט",
+    "rec.planBoth": "‏קובץ אחד, {voice} בשמאל ו‑{computer} בימין",
+    "rec.planOne": "קובץ אחד, קול אחד, בלי סימון דוברים",
+    "rec.planNothing": "בחרו לפחות דבר אחד להקליט.",
+    "rec.twoChannels": "‏{voice} + {computer}, בנפרד",
+    "rec.oneChannel": "מקור אחד",
+    "rec.stopsAfter": "‏נעצרת לבד אחרי {n} דק׳",
+    "rec.status.recording": "מקליט",
+    "rec.status.stopping": "מסיים את הקובץ",
+    "rec.status.saving": "שומר",
+    "rec.savedTitle": "‏הוקלטו {at}",
+    "rec.savedQueued": "‏נשמר אל {path}, ונכנס לתור לתמלול.",
+    "rec.savedOnly": "‏נשמר אל {path}.",
+    "rec.needLoopbackTitle": "עדיין אי אפשר להקליט את האודיו של המחשב",
+    "rec.needLoopbackWhat": "‏macOS מציע לאפליקציות את המיקרופון וזה הכול — אין התקן קלט " +
+      "שמעביר את מה שהרמקולים מנגנים עד שמתקינים אחד. בינתיים הקול שלכם לבד יוקלט בסדר גמור.",
+    "rec.noDevicesTitle": "לא נמצאו התקני קלט",
+    "rec.noDevicesWhat": "‏ffmpeg לא מצא שום התקן הקלטה. ב‑macOS זה בדרך כלל אומר שלא ניתנה " +
+      "לאפליקציה הרשאה למיקרופון: הגדרות המערכת → פרטיות ואבטחה → מיקרופון.",
+    "rec.howTo": "איך מגדירים את זה",
+    "rec.loopbackSteps":
+      "1. התקינו דרייבר loopback:\n" +
+      "     brew install blackhole-2ch\n\n" +
+      "2. פתחו Audio MIDI Setup וצרו Multi-Output Device.\n" +
+      "   סמנו את הרמקולים או האוזניות שלכם וגם BlackHole 2ch.\n" +
+      "   שימו את הפלט המובנה בראש הרשימה כמקור השעון,\n" +
+      "   והפעילו Drift Correction ל‑BlackHole. שניהם ב‑48000 Hz.\n\n" +
+      "3. בהגדרות המערכת → סאונד, בחרו את ה‑Multi-Output Device\n" +
+      "   כפלט. אתם ממשיכים לשמוע הכול; BlackHole מקבל עותק.\n\n" +
+      "4. חזרו לכאן ולחצו ״לבדוק שוב״. BlackHole 2ch יופיע\n" +
+      "   בתפריט השני.\n\n" +
+      "אין צורך ב‑Aggregate Device. הוא משרשר ערוצים ולא מערבב\n" +
+      "אותם, ולכן מקליטים שמאכילים אותו מחזירים את המיקרופון לבד.\n" +
+      "הערבוב קורה כאן במקום.",
+    "rec.orphanTitle": "הקלטה שלא נשמרה",
+    "rec.orphanWhat": "‏{at} של אודיו ({size}) הוקלטו אבל לא נכתבו לקובץ — האפליקציה נעצרה לפני.",
+    "rec.orphanKeep": "לשמור אותה",
+    "rec.orphanDropConfirm": "למחוק את ההקלטה הזאת? האודיו יאבד.",
+
+    "job.track": "‏{stage} · {label} ({n} מתוך {of})",
     "job.queued": "ממתין להתחלה", "job.starting": "מתארגן",
     "job.converting": "מכין את האודיו", "job.transcribing": "מתמלל",
     "job.saving": "כותב את התמליל", "job.completed": "הסתיים",
@@ -219,6 +344,18 @@ const STRINGS = {
     "set.looking": "מחפש…",
     "set.queuedN": "נוספו לתור {n}: {names}",
     "set.queuedNone": "אין שם שום דבר חדש לתמלל.",
+    "set.recording": "הקלטה",
+    "set.recordingHint": "מה שמסך ההקלטה עושה כשלוחצים על הכפתור. הקול שלכם והאודיו של המחשב " +
+      "נשמרים בערוצים נפרדים של אותו קובץ, וזה מה שמאפשר לתמליל לומר מי אמר כל שורה.",
+    "set.recFolder": "לאן הולכות ההקלטות",
+    "set.recLabelVoice": "איך לקרוא לכם בתמליל",
+    "set.recLabelComputer": "איך לקרוא לכל השאר",
+    "set.recLabelsHint": "בשימוש רק כששני המקורות מוקלטים, כי רק אז ידוע מי אמר איזו שורה.",
+    "set.recAuto": "כשהקלטה נעצרת",
+    "set.recAutoOn": "לתמלל אותה מיד",
+    "set.recAutoOff": "רק לשמור את הקובץ",
+    "set.recMax": "להיעצר לבד אחרי",
+    "set.recMaxHint": "דקות. הקלטה שאף אחד לא עצר תמלא את הדיסק.",
     "set.expert": "מומחים",
     "set.modelFile": "קובץ המודל",
     "set.silenceModel": "מודל לזיהוי שקט",
@@ -300,6 +437,7 @@ function setLanguage(lang) {
   if (typeof lastState !== "undefined" && lastState) render(lastState);
   if (typeof openSettings === "function" && currentView() === "settings") openSettings();
   if (typeof openLibrary === "function" && currentView() === "library") openLibrary();
+  if (typeof redrawRecord === "function") redrawRecord();
 }
 
 document.addEventListener("change", (e) => {

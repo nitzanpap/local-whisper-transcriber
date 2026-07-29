@@ -102,12 +102,35 @@ async def duration_seconds(path: Path) -> float | None:
         return None
 
 
-async def to_wav(job: dict, source: str, wav: Path) -> None:
+async def to_wav(job: dict, source: str, wav: Path, channel: int | None = None) -> None:
+    """16 kHz mono, which is what whisper wants — optionally from one channel only.
+
+    A recording made here puts the microphone in the left channel and the
+    computer's own audio in the right, so pulling one channel out is pulling one
+    speaker out. Without a channel this is the plain downmix it always was.
+    """
+    cmd = [binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-vn"]
+    if channel is not None:
+        cmd += ["-filter_complex", f"[0:a]pan=mono|c0=c{channel}[a]", "-map", "[a]"]
     await stream(
-        [binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", source,
-         "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(wav)],
+        cmd + ["-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(wav)],
         job, "ffmpeg_failed",
     )
+
+
+def merge_tracks(tracks: list[tuple[str, list[tuple[int, int, str]]]]) -> list[tuple[int, int, str]]:
+    """Several tracks' segments as one stream, each line owned by whoever said it.
+
+    Both tracks carry absolute timestamps from the same recording, so ordering by
+    start time interleaves them the way the conversation actually went. A track
+    with no label contributes its text unchanged, which is the single-track case.
+    """
+    merged = []
+    for label, segments in tracks:
+        for start, end, text in segments:
+            merged.append((start, end, f"{label}: {text}" if label else text))
+    merged.sort(key=lambda seg: (seg[0], seg[1]))
+    return merged
 
 
 def whisper_command(job: dict, wav: Path, resume_ms: int = 0) -> list[str]:

@@ -17,8 +17,14 @@ import uuid
 from collections import deque
 from pathlib import Path
 
-from config import Cancelled, Failed, HISTORY, WORK_DIR, DATA_DIR
-from transcribe import parse_segments, stamp, to_wav, transcribe, write_outputs
+from config import Cancelled, Failed, HISTORY, RECORDING_PREFIX, WORK_DIR, DATA_DIR
+from transcribe import (merge_tracks, parse_segments, stamp, to_wav, transcribe,
+                        write_outputs)
+
+# A job with one unnamed track is an ordinary file: one conversion, one whisper
+# run, no speaker labels. Two tracks is a recording made here, where the channels
+# are known to be different people.
+ONE_TRACK = ({"channel": None, "label": ""},)
 
 JOB: dict | None = None
 QUEUE: list[dict] = []
@@ -30,11 +36,12 @@ RESUMABLE_STATES = ("running", "cancelling", "cancelled", "failed")
 def make_job(source: str, model: str, out_dir: str, basename: str, *, language: str = "he",
              want_txt: bool = True, want_srt: bool = True, keep_intermediates: bool = False,
              extra_args: str = "", duration: float | None = None, vad_model: str = "",
-             vocabulary: str = "") -> dict:
+             vocabulary: str = "", tracks: list[dict] | None = None) -> dict:
     return {
         "id": uuid.uuid4().hex[:12],
         "status": "running", "stage": "starting", "percent": 0.0,
         "source": source, "model": model, "language": language,
+        "tracks": [dict(t) for t in (tracks or ONE_TRACK)],
         "out_dir": out_dir, "basename": basename,
         "want_txt": want_txt, "want_srt": want_srt,
         "keep_intermediates": keep_intermediates,
@@ -42,6 +49,8 @@ def make_job(source: str, model: str, out_dir: str, basename: str, *, language: 
         "vad_model": vad_model,
         "vocabulary": vocabulary,
         "duration": duration,
+        # Which track is being worked on, for a job that has more than one.
+        "track": None,
         "started_at": time.time(), "ended_at": None,
         "outputs": {}, "preview": "", "error": None,
         # What the run cost, filled in as it goes. Nobody needs these to read a
@@ -82,31 +91,49 @@ def cpu_seconds_used() -> float:
     return used.ru_utime + used.ru_stime
 
 
+def track_files(work: Path, index: int, count: int) -> tuple[Path, Path]:
+    """Scratch names for one track. A single-track job keeps the original names,
+    so a run interrupted before any of this existed still resumes."""
+    suffix = f"-{index}" if count > 1 else ""
+    return work / f"audio{suffix}.wav", work / f"segments{suffix}.txt"
+
+
 async def run_job(job: dict) -> None:
     job["status"] = "running"
     job["started_at"] = time.time()
     cpu_before = cpu_seconds_used()
     work = WORK_DIR / job["id"]
     work.mkdir(parents=True, exist_ok=True)
-    wav = work / "audio.wav"
-    segments_file = work / "segments.txt"
+    tracks = job.get("tracks") or list(ONE_TRACK)
     try:
-        if wav.exists() and wav.stat().st_size > 0:
-            job["log"].append(f"# reusing {wav.name} from the interrupted run")
-        else:
-            stage(job, "converting")
-            await to_wav(job, job["source"], wav)
+        transcribed = []
+        for index, track in enumerate(tracks):
+            wav, segments_file = track_files(work, index, len(tracks))
+            job["track"] = ({"index": index, "count": len(tracks), "label": track.get("label", "")}
+                            if len(tracks) > 1 else None)
+            # whisper reports its own progress per run, so each track is given a
+            # slice of the bar rather than resetting it to nought.
+            job["percent_base"] = index * 100.0 / len(tracks)
+            job["percent_span"] = 100.0 / len(tracks)
 
-        stage(job, "transcribing")
-        done = parse_segments(segments_file)
-        resume_ms = done[-1][1] if done else 0
-        if resume_ms:
-            job["log"].append(f"# resuming at {stamp(resume_ms)} ({len(done)} segments already done)")
-        await transcribe(job, wav, segments_file, resume_ms)
+            if wav.exists() and wav.stat().st_size > 0:
+                job["log"].append(f"# reusing {wav.name} from the interrupted run")
+            else:
+                stage(job, "converting")
+                await to_wav(job, job["source"], wav, track.get("channel"))
 
+            stage(job, "transcribing")
+            done = parse_segments(segments_file)
+            resume_ms = done[-1][1] if done else 0
+            if resume_ms:
+                job["log"].append(f"# resuming at {stamp(resume_ms)} ({len(done)} segments already done)")
+            await transcribe(job, wav, segments_file, resume_ms)
+            transcribed.append((track.get("label", ""), parse_segments(segments_file)))
+
+        job["track"] = None
         stage(job, "saving")
         job["percent"] = 100.0
-        write_outputs(job, work, parse_segments(segments_file))
+        write_outputs(job, work, merge_tracks(transcribed))
         if job["want_txt"]:
             job["preview"] = read_preview(Path(job["outputs"]["txt"]))
         job["status"], job["stage"] = "completed", "completed"
@@ -192,11 +219,17 @@ def resumable() -> list[dict]:
             continue  # the live one
         if job.get("status") not in RESUMABLE_STATES:
             continue
-        done = parse_segments(record.parent / "segments.txt")
+        # Across every track, so a two-speaker recording reports the furthest point
+        # reached rather than only the first track's.
+        reached = 0
+        for segments_file in sorted(record.parent.glob("segments*.txt")):
+            done = parse_segments(segments_file)
+            if done:
+                reached = max(reached, done[-1][1])
         out.append({
             "id": job["id"], "source": job["source"], "basename": job["basename"],
             "language": job.get("language", ""), "percent": job.get("percent", 0.0),
-            "reached_ms": done[-1][1] if done else 0,
+            "reached_ms": reached,
             "duration": job.get("duration"),
             "was": "interrupted" if job.get("status") in ("running", "cancelling") else job["status"],
         })
@@ -220,7 +253,7 @@ def append_history(job: dict) -> None:
     row = {k: job.get(k) for k in ("id", "source", "model", "language", "status",
                                    "started_at", "ended_at", "outputs", "duration",
                                    "peak_memory_mb", "cpu_seconds", "work_seconds",
-                                   "vad_model", "vocabulary", "extra_args")}
+                                   "vad_model", "vocabulary", "extra_args", "tracks")}
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         with HISTORY.open("a", encoding="utf-8") as fh:
@@ -259,7 +292,12 @@ def sweep_work_dirs(max_age_hours: float = 6, keep_resumable_days: float = 7) ->
         try:
             if not path.is_dir():
                 continue
-            limit = keep_resumable_days * 86400 if path.name in keeping else max_age_hours * 3600
+            # A recording's directory keeps the same mtime for hours while ffmpeg
+            # writes inside it, so the short limit would delete a meeting still
+            # being recorded. Captured audio nobody has saved yet is precious in
+            # the same way a half-finished transcription is, and is kept as long.
+            reprieve = path.name in keeping or path.name.startswith(RECORDING_PREFIX)
+            limit = keep_resumable_days * 86400 if reprieve else max_age_hours * 3600
             if now - path.stat().st_mtime > limit:
                 shutil.rmtree(path, ignore_errors=True)
         except OSError:

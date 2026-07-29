@@ -93,6 +93,8 @@ section { margin-bottom: 2rem; }
 /* --- fields --- */
 .grid { display: grid; gap: 1.4rem 1.5rem; grid-template-columns: 1fr; }
 @media (min-width: 34rem) { .grid.two { grid-template-columns: 1fr 11rem; } }
+/* Two fields of equal weight — device names and speaker labels need the same room. */
+@media (min-width: 34rem) { .grid.even { grid-template-columns: 1fr 1fr; } }
 .field > .label { display: block; color: var(--ink-soft); margin-bottom: .4rem; }
 .line { display: flex; align-items: center; gap: .5rem; border-bottom: 1px solid var(--rule); }
 .line:focus-within { border-color: var(--ink); }
@@ -191,6 +193,9 @@ button.danger:hover { color: var(--accent); border-color: var(--accent); }
 .note h2 { font: 400 1.15rem/1.3 var(--display); }
 .note p { color: var(--ink-soft); font-size: .92rem; margin-top: .25rem; }
 pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); padding: .8rem; border-radius: 3px; overflow: auto; max-height: 14rem; white-space: pre-wrap; margin-top: .6rem; }
+/* Instructions, not log output: cutting these off at 14rem hides the step that
+   matters and makes the reader scroll a box to find it. */
+pre.tech.steps { max-height: none; }
 
 /* --- history --- */
 .scroller { overflow-x: auto; } /* narrow screens scroll the table, not the page */

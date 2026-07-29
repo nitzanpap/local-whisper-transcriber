@@ -224,7 +224,13 @@ function renderJob(job) {
   $("job-meta").innerHTML = [job.source.split("/").pop(), clock(job.duration), job.language,
     job.model.split("/").pop()].map(x => `<span>${x}</span>`).join("<i>·</i>");
   $("job-count").innerHTML = `${pct}<sup>%</sup>`;
-  $("job-stage").textContent = STAGE_KEYS.includes(job.stage) ? t("job." + job.stage) : job.stage;
+  const stageText = STAGE_KEYS.includes(job.stage) ? t("job." + job.stage) : job.stage;
+  // A recording of two people is two whisper runs. Saying which one is running
+  // stops the bar looking as though it went backwards.
+  $("job-stage").textContent = job.track
+    ? t("job.track", { stage: stageText, label: job.track.label,
+                       n: job.track.index + 1, of: job.track.count })
+    : stageText;
   $("job-progress").value = pct;
   $("job-tape").firstElementChild.style.width = pct + "%";
   $("job-tape").classList.toggle("idle", live && pct === 0);
@@ -321,6 +327,7 @@ function render(s) {
   if (onJob) renderJob(job);
   renderQueue(s.queue || []);
   renderResumable(s.resumable || []);
+  if (typeof renderRecording === "function") renderRecording(s.recording, s.orphan_recordings);
 
   show($("history-box"), s.history.length > 0);
   if ($("history")) $("history").innerHTML = s.history.map(r => `
@@ -375,7 +382,7 @@ $("pending-go").onclick = async () => {
 
 // --- views -------------------------------------------------------------------
 
-const VIEWS = ["transcribe", "library", "settings"];
+const VIEWS = ["record", "transcribe", "library", "settings"];
 
 function currentView() {
   const name = (location.hash.match(/^#\/(\w+)/) || [])[1];
@@ -391,6 +398,7 @@ function routeChanged() {
   }
   // Each view loads its own data when it becomes visible, so switching to it is
   // never stale and hidden views cost nothing.
+  if (view === "record" && typeof openRecord === "function") openRecord();
   if (view === "library" && typeof openLibrary === "function") openLibrary();
   if (view === "settings" && typeof openSettings === "function") openSettings();
 }

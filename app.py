@@ -30,9 +30,11 @@ from pydantic import BaseModel
 
 import jobs
 import library
+import record
 import watch
 from config import (BINARIES, DEFAULT_EXTRA, Failed, HISTORY, TRANSCRIPT_SUFFIX,
-                    WEB_DIR, WORK_DIR, save_settings, settings, source_folders)
+                    WEB_DIR, WORK_DIR, recording_config, save_settings, settings,
+                    source_folders)
 from tools import environment, find_models, kill_process_group, run_picker
 from transcribe import duration_seconds
 
@@ -108,6 +110,13 @@ class SettingsIn(BaseModel):
     output_folder: str = ""
     source_folders: list[str] | None = None
     watch_folders: list[str] | None = None  # what source_folders used to be called
+    recording_folder: str = ""
+    record_voice_device: str = ""
+    record_computer_device: str = ""
+    record_label_voice: str = ""
+    record_label_computer: str = ""
+    record_auto_transcribe: bool | None = None
+    record_max_minutes: int | None = None
 
 
 def resolve_file(raw: str, what: str, code: str) -> Path:
@@ -144,6 +153,9 @@ def state() -> dict:
         "resumable": jobs.resumable(),
         "default_extra_args": DEFAULT_EXTRA,
         "job": public,
+        # Cheap on purpose: a stat and a glob. Device listing is its own route.
+        "recording": record.public(),
+        "orphan_recordings": record.orphans(),
         "queue": [{"id": j["id"], "source": j["source"], "basename": j["basename"],
                    "language": j["language"]} for j in jobs.QUEUE],
         "history": jobs.history(),
@@ -257,6 +269,67 @@ def cancel() -> dict:
     return {"ok": True}
 
 
+# --- recording ---------------------------------------------------------------
+
+
+class RecordIn(BaseModel):
+    voice: str = ""
+    computer: str = ""
+
+
+@app.get("/api/record/devices")
+async def record_devices() -> dict:
+    """What can be recorded from, and what to install if the answer is not enough."""
+    if not environment()["ffmpeg"]["ok"]:
+        raise HTTPException(400, {"code": "dependency_not_found",
+                                  "message": "ffmpeg was not found. Check Settings."})
+    try:
+        return await record.devices()
+    except Failed as exc:
+        raise HTTPException(400, {"code": exc.code, "message": exc.message, "details": ""})
+
+
+@app.post("/api/record/start")
+async def record_start(body: RecordIn) -> dict:
+    if not environment()["ffmpeg"]["ok"]:
+        raise HTTPException(400, {"code": "dependency_not_found",
+                                  "message": "ffmpeg was not found. Check Settings."})
+    try:
+        return await record.start(body.voice, body.computer)
+    except Failed as exc:
+        raise HTTPException(400, {"code": exc.code, "message": exc.message,
+                                  "details": "\n".join((record.public() or {}).get("log", [])[-12:])})
+
+
+@app.post("/api/record/stop")
+async def record_stop(keep: bool = True) -> dict:
+    """Finish the recording. Saving and queueing carry on in the background."""
+    try:
+        return await record.stop(keep=keep)
+    except Failed as exc:
+        raise HTTPException(409, {"code": exc.code, "message": exc.message, "details": ""})
+
+
+@app.post("/api/record/dismiss")
+def record_dismiss() -> dict:
+    record.dismiss()
+    return {"ok": True}
+
+
+@app.post("/api/record/keep/{rec_id}")
+async def record_keep(rec_id: str) -> dict:
+    """Save audio that was captured but never written out, after a crash."""
+    try:
+        return await record.keep_orphan(safe_id(rec_id))
+    except Failed as exc:
+        raise HTTPException(400, {"code": exc.code, "message": exc.message, "details": ""})
+
+
+@app.delete("/api/record/keep/{rec_id}")
+def record_drop(rec_id: str) -> dict:
+    return record.discard_orphan(safe_id(rec_id))
+
+
 # --- library -----------------------------------------------------------------
 
 
@@ -335,8 +408,16 @@ def pick(kind: str = "file") -> dict:
 
 @app.get("/api/settings")
 def get_settings() -> dict:
+    conf = recording_config()
     return {"default_language": "he", "default_extra_args": DEFAULT_EXTRA,
-            "output_folder": "", **settings(), "source_folders": source_folders()}
+            "output_folder": "", **settings(), "source_folders": source_folders(),
+            # Resolved rather than raw, so the fields show the values in force
+            # instead of the blanks that mean "use the default".
+            "recording_folder": conf["folder"],
+            "record_label_voice": conf["labels"][0],
+            "record_label_computer": conf["labels"][1],
+            "record_auto_transcribe": conf["transcribe"],
+            "record_max_minutes": conf["max_minutes"]}
 
 
 @app.put("/api/settings")

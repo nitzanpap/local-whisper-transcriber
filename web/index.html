@@ -13,6 +13,7 @@
   <h1>Local Whisper <em>Transcriber</em></h1>
   <div class="masthead">
     <nav aria-label="Views">
+      <a href="#/record" data-view="record" data-i18n="nav.record">Record</a>
       <a href="#/transcribe" data-view="transcribe" data-i18n="nav.transcribe">Transcribe</a>
       <a href="#/library" data-view="library" data-i18n="nav.library">Library</a>
       <a href="#/settings" data-view="settings" data-i18n="nav.settings">Settings</a>
@@ -199,6 +200,87 @@
 
 </div><!-- /view-transcribe -->
 
+<!-- ============ record ============ -->
+<div id="view-record" hidden>
+
+  <div class="note" id="rec-advice" hidden>
+    <h2 id="rec-advice-title"></h2>
+    <p id="rec-advice-what"></p>
+    <details class="tight" id="rec-advice-how" hidden>
+      <summary data-i18n="rec.howTo">How to set that up</summary>
+      <pre class="tech steps" id="rec-advice-steps"></pre>
+    </details>
+  </div>
+
+  <div class="note" id="rec-orphans" hidden>
+    <h2 data-i18n="rec.orphanTitle">Recording that was never saved</h2>
+    <div id="rec-orphan-list"></div>
+  </div>
+
+  <main id="rec-idle">
+    <section class="step">
+      <span class="label" data-i18n="rec.sources">What to record</span>
+      <div class="grid even">
+        <div class="field">
+          <label class="label" for="rec-voice" data-i18n="rec.voice">Your voice</label>
+          <div class="line"><select id="rec-voice"></select></div>
+          <p class="hint" data-i18n="rec.voiceHint">Your microphone.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="rec-computer" data-i18n="rec.computer">Your computer's audio</label>
+          <div class="line"><select id="rec-computer"></select></div>
+          <p class="hint" data-i18n="rec.computerHint">Everyone else in the meeting, and anything playing.</p>
+        </div>
+      </div>
+      <p class="out" id="rec-plan"></p>
+    </section>
+
+    <div class="actions">
+      <button class="solid" id="rec-start" disabled data-i18n="rec.start">Start recording</button>
+      <button class="link" id="rec-refresh" data-i18n="rec.refresh">Look again</button>
+    </div>
+  </main>
+
+  <main id="rec-live" hidden>
+    <p class="meta" id="rec-live-meta"></p>
+
+    <div class="readout" style="margin-top:1.25rem">
+      <div>
+        <p class="count" id="rec-clock">0:00</p>
+        <p class="stage" id="rec-status" role="status"></p>
+      </div>
+      <p class="clock"><b id="rec-size">0 MB</b><span data-i18n="rec.recorded">recorded</span></p>
+    </div>
+
+    <div class="tape" id="rec-tape"><i></i></div>
+
+    <div class="actions">
+      <button class="solid" id="rec-stop" data-i18n="rec.stop">Stop and transcribe</button>
+      <button class="link danger" id="rec-throw" data-i18n="rec.throw">Stop and throw it away</button>
+    </div>
+  </main>
+
+  <div class="note" id="rec-done" hidden>
+    <h2 id="rec-done-title"></h2>
+    <p id="rec-done-what"></p>
+    <div class="actions">
+      <button id="rec-open" data-i18n="job.openFolder">Open folder</button>
+      <button class="link" id="rec-again" data-i18n="rec.clear">Dismiss</button>
+    </div>
+  </div>
+
+  <div class="note" id="rec-error" hidden tabindex="-1" role="alert">
+    <h2 id="rec-error-msg"></h2>
+    <p id="rec-error-code"></p>
+    <div class="actions"><button class="link" id="rec-dismiss" data-i18n="rec.clear">Dismiss</button></div>
+  </div>
+
+  <details class="tight" style="margin-top:1.5rem" id="rec-log-box" hidden>
+    <summary data-i18n="job.log">Process log</summary>
+    <pre class="tech" id="rec-log"></pre>
+  </details>
+</div>
+
 <!-- ============ library ============ -->
 <div id="view-library" hidden>
   <section class="step">
@@ -354,6 +436,49 @@
     </div>
   </section>
 
+  <section class="step">
+    <span class="label" data-i18n="set.recording">Recording</span>
+    <p class="hint" data-i18n="set.recordingHint"></p>
+
+    <div class="field" style="margin-top:.8rem">
+      <label class="label" for="set-rec-folder" data-i18n="set.recFolder">Where recordings go</label>
+      <div class="line">
+        <input type="text" id="set-rec-folder" spellcheck="false">
+        <button class="link" data-browse="folder" data-into="set-rec-folder" data-i18n="browse">Browse</button>
+      </div>
+    </div>
+
+    <div class="grid even" style="margin-top:1.4rem">
+      <div class="field">
+        <label class="label" for="set-rec-label-voice" data-i18n="set.recLabelVoice">What to call you in the transcript</label>
+        <div class="line"><input type="text" id="set-rec-label-voice" spellcheck="false" placeholder="Me"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="set-rec-label-computer" data-i18n="set.recLabelComputer">What to call everyone else</label>
+        <div class="line"><input type="text" id="set-rec-label-computer" spellcheck="false" placeholder="Them"></div>
+      </div>
+    </div>
+    <p class="hint" data-i18n="set.recLabelsHint">Used only when both sources are recorded, because only then is it
+      known who said which line.</p>
+
+    <div class="grid two" style="margin-top:1.4rem">
+      <div class="field">
+        <label class="label" for="set-rec-auto" data-i18n="set.recAuto">When a recording stops</label>
+        <div class="line">
+          <select id="set-rec-auto">
+            <option value="on" data-i18n="set.recAutoOn">Transcribe it straight away</option>
+            <option value="off" data-i18n="set.recAutoOff">Just keep the file</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label" for="set-rec-minutes" data-i18n="set.recMax">Stop by itself after</label>
+        <div class="line"><input type="text" id="set-rec-minutes" spellcheck="false" inputmode="numeric"></div>
+        <p class="hint" data-i18n="set.recMaxHint">Minutes. A recording nobody stopped would fill the disk.</p>
+      </div>
+    </div>
+  </section>
+
   <details class="tight">
     <summary data-i18n="set.expert">Expert</summary>
     <div>
@@ -417,6 +542,7 @@
 
 <script src="/i18n.js"></script>
 <script src="/app.js"></script>
+<script src="/record.js"></script>
 <script src="/library.js"></script>
 <script src="/settings.js"></script>
 </body>

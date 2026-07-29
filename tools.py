@@ -139,9 +139,16 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
             continue
         if "progress =" in line:
             try:
-                job["percent"] = float(line.split("progress =")[1].strip().rstrip("%"))
+                reported = float(line.split("progress =")[1].strip().rstrip("%"))
             except ValueError:
                 pass
+            else:
+                # whisper counts from nought on every run, so a job made of two
+                # tracks gives each one a slice of the bar. One track is the whole
+                # bar, which is the arithmetic doing nothing.
+                base = job.get("percent_base") or 0.0
+                span = job.get("percent_span") or 100.0
+                job["percent"] = base + reported * span / 100.0
         else:
             job["log"].append(line)
     code = await PROC.wait()
