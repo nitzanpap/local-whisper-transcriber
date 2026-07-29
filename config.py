@@ -18,7 +18,9 @@ DEFAULT_EXTRA = "--temperature 0 --entropy-thold 3.0 --max-context 64"
 
 # What a watched folder will pick up. Anything ffmpeg reads works when chosen by
 # hand; this narrower list is what we are willing to transcribe unattended.
-MEDIA_EXTS = (".m4a", ".mp3", ".wav", ".mp4", ".mov", ".aac", ".flac", ".ogg", ".webm", ".mkv")
+AUDIO_EXTS = (".m4a", ".mp3", ".wav", ".aac", ".flac", ".ogg")
+VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv")
+MEDIA_EXTS = AUDIO_EXTS + VIDEO_EXTS
 
 TRANSCRIPT_SUFFIX = "-transcript"
 

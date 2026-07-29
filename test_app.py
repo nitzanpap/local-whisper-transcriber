@@ -307,6 +307,38 @@ async def main() -> None:
         extra = watched / f"bulk{i}.m4a"
         extra.write_bytes(b"audio")
         os.utime(extra, (0, 0))
+    video_only = TMP / "watched" / "video only"
+    video_only.mkdir(parents=True, exist_ok=True)
+    for name in ("audio1234.m4a", "video1234.mp4"):
+        f = watched / name
+        f.write_bytes(b"media")
+        os.utime(f, (0, 0))
+    lonely = video_only / "screen-recording.mp4"
+    lonely.write_bytes(b"media")
+    os.utime(lonely, (0, 0))
+    found, skipped = watch.candidates(TMP / "watched")
+    names = [p.name for p in found]
+    check("takes the audio of a recording", "audio1234.m4a" in names, str(names))
+    check("skips the video beside it", "video1234.mp4" not in names, str(names))
+    check("explains that skip", any("same recording" in s for s in skipped), str(skipped))
+    alone, _ = watch.candidates(video_only)  # its own folder, clear of the cap test above
+    check("still takes a video with no audio beside it", [p.name for p in alone] == [lonely.name],
+          str(alone))
+
+    # The real case: the audio was transcribed long ago, so it is not a candidate
+    # any more, and only the video is left standing next to it.
+    done_pair = TMP / "watched" / "already done"
+    done_pair.mkdir(parents=True, exist_ok=True)
+    for name in ("audio999.m4a", "video999.mp4"):
+        f = done_pair / name
+        f.write_bytes(b"media")
+        os.utime(f, (0, 0))
+    jobs.append_history({**jobs.make_job(str(done_pair / "audio999.m4a"), model, str(out), "audio999"),
+                         "status": "completed", "outputs": {}})
+    left, why = watch.candidates(done_pair)
+    check("video is skipped even when the audio is long gone from the list", left == [], str(left))
+    check("and it says which file it deferred to", any("same recording" in s for s in why), str(why))
+
     found, skipped = watch.candidates(TMP / "watched")
     check("caps one sweep", len(found) == watch.MAX_PER_SWEEP, str(len(found)))
     check("says what it left behind", any("left for the next sweep" in s for s in skipped), str(skipped))

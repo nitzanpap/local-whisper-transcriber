@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 
 import jobs
-from config import DEFAULT_EXTRA, HISTORY, MEDIA_EXTS, TRANSCRIPT_SUFFIX, settings
+from config import (AUDIO_EXTS, DEFAULT_EXTRA, HISTORY, MEDIA_EXTS, TRANSCRIPT_SUFFIX,
+                    VIDEO_EXTS, settings)
 from transcribe import duration_seconds
 
 SWEEP_SECONDS = 300          # how often watched folders are re-scanned
@@ -69,19 +70,56 @@ def candidates(folder: Path, now: float | None = None) -> tuple[list[Path], list
         except OSError:
             continue
         found.append(path)
+    found, dropped = prefer_audio(found)
+    skipped += dropped
     if len(found) > MAX_PER_SWEEP:
         skipped.append(f"{len(found) - MAX_PER_SWEEP} more left for the next sweep")
         found = found[:MAX_PER_SWEEP]
     return found, skipped
 
 
-async def queue_folder(folder: Path) -> dict:
-    """Queue everything in a folder that has no transcript yet."""
+def prefer_audio(found: list[Path]) -> tuple[list[Path], list[str]]:
+    """Zoom writes audio and video of the same meeting side by side.
+
+    Transcribing both is the same words twice at twice the cost, and the audio
+    file is the better input, so a video is skipped when its folder also holds
+    audio. A folder with only video is still transcribed.
+    """
+    has_audio: dict[Path, bool] = {}
+    keep, dropped = [], []
+    for path in found:
+        if path.suffix.lower() not in VIDEO_EXTS:
+            keep.append(path)
+            continue
+        # Ask the folder, not the candidate list: the audio file is usually absent
+        # from the list precisely because it was already transcribed.
+        if path.parent not in has_audio:
+            try:
+                has_audio[path.parent] = any(s.suffix.lower() in AUDIO_EXTS
+                                             for s in path.parent.iterdir() if s.is_file())
+            except OSError:
+                has_audio[path.parent] = False
+        if has_audio[path.parent]:
+            dropped.append(f"{path.name}: audio of the same recording is in this folder")
+        else:
+            keep.append(path)
+    return keep, dropped
+
+
+async def queue_folder(folder: Path, dry_run: bool = False) -> dict:
+    """Queue everything in a folder that has no transcript yet.
+
+    dry_run answers "what would this pick up?" without starting anything, which
+    is the only safe way to point a watcher at a folder you cannot see into.
+    """
     conf = settings()
     model = conf.get("default_model_path", "")
     if not model or not Path(model).is_file():
         return {"queued": 0, "skipped": ["no default model set — choose one on the Transcribe view"]}
     found, skipped = candidates(folder)
+    if dry_run:
+        return {"queued": 0, "would_queue": len(found), "skipped": skipped,
+                "names": [p.name for p in found]}
     for path in found:
         job = jobs.make_job(
             str(path), model, str(path.parent), f"{path.stem}{TRANSCRIPT_SUFFIX}",

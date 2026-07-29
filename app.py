@@ -55,6 +55,10 @@ class PathIn(BaseModel):
     path: str
 
 
+class FolderIn(PathIn):
+    dry_run: bool = False
+
+
 class StartIn(BaseModel):
     source: str
     model: str
@@ -260,11 +264,11 @@ def search(q: str = "") -> dict:
 
 
 @app.post("/api/queue-folder")
-async def queue_folder(body: PathIn) -> dict:
+async def queue_folder(body: FolderIn) -> dict:
     folder = Path(body.path).expanduser()
     if not folder.is_dir():
         raise HTTPException(400, {"code": "invalid_input_path", "message": f"Not a folder: {folder}"})
-    return await watch.queue_folder(folder)
+    return await watch.queue_folder(folder, dry_run=body.dry_run)
 
 
 # --- odds and ends -----------------------------------------------------------
