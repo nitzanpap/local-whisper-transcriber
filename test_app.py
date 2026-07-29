@@ -388,14 +388,14 @@ async def main() -> None:
     check("keeps what was already there", config.settings().get("whisper_cli_path", "").endswith("whisper-cli"))
     check("stores a new value", config.settings()["default_language"] == "he")
 
-    app.put_settings(app.SettingsIn(vocabulary="Yaacov"))
+    app.put_settings(app.SettingsIn(vocabulary="Grafana"))
     check("a partial save leaves other fields alone",
           config.settings()["vad_model_path"] == "/models/silero.bin" and
-          config.settings()["vocabulary"] == "Yaacov", str(config.settings()))
+          config.settings()["vocabulary"] == "Grafana", str(config.settings()))
     app.put_settings(app.SettingsIn(vad_model_path=""))
     check("an empty value clears the field, so vad can be switched off",
           config.settings()["vad_model_path"] == "", str(config.settings()))
-    check("and clearing one leaves the rest", config.settings()["vocabulary"] == "Yaacov")
+    check("and clearing one leaves the rest", config.settings()["vocabulary"] == "Grafana")
     app.put_settings(app.SettingsIn(vocabulary=""))
     models_dir = TMP / "models"
     models_dir.mkdir(exist_ok=True)
@@ -418,10 +418,10 @@ async def main() -> None:
     plain = " ".join(transcribe.whisper_command(job, Path("/tmp/a.wav")))
     check("no vad flags otherwise", "--vad" not in plain)
 
-    vocab_job = jobs.make_job(src, model, str(out), "vocab", vocabulary=" Yaacov, escalation  ")
+    vocab_job = jobs.make_job(src, model, str(out), "vocab", vocabulary=" Grafana, escalation  ")
     cmd = transcribe.whisper_command(vocab_job, Path("/tmp/a.wav"))
     check("vocabulary is passed as one argument, not split",
-          "Yaacov, escalation" in cmd and cmd[cmd.index("Yaacov, escalation") - 1] == "--prompt", str(cmd))
+          "Grafana, escalation" in cmd and cmd[cmd.index("Grafana, escalation") - 1] == "--prompt", str(cmd))
     check("and carried past the first window", "--carry-initial-prompt" in cmd)
     blank = transcribe.whisper_command(jobs.make_job(src, model, str(out), "b", vocabulary="   "),
                                        Path("/tmp/a.wav"))

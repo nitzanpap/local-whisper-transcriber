@@ -3,3 +3,17 @@ __pycache__/
 desktop/node_modules/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+
+# Your data never belongs in the repo. It normally lives in
+# ~/.local-whisper-transcriber, but LWT_DATA_DIR can point anywhere, so these are
+# ignored here too rather than trusted not to appear.
+settings.json
+history.jsonl
+work/
+*.srt
+*.m4a
+*.mp3
+*.wav
+*.mp4
+*.mov
+*-transcript.txt
