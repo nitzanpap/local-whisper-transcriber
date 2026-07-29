@@ -53,10 +53,10 @@ function paint() {
   const exts = [f.want_txt && "txt", f.want_srt && "srt"].filter(Boolean);
   $("out-preview").innerHTML = f.out_dir && f.basename && exts.length
     ? `<i>…/${tail(f.out_dir).replace(/&/g, "&amp;").replace(/</g, "&lt;")}/</i><b>${f.basename.replace(/</g, "&lt;")}</b><i>.${exts.join(" + .")}</i>`
-    : `<i>Choose a file to see where the transcript will be written.</i>`;
+    : `<i>${t("new.outEmpty")}</i>`;
   $("start").disabled = !(f.source && f.model && f.out_dir && f.basename && exts.length);
   $("start").firstChild.textContent = extras.length
-    ? `Start ${extras.length + 1} transcriptions` : "Start transcription";
+    ? t("new.startMany", { n: extras.length + 1 }) : t("new.start");
   show($("choose-file"), !f.source);
   show($("paste-row"), !f.source);
   show($("file-card"), !!f.source);
@@ -107,7 +107,7 @@ function fillModels(models, saved) {
   const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
   sel.innerHTML = models.map(m =>
     `<option value="${esc(m.path)}">${esc(m.name)} · ${size(m.size)}</option>`)
-    .join("") + `<option value="${OTHER}">Somewhere else…</option>`;
+    .join("") + `<option value="${OTHER}">${t("new.elsewhere")}</option>`;
   show($("model-hint"), !models.length);
   // Largest model is first and therefore preselected; a saved default wins.
   if (saved && models.some(m => m.path === saved)) sel.value = saved;
@@ -126,8 +126,7 @@ $("model-pick").addEventListener("change", () => {
 function renderBatchNote() {
   show($("batch-note"), extras.length > 0);
   if (extras.length) {
-    $("batch-note").textContent = `+ ${extras.length} more queued after this one, ` +
-      `each written next to its own file with the same settings.`;
+    $("batch-note").textContent = t("new.batch", { n: extras.length });
   }
 }
 
@@ -194,23 +193,14 @@ $("start").onclick = async () => {
 };
 
 $("job-cancel").onclick = async () => {
-  if (!confirm("Cancel this transcription? The part already transcribed is kept, so you can resume.")) return;
+  if (!confirm(t("job.cancelConfirm"))) return;
   try { await api("/cancel", {}); } catch (err) { formError(err.detail); }
   await refresh();
 };
 $("job-again").onclick = () => { pinned = true; render(lastState); };
 
-const STAGES = {
-  queued: "Waiting to start",
-  starting: "Getting ready",
-  converting: "Preparing 16 kHz mono audio",
-  transcribing: "Transcribing",
-  saving: "Writing transcript",
-  completed: "Done",
-  cancelling: "Stopping",
-  cancelled: "Cancelled",
-  failed: "Failed",
-};
+const STAGE_KEYS = ["queued", "starting", "converting", "transcribing", "saving",
+                    "completed", "cancelling", "cancelled", "failed"];
 
 function renderJob(job) {
   const live = job.status === "running" || job.status === "cancelling";
@@ -219,7 +209,7 @@ function renderJob(job) {
   $("job-meta").innerHTML = [job.source.split("/").pop(), clock(job.duration), job.language,
     job.model.split("/").pop()].map(x => `<span>${x}</span>`).join("<i>·</i>");
   $("job-count").innerHTML = `${pct}<sup>%</sup>`;
-  $("job-stage").textContent = STAGES[job.stage] || job.stage;
+  $("job-stage").textContent = STAGE_KEYS.includes(job.stage) ? t("job." + job.stage) : job.stage;
   $("job-progress").value = pct;
   $("job-tape").firstElementChild.style.width = pct + "%";
   $("job-tape").classList.toggle("idle", live && pct === 0);
@@ -227,7 +217,7 @@ function renderJob(job) {
 
   const secs = (live ? Date.now() / 1000 : job.ended_at || 0) - job.started_at;
   $("job-elapsed").textContent = clock(secs);
-  $("job-clock-label").textContent = live ? "elapsed" : "total";
+  $("job-clock-label").textContent = live ? t("job.elapsed") : t("job.total");
 
   show($("job-cancel"), live);
   show($("job-again"), !live);
@@ -249,8 +239,8 @@ function renderJob(job) {
     $("job-reveal").onclick = () => api("/reveal", { path: job.out_dir }).catch(() => {});
     $("job-copy").onclick = async (e) => {
       await navigator.clipboard.writeText(job.preview);
-      e.target.textContent = "Copied";
-      setTimeout(() => (e.target.textContent = "Copy transcript"), 1400);
+      e.target.textContent = t("job.copied");
+      setTimeout(() => (e.target.textContent = t("job.copy")), 1400);
     };
   }
 }
@@ -263,17 +253,18 @@ function renderQueue(rows) {
   $("queue-list").innerHTML = rows.map((r, i) => `
     <div class="artifact"><span class="ext">${i + 1}</span>
       <code>${r.source.split("/").pop().replace(/</g, "&lt;")}</code>
-      <button class="link" data-dequeue="${r.id}">Remove</button></div>`).join("");
+      <button class="link" data-dequeue="${r.id}">${t("job.remove")}</button></div>`).join("");
 }
 
 function renderResumable(rows) {
   show($("resumable"), rows.length > 0);
   if (!rows.length) return;
   $("resumable-list").innerHTML = rows.map(r => `
-    <p>${r.source.split("/").pop().replace(/</g, "&lt;")} — reached
-       <b>${clock(r.reached_ms / 1000)}</b>${r.duration ? " of " + clock(r.duration) : ""}, ${r.was}.
-       <button class="link" data-resume="${r.id}">Resume</button>
-       <button class="link" data-discard="${r.id}">Discard</button></p>`).join("");
+    <p>${t("job.reached", { name: r.source.split("/").pop().replace(/</g, "&lt;"),
+                            at: clock(r.reached_ms / 1000),
+                            of: r.duration ? " / " + clock(r.duration) : "", was: r.was })}
+       <button class="link" data-resume="${r.id}">${t("job.resume")}</button>
+       <button class="link" data-discard="${r.id}">${t("job.discard")}</button></p>`).join("");
 }
 
 document.addEventListener("click", async (e) => {
@@ -284,7 +275,7 @@ document.addEventListener("click", async (e) => {
     if (dequeueId) await api("/queue/" + dequeueId, null, "DELETE");
     else if (resumeId) { pinned = false; await api("/resume/" + resumeId, {}, "POST"); }
     else if (discardId) {
-      if (!confirm("Discard this run's progress? The part already transcribed is lost.")) return;
+      if (!confirm(t("job.discardConfirm"))) return;
       await api("/resume/" + discardId, null, "DELETE");
     } else return;
     await refresh();
@@ -295,7 +286,7 @@ function render(s) {
   lastState = s;
   const missing = Object.entries(s.environment).filter(([, v]) => !v.ok).map(([k]) => k);
   $("env").className = missing.length ? "pill bad" : "pill";
-  $("env").textContent = missing.length ? `missing ${missing.join(", ")}` : "ffmpeg + whisper-cli ready";
+  $("env").textContent = missing.length ? t("env.missing", { names: missing.join(", ") }) : t("env.ready");
 
   if (!bootstrapped) {
     bootstrapped = true;
@@ -327,10 +318,10 @@ function render(s) {
 // the percentage just stopped moving. Say so instead.
 function offline() {
   $("env").className = "pill bad";
-  $("env").textContent = "backend not reachable";
+  $("env").textContent = t("env.offline");
   const job = lastState && lastState.job;
   if (job && (job.status === "running" || job.status === "cancelling")) {
-    $("job-stage").textContent = "Lost contact with the backend. Restart it, then start again.";
+    $("job-stage").textContent = t("job.lost");
     $("job-tape").classList.remove("idle");
   }
 }
@@ -360,6 +351,7 @@ function routeChanged() {
 window.addEventListener("hashchange", routeChanged);
 routeChanged();
 
+applyTranslations();
 const refresh = () => api("/state").then(render).catch(offline);
 refresh();
 setInterval(refresh, 1000); // polling a loopback server is free; no SSE needed

@@ -1,9 +1,16 @@
 /* Letterpress on warm paper. Fonts are local-only on purpose: a webfont request
    would contradict the one promise this app makes. */
 :root {
-  --display: Superclarendon, "Charter", "Iowan Old Style", Georgia, serif;
-  --sans: "Avenir Next", Avenir, Optima, system-ui, sans-serif;
+  /* Superclarendon and Avenir have no Hebrew glyphs at all, so Hebrew fell back
+     to whatever the browser chose. Naming a Hebrew face after each Latin one
+     lets the browser pick per glyph: Latin from the first, Hebrew from the next. */
+  --display: Superclarendon, "New Peninim MT", "Charter", Georgia, serif;
+  --sans: "Avenir Next", Avenir, Raanana, system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Reading preferences, overridden from Settings. */
+  --reading-face: var(--display);
+  --reading-size: 1.02rem;
 
   --paper: #f2eee5;
   --sheet: #fbf9f4;
@@ -63,7 +70,7 @@ section { margin-bottom: 2rem; }
 
 /* the big invitation */
 .invite {
-  width: 100%; text-align: left; cursor: pointer; background: var(--sheet);
+  width: 100%; text-align: start; cursor: pointer; background: var(--sheet);
   border: 1px solid var(--rule); border-radius: 3px; box-shadow: var(--shadow);
   padding: clamp(1.5rem, 4.5vw, 2.2rem); color: inherit;
   font-family: var(--sans); text-transform: none; letter-spacing: normal;
@@ -93,7 +100,7 @@ input[type=text], select {
   flex: 1; min-width: 0; padding: .4rem 0; border: 0; background: none; color: inherit;
   font: 400 .95rem/1.4 var(--mono); appearance: none; text-overflow: ellipsis;
 }
-input[type=text] { padding-right: .6rem; }
+input[type=text] { padding-inline-end: .6rem; }
 select {
   font-family: var(--sans); font-size: 1rem; cursor: pointer; padding-right: 1.4rem;
   /* appearance:none removes the caret, so put one back or it reads as plain text */
@@ -158,7 +165,7 @@ button.danger:hover { color: var(--accent); border-color: var(--accent); }
 /* tape-counter rule */
 .tape { position: relative; height: 1.6rem; margin: 1.4rem 0 .4rem; overflow: hidden; }
 .tape::before, .tape > i {
-  position: absolute; inset: 0 auto 0 0; height: 100%; width: 100%;
+  position: absolute; inset-block: 0; inset-inline-start: 0; height: 100%; width: 100%;
   background-image: repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 6px);
 }
 .tape::before { content: ""; color: var(--rule); }
@@ -179,7 +186,8 @@ button.danger:hover { color: var(--accent); border-color: var(--accent); }
      lines read right-to-left with punctuation in place and English lines don't. */
   unicode-bidi: plaintext; text-align: start;
 }
-.note { border-left: 2px solid var(--accent); padding: .1rem 0 .1rem .9rem; margin: 1.5rem 0; }
+.note { border-inline-start: 2px solid var(--accent); padding: .1rem 0 .1rem .9rem;
+        padding-inline-start: .9rem; margin: 1.5rem 0; }
 .note h2 { font: 400 1.15rem/1.3 var(--display); }
 .note p { color: var(--ink-soft); font-size: .92rem; margin-top: .25rem; }
 pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); padding: .8rem; border-radius: 3px; overflow: auto; max-height: 14rem; white-space: pre-wrap; margin-top: .6rem; }
@@ -187,8 +195,8 @@ pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); paddi
 /* --- history --- */
 .scroller { overflow-x: auto; } /* narrow screens scroll the table, not the page */
 .history { width: 100%; min-width: 26rem; border-collapse: collapse; }
-.history th { text-align: left; font: 500 .66rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); padding-bottom: .5rem; border-bottom: 1px solid var(--rule); }
-.history td { padding: .6rem .5rem .6rem 0; border-bottom: 1px solid var(--rule-soft); font-size: .88rem; vertical-align: baseline; }
+.history th { text-align: start; font: 500 .66rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); padding-bottom: .5rem; border-bottom: 1px solid var(--rule); }
+.history td { padding-block: .6rem; padding-inline: 0 .5rem; border-bottom: 1px solid var(--rule-soft); font-size: .88rem; vertical-align: baseline; }
 .history td:first-child { font-family: var(--display); font-size: 1rem; }
 .history .st { font: 500 .68rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .history time { color: var(--ink-soft); font: 400 .76rem/1 var(--mono); white-space: nowrap; }
@@ -216,7 +224,7 @@ nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* --- library --------------------------------------------------------------- */
 .entry {
-  display: block; width: 100%; text-align: left; padding: .8rem 0; cursor: pointer;
+  display: block; width: 100%; text-align: start; padding: .8rem 0; cursor: pointer;
   border: 0; border-bottom: 1px solid var(--rule-soft); border-radius: 0;
   background: none; color: inherit; text-transform: none; letter-spacing: normal;
   font-family: var(--sans); font-weight: 400; font-size: 1rem;
@@ -248,9 +256,10 @@ textarea:focus { outline: none; border-color: var(--ink); }
   display: flex; gap: .8rem; align-items: baseline; padding: .45rem .5rem;
   border-radius: 3px; cursor: pointer; scroll-margin: 40vh;
   /* Each line takes its direction from its own first strong character, so Hebrew
-     reads right-to-left with punctuation in place and English lines do not. */
+     reads right-to-left with punctuation in place and English lines do not. The
+     container's dir decides which side the timestamp column sits on. */
   unicode-bidi: plaintext; text-align: start;
-  font: 400 1.02rem/1.7 var(--display);
+  font: 400 var(--reading-size)/1.7 var(--reading-face);
 }
 .cue:hover { background: var(--rule-soft); }
 .cue:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -260,4 +269,28 @@ textarea:focus { outline: none; border-color: var(--ink); }
 }
 .cue.now { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .cue.now .at { color: var(--accent); }
-.sheet.plain { font: 400 1rem/1.75 var(--display); max-height: none; }
+.sheet.plain { font: 400 var(--reading-size)/1.75 var(--reading-face); max-height: none; }
+.sheet.plain { unicode-bidi: plaintext; text-align: start; }
+
+
+/* --- interface language ----------------------------------------------------- */
+.head-right { display: flex; align-items: center; gap: 1rem; }
+#lang-switch { display: flex; border: 1px solid var(--rule); border-radius: 2px; overflow: hidden; }
+#lang-switch button {
+  border: 0; border-radius: 0; padding: .3rem .55rem; font-size: .68rem;
+  color: var(--ink-soft); background: none;
+}
+#lang-switch button + button { border-inline-start: 1px solid var(--rule); }
+#lang-switch button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+#lang-switch button:hover:not([aria-pressed="true"]) { color: var(--ink); }
+
+/* The caret sits on the side the text ends on. */
+[dir="rtl"] select {
+  background-position: left .1rem center;
+  padding-inline: 1.4rem 0;
+}
+/* Latin-only bits keep their own direction wherever they appear. */
+[dir="rtl"] .out, [dir="rtl"] code, [dir="rtl"] pre.tech, [dir="rtl"] #set-watch,
+[dir="rtl"] input[type=text], [dir="rtl"] .artifact code {
+  direction: ltr; text-align: left;
+}

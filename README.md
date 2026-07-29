@@ -108,17 +108,23 @@ clicking a result jumps straight to that sentence in that recording.
 
 ### Settings
 
-The defaults every new job inherits.
+Split in two: **the basics** at the top — the four things that actually change the result —
+and **Expert** below for file paths and flags.
 
 | Setting | What it does |
 |---|---|
-| **Model** | Which whisper model to use. Found automatically. |
-| **Language** | The language of your recordings. **Check this before a batch** — Hebrew audio transcribed as English comes out as nonsense, and whatever you used last becomes the default. |
-| **Extra arguments** | Passed to `whisper-cli` as-is. |
-| **Watched folders** | Folders to transcribe automatically. See below. |
-| **Vocabulary** | Names and jargon whisper keeps mangling. See below. |
-| **VAD model** | Path to the silero model. Empty turns VAD off. |
-| **Tool paths** | Only if `ffmpeg` or `whisper-cli` live somewhere unusual. |
+| **Language spoken in your recordings** | **Check this before a batch** — Hebrew read as English does not fail, it invents. Whatever you used last is remembered. |
+| **Quality** | Best / Good / Quick, from the models you have. Bigger is more accurate and slower. |
+| **Words it keeps getting wrong** | Names and jargon, so it reaches for them instead of guessing. |
+| **Skip silence** | On unless you turn it off. Stops it inventing speech during quiet stretches. |
+| **Transcript text** | Size and typeface for reading transcripts. |
+| **Backup** | Save every setting to a file, or load one back. Transcripts are not included — they are already files. |
+| **Expert** | Model and silence-model paths, extra `whisper-cli` arguments, and where `ffmpeg` lives. Normally untouched. |
+
+The interface itself is in English or Hebrew — the **EN / עב** switch sits at the top. In
+Hebrew the whole layout mirrors. Separately, a transcript of a right-to-left recording is
+always laid out right-to-left, whatever the interface language, with the timestamps on the
+right where they belong.
 
 ---
 

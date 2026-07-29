@@ -29,12 +29,16 @@ function renderEntries() {
     <button class="entry" data-entry="${esc(e.id)}">
       <span class="entry-name">${esc(e.name)}</span>
       <span class="meta">${esc(clock(e.duration))}<i>·</i>${esc(e.language)}<i>·</i>${esc(when(e.ended_at))}${
-        e.has_media ? "" : "<i>·</i>recording moved"}</span>
+        e.has_media ? "" : `<i>·</i>${t("lib.moved")}`}</span>
     </button>`).join("")
-    : `<p class="hint">Nothing transcribed yet. The Transcribe view is where that starts.</p>`;
+    : `<p class="hint">${t("lib.empty")}</p>`;
 }
 
 // --- one transcript ----------------------------------------------------------
+
+// A Hebrew transcript should read like a Hebrew page: the timestamp column on
+// the right, the text beginning at the right edge.
+const RTL_LANGUAGES = new Set(["he", "ar", "fa", "ur", "yi", "iw"]);
 
 async function showEntry(id, seekMs) {
   let detail;
@@ -56,16 +60,19 @@ async function showEntry(id, seekMs) {
   } else {
     player.removeAttribute("src");
     player.hidden = true;
-    $("player-note").textContent = "The original recording is no longer where it was, so there is nothing to play.";
+    $("player-note").textContent = t("lib.noMedia");
   }
 
   // Cues when an .srt survives; otherwise the plain text, which cannot be seeked.
   cueEls = [];
   activeCue = -1;
+  const rtl = RTL_LANGUAGES.has((detail.language || "").toLowerCase());
+  $("cues").dir = rtl ? "rtl" : "ltr";
+  $("reader-name").dir = "auto";  // the file name has its own language
   if (detail.cues.length) {
     $("cues").innerHTML = detail.cues.map((c, i) =>
       `<p class="cue" data-cue="${i}" data-at="${c.start}" role="button" tabindex="0"
-          title="Jump to ${stampOf(c.start)}"><span class="at">${stampOf(c.start)}</span>${esc(c.text)}</p>`).join("");
+          title="${t("lib.jumpTo", { at: stampOf(c.start) })}"><span class="at">${stampOf(c.start)}</span>${esc(c.text)}</p>`).join("");
     cueEls = [...$("cues").querySelectorAll(".cue")];
   } else {
     $("cues").innerHTML = `<pre class="sheet plain">${esc(detail.text)}</pre>`;
@@ -134,8 +141,8 @@ $("reader-copy").onclick = async (e) => {
   const text = openEntry.cues.length
     ? openEntry.cues.map(c => c.text).join("\n") : openEntry.text;
   await navigator.clipboard.writeText(text);
-  e.target.textContent = "Copied";
-  setTimeout(() => (e.target.textContent = "Copy transcript"), 1400);
+  e.target.textContent = t("job.copied");
+  setTimeout(() => (e.target.textContent = t("job.copy")), 1400);
 };
 
 $("reader-reveal").onclick = () => {
@@ -167,8 +174,8 @@ async function runSearch() {
     return formError(err.detail);
   }
   $("search-status").textContent = hits.length
-    ? `${hits.length} match${hits.length === 1 ? "" : "es"}`
-    : "No transcript contains that.";
+    ? t(hits.length === 1 ? "lib.hits" : "lib.hitsPlural", { n: hits.length })
+    : t("lib.noHits");
   show($("hits-box"), hits.length > 0);
   $("hits").innerHTML = hits.map(h => `
     <button class="entry" data-entry="${esc(h.id)}" data-at="${Number(h.start)}">
