@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Whisper Transcriber</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Local Whisper <em>Transcriber</em></h1>
+  <div class="masthead">
+    <p class="kicker">Audio in, transcript out &nbsp;·&nbsp; nothing leaves this computer</p>
+    <p class="pill" id="env" aria-live="polite"></p>
+  </div>
+</header>
+
+<!-- ============ compose ============ -->
+<main id="screen-new">
+
+  <div class="note" id="resumable" hidden>
+    <h2>Unfinished transcription</h2>
+    <div id="resumable-list"></div>
+  </div>
+
+  <section class="step">
+    <span class="label" id="lbl-file">Source</span>
+    <button class="invite" id="choose-file" hidden>
+      <b>Choose an audio or video file</b>
+      <span>MP3, WAV, M4A, MP4, MOV — anything your ffmpeg reads.</span>
+    </button>
+    <div class="paste" id="paste-row" hidden>
+      <label class="label" for="source">or paste a path</label>
+      <div class="line"><input type="text" id="source" spellcheck="false" placeholder="/Users/you/Documents/recording.m4a"></div>
+    </div>
+    <div class="file" id="file-card" hidden>
+      <div class="file-top">
+        <span class="file-name" id="file-name"></span>
+        <button class="link" id="change-file">Change</button>
+      </div>
+      <p class="meta" id="file-meta"></p>
+      <p class="hint" id="batch-note" hidden></p>
+    </div>
+  </section>
+
+  <div id="rest" hidden>
+    <section class="step reveal" id="rest-inner">
+      <span class="label">Transcription</span>
+      <div class="grid two">
+        <div class="field">
+          <label class="label" for="model-pick">whisper.cpp model</label>
+          <div class="line" id="model-line">
+            <select id="model-pick"></select>
+          </div>
+          <div class="line" id="model-line-manual" hidden>
+            <input type="text" id="model" spellcheck="false" placeholder="/path/to/ggml-large-v3.bin"
+                   aria-label="whisper.cpp model path">
+            <button class="link" id="choose-model">Browse</button>
+          </div>
+          <p class="hint" id="model-hint" hidden>No models found. Put a <code>ggml-*.bin</code> file in
+            <code>~/whisper-models</code>, or point at one.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="language">Language</label>
+          <div class="line">
+            <select id="language">
+              <option value="he">Hebrew</option>
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+              <option value="ru">Russian</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="auto">Detect</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="step">
+      <span class="label">Result</span>
+      <p class="out" id="out-preview"></p>
+      <div class="chips" style="margin-top:1rem">
+        <label class="chip"><input type="checkbox" id="want-txt" checked><span>Transcript · txt</span></label>
+        <label class="chip"><input type="checkbox" id="want-srt" checked><span>Subtitles · srt</span></label>
+      </div>
+
+      <details class="tight" style="margin-top:1.25rem">
+        <summary>Advanced</summary>
+        <div>
+          <div class="field">
+            <label class="label" for="out-dir">Output folder</label>
+            <div class="line">
+              <input type="text" id="out-dir" spellcheck="false">
+              <button class="link" id="choose-dir">Browse</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label" for="basename">Output name</label>
+            <div class="line"><input type="text" id="basename" spellcheck="false"></div>
+          </div>
+          <div class="field">
+            <label class="label" for="extra">Extra whisper-cli arguments</label>
+            <div class="line"><input type="text" id="extra" spellcheck="false"></div>
+            <p class="hint">Split into separate tokens. Never run through a shell.</p>
+          </div>
+          <div class="chips">
+            <label class="chip"><input type="checkbox" id="keep"><span>Keep intermediate audio</span></label>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <div class="actions">
+      <button class="solid" id="start" disabled>Start transcription</button>
+      <button class="link" id="reset">Clear</button>
+    </div>
+  </div>
+
+  <div class="note" id="form-error" hidden tabindex="-1" role="alert">
+    <h2 id="form-error-msg"></h2>
+    <pre class="tech" id="form-error-details" hidden></pre>
+  </div>
+</main>
+
+<!-- ============ job ============ -->
+<main id="screen-job" hidden>
+  <p class="meta" id="job-meta"></p>
+
+  <div class="readout" style="margin-top:1.25rem">
+    <div>
+      <p class="count" id="job-count" aria-hidden="true">0<sup>%</sup></p>
+      <p class="stage" id="job-stage" role="status"></p>
+    </div>
+    <p class="clock"><b id="job-elapsed">0:00</b><span id="job-clock-label">elapsed</span></p>
+  </div>
+
+  <div class="tape" id="job-tape"><i></i></div>
+  <progress class="sr" id="job-progress" max="100" value="0" aria-label="Transcription progress"></progress>
+
+  <div class="note" id="job-error" hidden tabindex="-1" role="alert">
+    <h2 id="job-error-msg"></h2>
+    <p id="job-error-code"></p>
+    <details class="tight"><summary>Technical details</summary><pre class="tech" id="job-error-details"></pre></details>
+  </div>
+
+  <div id="job-result" hidden>
+    <div id="job-files"></div>
+    <div class="actions" style="margin-top:1.25rem">
+      <button id="job-reveal">Open folder</button>
+      <button id="job-copy">Copy transcript</button>
+    </div>
+    <div class="sheet" id="job-preview" tabindex="0" aria-label="Transcript preview"></div>
+  </div>
+
+  <div class="actions">
+    <button class="danger" id="job-cancel">Cancel transcription</button>
+    <button class="solid" id="job-again" hidden>Transcribe another file</button>
+  </div>
+
+  <details class="tight" style="margin-top:1.5rem">
+    <summary>Process log</summary>
+    <pre class="tech" id="job-log"></pre>
+  </details>
+</main>
+
+<!-- ============ queue (visible while composing and while running) ============ -->
+<section class="step" id="queue-box" hidden style="margin-top:2.5rem">
+  <span class="label">Waiting</span>
+  <div id="queue-list"></div>
+</section>
+
+<!-- ============ history ============ -->
+<section id="history-box" hidden style="margin-top:3.5rem">
+  <span class="label" style="color:var(--ink-soft)">Recent</span>
+  <div class="scroller">
+    <table class="history">
+      <thead><tr><th>File</th><th>Status</th><th>Lang</th><th>Finished</th></tr></thead>
+      <tbody id="history"></tbody>
+    </table>
+  </div>
+</section>
+
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

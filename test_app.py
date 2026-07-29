@@ -17,7 +17,12 @@ from pathlib import Path
 TMP = Path(tempfile.mkdtemp(prefix="lwt-test-"))
 os.environ["LWT_DATA_DIR"] = str(TMP / "data")
 
-import app  # noqa: E402  (must follow the env var)
+import app  # noqa: E402  (all of these must follow the env var)
+import config  # noqa: E402
+import jobs  # noqa: E402
+import library  # noqa: E402
+import tools  # noqa: E402
+import watch  # noqa: E402
 
 FAKE_FFMPEG = """#!/bin/sh
 echo "fake ffmpeg running" >&2
@@ -60,9 +65,9 @@ def write_fakes() -> dict:
         p.write_text(body)
         p.chmod(0o755)
         paths[name] = str(p)
-    app.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     # settings keys are underscored: whisper-cli -> whisper_cli_path
-    app.SETTINGS.write_text(json.dumps({f"{k.replace('-', '_')}_path": v for k, v in paths.items()}))
+    config.SETTINGS.write_text(json.dumps({f"{k.replace('-', '_')}_path": v for k, v in paths.items()}))
     return paths
 
 
@@ -86,8 +91,8 @@ async def main() -> None:
     src, model, out = fixtures()
 
     print("happy path")
-    job = app.make_job(src, model, str(out), "meeting-transcript")
-    await app.run_job(job)
+    job = jobs.make_job(src, model, str(out), "meeting-transcript")
+    await jobs.run_job(job)
     check("status completed", job["status"] == "completed", job.get("error") or "")
     check("txt written", (out / "meeting-transcript.txt").exists())
     check("srt written", (out / "meeting-transcript.srt").exists())
@@ -99,9 +104,9 @@ async def main() -> None:
     check("srt numbered from 1", (out / "meeting-transcript.srt").read_text().startswith("1\n"))
     check("srt hour rollover correct", "00:01:06,500" in (out / "meeting-transcript.srt").read_text())
     check("transcript kept out of the log", not any("shalom" in line for line in job["log"]))
-    check("work dir cleaned", not (app.WORK_DIR / job["id"]).exists())
+    check("work dir cleaned", not (config.WORK_DIR / job["id"]).exists())
     check("source untouched", Path(src).read_bytes() == b"not really audio")
-    check("history recorded", len(app.history()) == 1)
+    check("history recorded", len(jobs.history()) == 1)
 
     print("collision detection")
     body = app.StartIn(source=src, model=model, out_dir=str(out), basename="meeting-transcript")
@@ -110,8 +115,8 @@ async def main() -> None:
 
     print("whisper failure")
     os.environ["FAIL_CODE"] = "3"
-    job = app.make_job(src, model, str(out), "fails")
-    await app.run_job(job)
+    job = jobs.make_job(src, model, str(out), "fails")
+    await jobs.run_job(job)
     del os.environ["FAIL_CODE"]
     check("status failed", job["status"] == "failed")
     check("error code", job["error"]["code"] == "whisper_failed", job["error"]["message"])
@@ -119,12 +124,12 @@ async def main() -> None:
 
     print("cancellation")
     os.environ["SLOW"] = "1"
-    job = app.make_job(src, model, str(out), "cancelled")
-    app.JOB = job
-    task = asyncio.create_task(app.run_job(job))
-    while app.PROC is None or job["stage"] != "transcribing":
+    job = jobs.make_job(src, model, str(out), "cancelled")
+    jobs.JOB = job
+    task = asyncio.create_task(jobs.run_job(job))
+    while tools.PROC is None or job["stage"] != "transcribing":
         await asyncio.sleep(0.05)
-    child = app.PROC.pid
+    child = tools.PROC.pid
     app.cancel()
     await asyncio.wait_for(task, 10)
     del os.environ["SLOW"]
@@ -139,97 +144,97 @@ async def main() -> None:
             def __init__(self, code, out="", err=""):
                 self.returncode, self.stdout, self.stderr = code, out, err
 
-        real_run = app.subprocess.run
+        real_run = tools.subprocess.run
         try:
-            app.subprocess.run = lambda *a, **k: FakeRun(0, "/tmp/picked file.mp3\n")
+            tools.subprocess.run = lambda *a, **k: FakeRun(0, "/tmp/picked file.mp3\n")
             check("chosen path returned", app.pick()["path"] == "/tmp/picked file.mp3")
-            app.subprocess.run = lambda *a, **k: FakeRun(1, "", "execution error: User canceled. (-128)")
+            tools.subprocess.run = lambda *a, **k: FakeRun(1, "", "execution error: User canceled. (-128)")
             check("cancel is not an error", app.pick()["path"] is None)
-            app.subprocess.run = lambda *a, **k: FakeRun(1, "", "osascript: no such thing")
+            tools.subprocess.run = lambda *a, **k: FakeRun(1, "", "osascript: no such thing")
             try:
                 app.pick()
                 raise AssertionError("FAIL: a broken picker was reported as success")
             except app.HTTPException as exc:
                 check("broken picker surfaced", exc.status_code == 500)
         finally:
-            app.subprocess.run = real_run
+            tools.subprocess.run = real_run
 
     print("queue")
-    first = app.make_job(src, model, str(out), "q-one")
-    second = app.make_job(src, model, str(out), "q-two")
-    app.enqueue(first)
-    app.enqueue(second)
-    check("both waiting", len(app.QUEUE) == 2, str(len(app.QUEUE)))
-    await app.PUMP
+    first = jobs.make_job(src, model, str(out), "q-one")
+    second = jobs.make_job(src, model, str(out), "q-two")
+    jobs.enqueue(first)
+    jobs.enqueue(second)
+    check("both waiting", len(jobs.QUEUE) == 2, str(len(jobs.QUEUE)))
+    await jobs.PUMP
     check("first ran", first["status"] == "completed" and (out / "q-one.txt").exists())
     check("second ran", second["status"] == "completed" and (out / "q-two.txt").exists())
     check("ran in order", first["started_at"] <= second["started_at"])
-    check("queue drained", app.QUEUE == [])
-    check("both in history", len([h for h in app.history() if "/q-" in str(h["outputs"])]) == 2)
+    check("queue drained", jobs.QUEUE == [])
+    check("both in history", len([h for h in jobs.history() if "/q-" in str(h["outputs"])]) == 2)
 
-    waiting = app.make_job(src, model, str(out), "never-runs")
-    app.QUEUE.append(waiting)  # appended directly: enqueue would start it
-    app.dequeue(waiting["id"])
-    check("removed from the queue", app.QUEUE == [])
+    waiting = jobs.make_job(src, model, str(out), "never-runs")
+    jobs.QUEUE.append(waiting)  # appended directly: enqueue would start it
+    check("removed from the queue", jobs.dequeue(waiting["id"]) and jobs.QUEUE == [])
+    check("removing it twice reports nothing to remove", jobs.dequeue(waiting["id"]) is False)
     try:
-        app.dequeue(waiting["id"])
+        app.dequeue(waiting["id"])  # the route turns that into a 404
         raise AssertionError("FAIL: removing a job twice was not rejected")
     except app.HTTPException as exc:
-        check("second removal rejected", exc.status_code == 404)
+        check("route answers 404", exc.status_code == 404)
 
     print("finding tools without a useful PATH")
     real_path = os.environ["PATH"]
-    real_dirs = app.BIN_DIRS
+    real_dirs = tools.BIN_DIRS
     try:
         os.environ["PATH"] = "/usr/bin:/bin"  # what launchd hands us
-        app.BIN_DIRS = (str(TMP / "bin"),)    # stand in for /opt/homebrew/bin
-        app.SETTINGS.unlink()                 # no overrides to fall back on
-        check("found off PATH", app.locate("ffmpeg") == str(TMP / "bin" / "ffmpeg"))
-        check("environment agrees", app.environment()["whisper-cli"]["ok"])
-        app.SETTINGS.write_text(json.dumps({"whisper_cli_path": "/somewhere/whisper-cli"}))
-        check("hyphenated override honoured", app.locate("whisper-cli") == "/somewhere/whisper-cli")
+        tools.BIN_DIRS = (str(TMP / "bin"),)    # stand in for /opt/homebrew/bin
+        config.SETTINGS.unlink()                 # no overrides to fall back on
+        check("found off PATH", tools.locate("ffmpeg") == str(TMP / "bin" / "ffmpeg"))
+        check("environment agrees", tools.environment()["whisper-cli"]["ok"])
+        config.SETTINGS.write_text(json.dumps({"whisper_cli_path": "/somewhere/whisper-cli"}))
+        check("hyphenated override honoured", tools.locate("whisper-cli") == "/somewhere/whisper-cli")
     finally:
         os.environ["PATH"] = real_path
-        app.BIN_DIRS = real_dirs
+        tools.BIN_DIRS = real_dirs
         write_fakes()
 
     print("queue survives a restart")
-    pending = app.make_job(src, model, str(out), "after-restart")
-    app.QUEUE.append(pending)  # appended directly so the pump leaves it alone
-    app.save(pending)
+    pending = jobs.make_job(src, model, str(out), "after-restart")
+    jobs.QUEUE.append(pending)  # appended directly so the pump leaves it alone
+    jobs.save(pending)
     pending["status"] = "queued"
-    app.save(pending)
-    app.QUEUE.clear()
-    app.restore_queue()  # what the lifespan hook does on boot
-    check("backlog picked back up", [j["id"] for j in app.QUEUE] == [pending["id"]],
-          str([j["id"] for j in app.QUEUE]))
-    await app.PUMP
+    jobs.save(pending)
+    jobs.QUEUE.clear()
+    jobs.restore_queue()  # what the lifespan hook does on boot
+    check("backlog picked back up", [j["id"] for j in jobs.QUEUE] == [pending["id"]],
+          str([j["id"] for j in jobs.QUEUE]))
+    await jobs.PUMP
     check("restored job ran", (out / "after-restart.txt").exists())
 
     print("a removed job stays removed")
-    dropped = app.make_job(src, model, str(out), "dropped")
+    dropped = jobs.make_job(src, model, str(out), "dropped")
     dropped["status"] = "queued"
-    app.save(dropped)
-    app.QUEUE.append(dropped)
-    app.dequeue(dropped["id"])
-    app.QUEUE.clear()
-    app.restore_queue()
-    check("not resurrected by a restart", app.QUEUE == [], str(app.QUEUE))
+    jobs.save(dropped)
+    jobs.QUEUE.append(dropped)
+    jobs.dequeue(dropped["id"])
+    jobs.QUEUE.clear()
+    jobs.restore_queue()
+    check("not resurrected by a restart", jobs.QUEUE == [], str(jobs.QUEUE))
 
     print("resume after an interrupted run")
     os.environ["HALF"] = "1"  # whisper stops after two segments, as if killed
-    job = app.make_job(src, model, str(out), "resumed")
-    await app.run_job(job)
+    job = jobs.make_job(src, model, str(out), "resumed")
+    await jobs.run_job(job)
     del os.environ["HALF"]
-    work = app.WORK_DIR / job["id"]
+    work = config.WORK_DIR / job["id"]
     check("partial work kept", (work / "segments.txt").exists() and (work / "audio.wav").exists())
     check("checkpoint written", (work / "job.json").exists())
-    offered = [r for r in app.resumable() if r["id"] == job["id"]]
+    offered = [r for r in jobs.resumable() if r["id"] == job["id"]]
     check("offered for resume", len(offered) == 1)
     check("reports how far it got", offered[0]["reached_ms"] == 4000, str(offered[0]))
 
-    resumed = app.load_job(job["id"])
-    await app.run_job(resumed)
+    resumed = jobs.load_job(job["id"])
+    await jobs.run_job(resumed)
     check("resumed run completed", resumed["status"] == "completed", resumed.get("error") or "")
     check("conversion was skipped", any("reusing" in line for line in resumed["log"]))
     check("resumed from the right point", any("--offset-t" in line and "4000" in line
@@ -239,15 +244,15 @@ async def main() -> None:
     srt = (out / "resumed.srt").read_text()
     check("resumed srt renumbered 1..3", [b.split("\n")[0] for b in srt.strip().split("\n\n")] == ["1", "2", "3"])
     check("resumed srt keeps absolute times", "00:00:04,000 --> 00:01:06,500" in srt)
-    check("no longer offered", not [r for r in app.resumable() if r["id"] == job["id"]])
+    check("no longer offered", not [r for r in jobs.resumable() if r["id"] == job["id"]])
 
     print("work dir sweep")
-    app.WORK_DIR.mkdir(parents=True, exist_ok=True)
-    stale, fresh = app.WORK_DIR / "stale", app.WORK_DIR / "fresh"
+    config.WORK_DIR.mkdir(parents=True, exist_ok=True)
+    stale, fresh = config.WORK_DIR / "stale", config.WORK_DIR / "fresh"
     stale.mkdir(exist_ok=True)
     fresh.mkdir(exist_ok=True)
     os.utime(stale, (0, 0))
-    app.sweep_work_dirs()
+    jobs.sweep_work_dirs()
     check("stale scratch removed", not stale.exists())
     check("live scratch kept", fresh.exists())
 
