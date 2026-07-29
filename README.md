@@ -65,6 +65,14 @@ curl -L -o ~/whisper-models/ggml-silero-v5.1.2.bin \
   https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
 ```
 
+**Give it a vocabulary.** Names, jargon and product terms whisper keeps mangling go in the
+Vocabulary field, and are handed to the model as context before every window (`--prompt`
+with `--carry-initial-prompt`; the prompt alone would only prime the first half minute of a
+40-minute meeting). On three minutes of a real meeting this produced about 10% more
+transcribed text in fewer, longer segments, and the right words started appearing —
+`אסקלציה` instead of `אסקלט`. Keep it short: whisper truncates a long prompt, and a list of
+words unrelated to the recording makes the result worse rather than better.
+
 A VAD model lives among the transcription models and is named the same way, so the model
 scanner deliberately refuses to offer anything called `*silero*` or `*vad*` as a model to
 transcribe with.

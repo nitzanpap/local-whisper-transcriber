@@ -6,6 +6,7 @@ const SETTING_FIELDS = {
   "set-language": "default_language",
   "set-extra": "default_extra_args",
   "set-vad": "vad_model_path",
+  "set-vocab": "vocabulary",
   "set-ffmpeg": "ffmpeg_path",
   "set-ffprobe": "ffprobe_path",
   "set-whisper": "whisper_cli_path",

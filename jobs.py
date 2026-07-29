@@ -28,7 +28,8 @@ RESUMABLE_STATES = ("running", "cancelling", "cancelled", "failed")
 
 def make_job(source: str, model: str, out_dir: str, basename: str, *, language: str = "he",
              want_txt: bool = True, want_srt: bool = True, keep_intermediates: bool = False,
-             extra_args: str = "", duration: float | None = None, vad_model: str = "") -> dict:
+             extra_args: str = "", duration: float | None = None, vad_model: str = "",
+             vocabulary: str = "") -> dict:
     return {
         "id": uuid.uuid4().hex[:12],
         "status": "running", "stage": "starting", "percent": 0.0,
@@ -38,6 +39,7 @@ def make_job(source: str, model: str, out_dir: str, basename: str, *, language: 
         "keep_intermediates": keep_intermediates,
         "extra_args": shlex.split(extra_args),  # tokens, never a shell string
         "vad_model": vad_model,
+        "vocabulary": vocabulary,
         "duration": duration,
         "started_at": time.time(), "ended_at": None,
         "outputs": {}, "preview": "", "error": None,

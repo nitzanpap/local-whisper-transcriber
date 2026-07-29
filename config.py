@@ -43,8 +43,13 @@ def settings() -> dict:
 
 
 def save_settings(values: dict) -> dict:
-    """Persist non-empty values, leaving anything not mentioned untouched."""
-    merged = settings() | {k: v for k, v in values.items() if v not in (None, "")}
+    """Persist the values given, leaving anything not mentioned untouched.
+
+    An empty string is a real value here — it is how a field is cleared. Callers
+    must send only the keys they mean to change (see the route's exclude_unset),
+    or a partial save would wipe everything it left out.
+    """
+    merged = settings() | values
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     SETTINGS.write_text(json.dumps(merged, indent=2), encoding="utf-8")
     return merged

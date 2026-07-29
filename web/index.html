@@ -268,6 +268,19 @@
   </section>
 
   <section class="step">
+    <span class="label">Vocabulary</span>
+    <p class="hint">Names, jargon and product terms whisper keeps getting wrong. It is given
+      to the model as context before every window, so the words it should reach for are
+      already in mind. Keep it to a couple of lines — whisper truncates a long one, and a
+      list of words unrelated to the recording makes things worse, not better.</p>
+    <div class="field" style="margin-top:.8rem">
+      <label class="label sr" for="set-vocab">Vocabulary</label>
+      <textarea id="set-vocab" rows="3" spellcheck="false"
+                placeholder="Yaacov, Nitzan, escalation, alert, Grafana, נזילה"></textarea>
+    </div>
+  </section>
+
+  <section class="step">
     <span class="label">Watched folders</span>
     <p class="hint">Anything new in these folders is transcribed on its own, roughly every
       five minutes. Files still being written, files already transcribed, and files with a

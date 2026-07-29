@@ -128,6 +128,7 @@ async def queue_folder(folder: Path, dry_run: bool = False) -> dict:
             # not quietly run with different settings from a hand-started one.
             extra_args=conf.get("default_extra_args") or DEFAULT_EXTRA,
             vad_model=conf.get("vad_model_path", ""),
+            vocabulary=conf.get("vocabulary", ""),
             duration=await duration_seconds(path),
         )
         jobs.enqueue(job)

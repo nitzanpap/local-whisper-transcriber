@@ -80,6 +80,7 @@ class SettingsIn(BaseModel):
     default_language: str = ""
     default_extra_args: str = ""
     vad_model_path: str = ""
+    vocabulary: str = ""
     watch_folders: list[str] | None = None
 
 
@@ -184,6 +185,7 @@ async def start(body: StartIn) -> dict:
         language=body.language, want_txt=body.want_txt, want_srt=body.want_srt,
         keep_intermediates=body.keep_intermediates, extra_args=body.extra_args,
         vad_model=settings().get("vad_model_path", ""),
+        vocabulary=settings().get("vocabulary", ""),
         duration=await duration_seconds(source),
     )
     jobs.enqueue(queued)
@@ -301,9 +303,12 @@ def get_settings() -> dict:
 
 @app.put("/api/settings")
 def put_settings(body: SettingsIn) -> dict:
-    values = body.model_dump()
-    folders = values.pop("watch_folders")
-    if folders is not None:  # an empty list is a real choice; None means "unchanged"
+    # Only what the client actually sent: a field left out stays as it was, and a
+    # field sent empty is cleared. Without this, saving two fields from one screen
+    # would blank every field on the others.
+    values = body.model_dump(exclude_unset=True)
+    folders = values.pop("watch_folders", None)
+    if folders is not None:
         values["watch_folders"] = [str(Path(f).expanduser()) for f in folders if f.strip()]
     return save_settings(values)
 

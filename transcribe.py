@@ -121,6 +121,10 @@ def whisper_command(job: dict, wav: Path, resume_ms: int = 0) -> list[str]:
         # Voice activity detection: skips silence, which is where whisper likes to
         # invent text. Off unless a VAD model is configured.
         cmd += ["--vad", "--vad-model", job["vad_model"]]
+    if job.get("vocabulary", "").strip():
+        # --prompt alone primes only the first window, which on a 40-minute meeting
+        # is the first half minute. Carrying it applies the vocabulary throughout.
+        cmd += ["--prompt", job["vocabulary"].strip(), "--carry-initial-prompt"]
     return cmd + job["extra_args"]
 
 
