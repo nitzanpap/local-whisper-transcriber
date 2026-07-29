@@ -35,14 +35,33 @@ from tools import environment, find_models, kill_process_group, run_picker
 from transcribe import duration_seconds
 
 
+async def follow_parent(pid: int) -> None:
+    """Exit when whatever started us goes away.
+
+    The desktop app kills this process when it quits, but not if it is force
+    quit or crashes. Without this, the app the user closed could leave a server
+    behind — the exact thing they closed it to stop.
+    """
+    while True:
+        await asyncio.sleep(5)
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            os._exit(0)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     jobs.sweep_work_dirs()
     jobs.restore_queue()  # pick the backlog back up after a restart
-    watcher = asyncio.create_task(watch.watcher())
+    background = [asyncio.create_task(watch.watcher())]
+    parent = os.environ.get("LWT_PARENT_PID")
+    if parent and parent.isdigit():
+        background.append(asyncio.create_task(follow_parent(int(parent))))
     yield
-    watcher.cancel()
+    for task in background:
+        task.cancel()
 
 
 app = FastAPI(title="Local Whisper Transcriber", lifespan=lifespan)

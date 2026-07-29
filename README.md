@@ -36,37 +36,54 @@ The app finds models in `~/whisper-models` by itself. Nothing to configure.
 
 ## 2. Run it
 
+### As a Mac app (recommended)
+
+```bash
+cd desktop && npm install && npx tauri build
+```
+
+That produces **`Local Whisper Transcriber.app`** in
+`desktop/src-tauri/target/release/bundle/macos/` — drag it to `/Applications`. There is also
+a `.dmg` next to it if you want to move it to another Mac.
+
+Open it like any app. It starts the transcriber, shows the interface in its own window, and
+**stops everything when you quit** — including if you force quit it. Nothing of this app
+runs when its window is closed, and nothing starts at login unless you ask it to.
+
+Building it needs Rust and Node (`brew install rust node`); running the built app does not.
+
+### Or from the terminal
+
 ```bash
 uv run --script app.py
 ```
 
-That is the whole command. Dependencies are declared inside `app.py` (PEP 723), so `uv`
-installs them on first run — there is no virtualenv to create and no `pip install` step.
+Then open **http://127.0.0.1:8765**. `Ctrl-C` stops it.
 
-Then open **http://127.0.0.1:8765**
+Dependencies are declared inside `app.py` (PEP 723), so `uv` installs them on first run —
+there is no virtualenv to create and no `pip install` step.
 
-To stop it: `Ctrl-C`.
+### Or always, in the background
 
-### Keep it running always
-
-Better for day-to-day use: install it as a launch agent. It starts at login, restarts if it
-ever crashes, and survives closing your terminal.
+Only if you want it running whether or not you asked. It starts at login and restarts if it
+crashes — which also means it can transcribe on its own, spending GPU and memory while you
+are doing something else. Most people should not want this.
 
 ```bash
 sed "s|__DIR__|$PWD|g" launchagent.plist > ~/Library/LaunchAgents/com.local-whisper-transcriber.plist
 launchctl load ~/Library/LaunchAgents/com.local-whisper-transcriber.plist
 ```
 
-Managing it afterwards:
-
 ```bash
 launchctl list | grep whisper                                    # is it running?
 launchctl kickstart -k gui/$(id -u)/com.local-whisper-transcriber # restart it
 tail -f /tmp/local-whisper-transcriber.log                        # what is it doing?
-launchctl unload ~/Library/LaunchAgents/com.local-whisper-transcriber.plist  # turn it off
+launchctl unload ~/Library/LaunchAgents/com.local-whisper-transcriber.plist  # stop it
+rm ~/Library/LaunchAgents/com.local-whisper-transcriber.plist     # and never again
 ```
 
-Re-run the `sed` line whenever you pull changes to `launchagent.plist`.
+Idle it costs about 22 MB of memory and no measurable CPU; the GPU is only touched while a
+transcription actually runs.
 
 ---
 
@@ -201,6 +218,7 @@ uv run --script test_app.py     # ~80 checks, fake binaries, no model needed, ~5
 | `library.py` | Browsing, reading and searching past transcripts |
 | `watch.py` | Watched folders |
 | `web/` | `index.html`, `app.js`, `library.js`, `settings.js`, `styles.css` — no build step |
+| `desktop/` | The Mac app: a Tauri window that owns the backend's lifetime |
 
 The test suite uses fake `ffmpeg` and `whisper-cli` scripts, so it runs in seconds and needs
 no model.

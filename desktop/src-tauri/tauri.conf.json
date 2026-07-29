@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Local Whisper Transcriber",
+  "version": "0.1.0",
+  "identifier": "com.local-whisper-transcriber.desktop",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns"],
+    "category": "Productivity",
+    "shortDescription": "Local transcription with whisper.cpp",
+    "longDescription": "Turn recordings into transcripts on your own machine. Nothing is uploaded.",
+    "resources": {
+      "../../app.py": "backend/app.py",
+      "../../config.py": "backend/config.py",
+      "../../tools.py": "backend/tools.py",
+      "../../transcribe.py": "backend/transcribe.py",
+      "../../jobs.py": "backend/jobs.py",
+      "../../library.py": "backend/library.py",
+      "../../watch.py": "backend/watch.py",
+      "../../web/": "backend/web/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}
