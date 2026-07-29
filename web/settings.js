@@ -10,6 +10,9 @@ const SETTING_FIELDS = {
   "set-vad": "vad_model_path",
   "set-vocab": "vocabulary",
   "set-output": "output_folder",
+  "set-rec-folder": "recording_folder",
+  "set-rec-label-voice": "record_label_voice",
+  "set-rec-label-computer": "record_label_computer",
   "set-ffmpeg": "ffmpeg_path",
   "set-ffprobe": "ffprobe_path",
   "set-whisper": "whisper_cli_path",
@@ -67,6 +70,9 @@ async function openSettings() {
     : t("set.silenceMissing");
   $("vad-help").textContent = conf.vad_model_path ? "" : VAD_DOWNLOAD;
 
+  $("set-rec-auto").value = conf.record_auto_transcribe === false ? "off" : "on";
+  $("set-rec-minutes").value = conf.record_max_minutes || "";
+
   $("set-reading-size").value = display("reading_size", "1.02rem");
   $("set-reading-face").value = display("reading_face", "var(--display)");
 }
@@ -119,6 +125,10 @@ $("save-settings").onclick = async () => {
   for (const [id, key] of Object.entries(SETTING_FIELDS)) body[key] = $(id).value.trim();
   // "Next to each recording" means no folder at all, not the last one typed.
   if ($("set-output-mode").value === "beside") body.output_folder = "";
+  body.record_auto_transcribe = $("set-rec-auto").value === "on";
+  // A number the server can act on, or left out entirely so the default stands.
+  const minutes = parseInt($("set-rec-minutes").value, 10);
+  if (Number.isFinite(minutes) && minutes > 0) body.record_max_minutes = minutes;
   try {
     await api("/settings", body, "PUT");
   } catch (err) {

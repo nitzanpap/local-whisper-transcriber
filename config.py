@@ -24,6 +24,41 @@ MEDIA_EXTS = AUDIO_EXTS + VIDEO_EXTS
 
 TRANSCRIPT_SUFFIX = "-transcript"
 
+# Scratch directories for recordings are named so they can be told apart from
+# job directories, which the sweep treats far less gently. Lives here because
+# both the recorder and the sweep need it and neither may import the other.
+RECORDING_PREFIX = "rec-"
+
+# Recording defaults. Every one of them is a Settings field.
+RECORD_FOLDER = Path.home() / "Recordings"
+RECORD_MAX_MINUTES = 180
+RECORD_LABELS = ("Me", "Them")
+RECORD_MAX_MINUTES_CEILING = 12 * 60
+
+
+def recording_config() -> dict:
+    """The recording settings, resolved, with every value usable as it stands."""
+    conf = settings()
+    folder = (conf.get("recording_folder") or "").strip()
+    try:
+        minutes = max(1, min(int(conf.get("record_max_minutes") or RECORD_MAX_MINUTES),
+                             RECORD_MAX_MINUTES_CEILING))
+    except (TypeError, ValueError):
+        minutes = RECORD_MAX_MINUTES
+    labels = ((conf.get("record_label_voice") or "").strip() or RECORD_LABELS[0],
+              (conf.get("record_label_computer") or "").strip() or RECORD_LABELS[1])
+    return {
+        "folder": str(Path(folder).expanduser()) if folder else str(RECORD_FOLDER),
+        "voice": conf.get("record_voice_device") or "",
+        "computer": conf.get("record_computer_device") or "",
+        "labels": labels,
+        # On unless explicitly turned off: the point of recording here is the
+        # transcript, and a recording that just sits there is a surprise.
+        "transcribe": conf.get("record_auto_transcribe") is not False,
+        "max_seconds": minutes * 60,
+        "max_minutes": minutes,
+    }
+
 
 def source_folders() -> list[str]:
     """Folders to look in for new recordings. `watch_folders` was the old name."""

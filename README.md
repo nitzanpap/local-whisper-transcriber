@@ -1,7 +1,12 @@
 # Local Whisper Transcriber
 
-Turn recordings into transcripts on your own machine. Pick a file — or point it at a folder
-and forget about it — and get a `.txt` and a `.srt` next to the recording.
+Record a meeting and turn it into a transcript, on your own machine. Press record, or pick a
+file, or point it at a folder and forget about it — and get a `.txt` and a `.srt` next to the
+recording.
+
+When it does the recording it captures your microphone and your computer's own audio into
+separate channels of one file, so the transcript can say **who said which line** without any
+speaker-identification model.
 
 Nothing is uploaded. No account, no cloud, no telemetry. It is a small web page talking to a
 local process that runs `ffmpeg` and whisper.cpp's `whisper-cli` for you.
@@ -89,7 +94,52 @@ transcription actually runs.
 
 ## 3. Use it
 
-The page has three views.
+The page has four views.
+
+### Record
+
+Two dropdowns — **your voice** and **your computer's audio** — and a button. Your voice goes
+into the left channel, everything else into the right, and when you stop, the `.m4a` lands in
+your recordings folder and queues itself for transcription.
+
+Because the two are kept apart, the transcript comes out labelled:
+
+```
+Me: so where did we land on the pricing page
+Them: we agreed to hold it until the redesign ships
+Me: right, and that is end of quarter
+```
+
+Both dropdowns are optional. One source alone records fine; it just has nobody to
+distinguish, so the transcript is unlabelled.
+
+**Your computer's audio needs a loopback driver first.** macOS offers apps the microphone and
+nothing else — there is no input device carrying what your speakers are playing until you
+install one. The Record view says so, with the steps, when it cannot find one. In short:
+
+```bash
+brew install blackhole-2ch
+```
+
+then in **Audio MIDI Setup**, create a **Multi-Output Device** holding your speakers *and*
+BlackHole 2ch — built-in output at the top as the clock source, Drift Correction on for
+BlackHole, both at 48000 Hz — and select it as your output in System Settings → Sound. You
+still hear everything; BlackHole now receives a copy, and this app records from it.
+
+You do **not** need an Aggregate Device, which is where most attempts at this come apart. An
+aggregate *concatenates* channels rather than mixing them: a mic plus BlackHole gives a
+three-channel device with the mic on channel 3, and a recorder that takes the first two
+channels comes back with no microphone at all. Nothing in macOS mixes them for you. This app
+opens both devices itself and does the mixing in ffmpeg, which is also what lets it keep them
+in separate channels instead of summing them.
+
+First recording will ask for microphone permission. Inside the Mac app that prompt says
+*Local Whisper Transcriber*; run from a terminal, your terminal gets asked instead.
+
+A recording stops itself after three hours so a forgotten one cannot fill the disk, and while
+it runs the master is a WAV in scratch rather than the final `.m4a` — a WAV's header comes
+first, so audio captured before a crash is still playable. If that happens, the Record view
+offers it back rather than throwing it away.
 
 ### Transcribe
 
@@ -117,6 +167,7 @@ and **Expert** below for file paths and flags.
 | **Quality** | Best / Good / Quick, from the models you have. Bigger is more accurate and slower. |
 | **Words it keeps getting wrong** | Names and jargon, so it reaches for them instead of guessing. |
 | **Skip silence** | On unless you turn it off. Stops it inventing speech during quiet stretches. |
+| **Recording** | Where recordings go, what to call you and everyone else in the transcript, whether to transcribe as soon as one stops, and how long before it stops itself. |
 | **Transcript text** | Size and typeface for reading transcripts. |
 | **Backup** | Save every setting to a file you choose with a normal Save dialog, or load one back. The app tells you the exact path afterwards. Transcripts are not included — they are already files. |
 | **Expert** | Model and silence-model paths, extra `whisper-cli` arguments, and where `ffmpeg` lives. Normally untouched. |
@@ -193,6 +244,19 @@ Settings → Tool paths.
 
 **A model you just downloaded is not listed.** The scan runs once per process — restart it.
 
+**The second recording dropdown offers nothing useful.** There is no loopback driver
+installed, so nothing on this machine can hear what your speakers are playing. Section 3 has
+the steps; your voice alone records fine until then.
+
+**A recording came out silent, or refused to start.** Almost always microphone permission:
+System Settings → Privacy & Security → Microphone. The Record view's process log has whatever
+ffmpeg said.
+
+**A recording of two sources failed but one alone works.** Some machines will not open two
+capture sessions at once. Combine both devices into one **Aggregate Device** in Audio MIDI
+Setup and record that as a single source instead. It works, but the channels arrive mixed, so
+that transcript has no speaker labels.
+
 **The output is in the wrong language.** Settings → Language. Whatever ran last became the
 default.
 
@@ -208,7 +272,11 @@ default.
 ```
 
 Transcripts themselves are written next to your recordings and are never touched by cleanup.
-Scratch is swept after six hours, or seven days if it is still resumable.
+Scratch is swept after six hours, or seven days if it is still resumable — or if it holds
+audio that was recorded but never saved.
+
+Recordings go to `~/Recordings` unless you point Settings somewhere else. They are ordinary
+files in an ordinary folder, never inside the dot-directory above.
 
 `LWT_DATA_DIR` and `LWT_PORT` override the location and the port.
 
@@ -225,11 +293,12 @@ uv run --script test_app.py     # ~80 checks, fake binaries, no model needed, ~5
 | `app.py` | HTTP routes and wiring, nothing else |
 | `config.py` | Paths, constants, settings |
 | `tools.py` | Finding and running ffmpeg/whisper-cli, the native file picker |
+| `record.py` | Capturing microphone + computer audio, and what to do with what was captured |
 | `transcribe.py` | Media to segments, segments to txt/srt |
 | `jobs.py` | The queue, checkpoints, resume, history |
 | `library.py` | Browsing, reading and searching past transcripts |
 | `watch.py` | Watched folders |
-| `web/` | `index.html`, `app.js`, `library.js`, `settings.js`, `styles.css` — no build step |
+| `web/` | `index.html`, `app.js`, `record.js`, `library.js`, `settings.js`, `styles.css` — no build step |
 | `desktop/` | The Mac app: a Tauri window that owns the backend's lifetime |
 
 The test suite uses fake `ffmpeg` and `whisper-cli` scripts, so it runs in seconds and needs
@@ -244,6 +313,22 @@ Things that are deliberately absent, with the reason:
 - **No chunking and no SRT merging.** `whisper-cli` handles a file of any length and emits
   correct timestamps for the whole thing. Resume does not need chunks either: `--offset-t`
   keeps timestamps absolute, so a resumed run just continues the same segment stream.
+- **No diarisation model.** Speaker labels come from having recorded the two sides into
+  separate channels, not from inferring them afterwards. A job carries a list of *tracks*;
+  each is converted and transcribed on its own, and the segment streams are interleaved by
+  timestamp at the end. That is exact where clustering voice embeddings is a guess, needs no
+  extra download, and costs one more whisper pass. It only works for recordings this app
+  made — a file that arrived already mixed gets one unlabelled track, as before.
+- **No screen video.** It would be the largest part of the file and contributes nothing to a
+  transcript, and ffmpeg's screen capture drifts out of sync with audio over an hour. For
+  video, Cmd-Shift-5 or OBS alongside this is better than a worse version of both.
+- **No bundled audio driver.** Recording the computer's own audio needs one, but shipping a
+  system extension would mean signing, an installer and an approval prompt, for something
+  BlackHole already does in one `brew install`. The app detects whether one is present and
+  says what to do when it is not.
+- **The recording master is a WAV, not the .m4a that is kept.** A WAV's header comes first, so
+  a recording cut short by a crash is still playable; an `.m4a` missing its trailing index is
+  nothing at all. Stopping transcodes the WAV into place and deletes it.
 - **No database.** History is an append-only JSONL file; the running job is one dict.
 - **No SSE or WebSockets.** The page polls once a second and gets the whole state back,
   which also makes reconnecting after a refresh free.
