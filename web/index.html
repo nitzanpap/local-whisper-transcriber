@@ -12,10 +12,16 @@
 <header>
   <h1>Local Whisper <em>Transcriber</em></h1>
   <div class="masthead">
-    <p class="kicker">Audio in, transcript out &nbsp;·&nbsp; nothing leaves this computer</p>
+    <nav aria-label="Views">
+      <a href="#/transcribe" data-view="transcribe">Transcribe</a>
+      <a href="#/library" data-view="library">Library</a>
+      <a href="#/settings" data-view="settings">Settings</a>
+    </nav>
     <p class="pill" id="env" aria-live="polite"></p>
   </div>
 </header>
+
+<div id="view-transcribe">
 
 <!-- ============ compose ============ -->
 <main id="screen-new">
@@ -173,7 +179,7 @@
   <div id="queue-list"></div>
 </section>
 
-<!-- ============ history ============ -->
+<!-- ============ recent activity ============ -->
 <section id="history-box" hidden style="margin-top:3.5rem">
   <span class="label" style="color:var(--ink-soft)">Recent</span>
   <div class="scroller">
@@ -184,8 +190,143 @@
   </div>
 </section>
 
+</div><!-- /view-transcribe -->
+
+<!-- ============ library ============ -->
+<div id="view-library" hidden>
+  <section class="step">
+    <label class="label" for="q">Search every transcript</label>
+    <div class="line">
+      <input type="text" id="q" spellcheck="false" placeholder="a word or phrase">
+    </div>
+    <p class="hint" id="search-status" aria-live="polite"></p>
+  </section>
+
+  <section class="step" id="hits-box" hidden>
+    <span class="label">Matches</span>
+    <div id="hits"></div>
+  </section>
+
+  <section class="step" id="entries-box">
+    <span class="label">Transcripts</span>
+    <div id="entries"></div>
+  </section>
+
+  <section id="reader" hidden>
+    <div class="reader-head">
+      <div>
+        <h2 id="reader-name"></h2>
+        <p class="meta" id="reader-meta"></p>
+      </div>
+      <button class="link" id="reader-close">Back to list</button>
+    </div>
+    <audio id="player" controls preload="metadata"></audio>
+    <p class="hint" id="player-note" hidden></p>
+    <div class="actions">
+      <button id="reader-copy">Copy transcript</button>
+      <button id="reader-reveal">Open folder</button>
+    </div>
+    <div class="cues" id="cues" tabindex="0" aria-label="Transcript"></div>
+  </section>
+</div>
+
+<!-- ============ settings ============ -->
+<div id="view-settings" hidden>
+  <section class="step">
+    <span class="label">Defaults for new transcriptions</span>
+    <div class="grid two">
+      <div class="field">
+        <label class="label" for="set-model">Model</label>
+        <div class="line">
+          <input type="text" id="set-model" spellcheck="false">
+          <button class="link" data-browse="file" data-into="set-model">Browse</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label" for="set-language">Language</label>
+        <div class="line">
+          <select id="set-language">
+            <option value="he">Hebrew</option>
+            <option value="en">English</option>
+            <option value="ar">Arabic</option>
+            <option value="ru">Russian</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="auto">Detect</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <p class="hint">The language a job runs with is remembered here. Hebrew recordings
+      transcribed as English come out as nonsense, so check this before a batch.</p>
+
+    <div class="field" style="margin-top:1.2rem">
+      <label class="label" for="set-extra">Extra whisper-cli arguments</label>
+      <div class="line"><input type="text" id="set-extra" spellcheck="false"></div>
+    </div>
+  </section>
+
+  <section class="step">
+    <span class="label">Watched folders</span>
+    <p class="hint">Anything new in these folders is transcribed on its own, roughly every
+      five minutes. Files still being written, files already transcribed, and files with a
+      transcript beside them are left alone.</p>
+    <div class="field" style="margin-top:.8rem">
+      <label class="label sr" for="set-watch">One folder per line</label>
+      <textarea id="set-watch" rows="3" spellcheck="false"
+                placeholder="/Users/you/Documents/Zoom"></textarea>
+    </div>
+    <div class="actions" style="margin-top:.8rem">
+      <button id="add-watch">Add a folder…</button>
+      <button id="queue-folder">Queue a folder now…</button>
+    </div>
+    <p class="hint" id="folder-result" hidden></p>
+  </section>
+
+  <section class="step">
+    <span class="label">Voice activity detection</span>
+    <p class="hint">whisper invents text during silence. A VAD model skips the silence.
+      Download once, then point at it here — leave empty to keep VAD off.</p>
+    <div class="field" style="margin-top:.8rem">
+      <label class="label" for="set-vad">VAD model</label>
+      <div class="line">
+        <input type="text" id="set-vad" spellcheck="false" placeholder="…/ggml-silero-v5.1.2.bin">
+        <button class="link" data-browse="file" data-into="set-vad">Browse</button>
+      </div>
+    </div>
+  </section>
+
+  <details class="tight">
+    <summary>Tool paths</summary>
+    <div>
+      <div class="field">
+        <label class="label" for="set-ffmpeg">ffmpeg</label>
+        <div class="line"><input type="text" id="set-ffmpeg" spellcheck="false"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="set-ffprobe">ffprobe</label>
+        <div class="line"><input type="text" id="set-ffprobe" spellcheck="false"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="set-whisper">whisper-cli</label>
+        <div class="line"><input type="text" id="set-whisper" spellcheck="false"></div>
+      </div>
+      <p class="hint">Empty means "find it automatically", which is what normally happens.</p>
+    </div>
+  </details>
+
+  <div class="actions">
+    <button class="solid" id="save-settings">Save settings</button>
+    <span class="hint" id="settings-saved" hidden>Saved.</span>
+    <button class="link danger" id="clear-history">Clear history</button>
+  </div>
+</div>
+
 </div>
 
 <script src="/app.js"></script>
+<script src="/library.js"></script>
+<script src="/settings.js"></script>
 </body>
 </html>

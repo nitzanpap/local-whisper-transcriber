@@ -246,6 +246,80 @@ async def main() -> None:
     check("resumed srt keeps absolute times", "00:00:04,000 --> 00:01:06,500" in srt)
     check("no longer offered", not [r for r in jobs.resumable() if r["id"] == job["id"]])
 
+    print("library")
+    entries = library.entries()
+    check("lists what was transcribed", len(entries) >= 2, str(len(entries)))
+    one = next(e for e in entries if e["id"] == job["id"])  # the resumed job above
+    check("knows its files are there", one["has_text"] and one["has_cues"])
+    detail = library.detail(one["id"])
+    check("returns cues with absolute times", [c["start"] for c in detail["cues"]] == [0, 2000, 4000],
+          str([c["start"] for c in detail["cues"]]))
+    check("returns the text too", "shalom olam" in detail["text"])
+    check("unknown id is not found", library.detail("deadbeefdead") is None)
+    check("unknown id has no media", library.media_path("deadbeefdead") is None)
+    check("media resolves to the source", library.media_path(one["id"]) == Path(src))
+    hits = library.search("nishma")
+    check("search finds a phrase across transcripts", len(hits) >= 1, str(hits))
+    check("every hit carries the right timestamp", all(h["start"] == 2000 for h in hits), str(hits))
+    check("search ignores one-letter noise", library.search("a") == [])
+
+    print("serving audio for playback")
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app.app)
+    whole = client.get(f"/api/media/{one['id']}")
+    check("streams the source", whole.status_code == 200 and whole.content == Path(src).read_bytes())
+    part = client.get(f"/api/media/{one['id']}", headers={"Range": "bytes=0-3"})
+    check("answers a range with 206", part.status_code == 206, str(part.status_code))
+    check("sends exactly the bytes asked for", part.content == Path(src).read_bytes()[:4], str(part.content))
+    check("unknown id is refused", client.get("/api/media/deadbeefdead").status_code == 404)
+
+    print("watched folders")
+    watched = TMP / "watched" / "meeting one"
+    watched.mkdir(parents=True, exist_ok=True)
+    fresh = watched / "new.m4a"
+    fresh.write_bytes(b"audio")
+    old = watched / "old.m4a"
+    old.write_bytes(b"audio")
+    os.utime(old, (0, 0))
+    done = watched / "done.m4a"
+    done.write_bytes(b"audio")
+    os.utime(done, (0, 0))
+    (watched / f"done{config.TRANSCRIPT_SUFFIX}.txt").write_text("already")
+    found, skipped = watch.candidates(TMP / "watched")
+    names = [p.name for p in found]
+    check("picks up a settled file", "old.m4a" in names, str(names))
+    check("leaves a file still being written", "new.m4a" not in names)
+    check("says why it skipped it", any("still being written" in s for s in skipped), str(skipped))
+    check("leaves one that has a transcript beside it", "done.m4a" not in names)
+
+    ran = watched / "ran-before.m4a"
+    ran.write_bytes(b"audio")
+    os.utime(ran, (0, 0))
+    jobs.append_history({**jobs.make_job(str(ran), model, str(out), "ran-before"),
+                         "status": "completed", "outputs": {}})
+    found, skipped = watch.candidates(TMP / "watched")
+    check("leaves one already run once", ran.name not in [p.name for p in found])
+    check("and says so", any("already transcribed once" in s for s in skipped), str(skipped))
+
+    for i in range(watch.MAX_PER_SWEEP + 3):
+        extra = watched / f"bulk{i}.m4a"
+        extra.write_bytes(b"audio")
+        os.utime(extra, (0, 0))
+    found, skipped = watch.candidates(TMP / "watched")
+    check("caps one sweep", len(found) == watch.MAX_PER_SWEEP, str(len(found)))
+    check("says what it left behind", any("left for the next sweep" in s for s in skipped), str(skipped))
+
+    print("settings")
+    config.save_settings({"default_language": "he", "vad_model_path": ""})
+    check("keeps what was already there", config.settings().get("whisper_cli_path", "").endswith("whisper-cli"))
+    check("stores a new value", config.settings()["default_language"] == "he")
+    vad_job = jobs.make_job(src, model, str(out), "vad", vad_model="/models/silero.bin")
+    cmd = " ".join(__import__("transcribe").whisper_command(vad_job, Path("/tmp/a.wav")))
+    check("vad flags only when a model is set", "--vad --vad-model /models/silero.bin" in cmd, cmd)
+    plain = " ".join(__import__("transcribe").whisper_command(job, Path("/tmp/a.wav")))
+    check("no vad flags otherwise", "--vad" not in plain)
+
     print("work dir sweep")
     config.WORK_DIR.mkdir(parents=True, exist_ok=True)
     stale, fresh = config.WORK_DIR / "stale", config.WORK_DIR / "fresh"

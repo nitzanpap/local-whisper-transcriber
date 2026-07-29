@@ -335,6 +335,31 @@ function offline() {
   }
 }
 
+// --- views -------------------------------------------------------------------
+
+const VIEWS = ["transcribe", "library", "settings"];
+
+function currentView() {
+  const name = (location.hash.match(/^#\/(\w+)/) || [])[1];
+  return VIEWS.includes(name) ? name : "transcribe";
+}
+
+function routeChanged() {
+  const view = currentView();
+  for (const name of VIEWS) show($("view-" + name), name === view);
+  for (const link of document.querySelectorAll("nav a")) {
+    link.classList.toggle("here", link.dataset.view === view);
+    link.setAttribute("aria-current", link.dataset.view === view ? "page" : "false");
+  }
+  // Each view loads its own data when it becomes visible, so switching to it is
+  // never stale and hidden views cost nothing.
+  if (view === "library" && typeof openLibrary === "function") openLibrary();
+  if (view === "settings" && typeof openSettings === "function") openSettings();
+}
+
+window.addEventListener("hashchange", routeChanged);
+routeChanged();
+
 const refresh = () => api("/state").then(render).catch(offline);
 refresh();
 setInterval(refresh, 1000); // polling a loopback server is free; no SSE needed

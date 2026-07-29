@@ -202,3 +202,62 @@ pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); paddi
 [hidden] { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+
+/* --- navigation ------------------------------------------------------------ */
+nav { display: flex; gap: 1.1rem; }
+nav a {
+  font: 500 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-soft); text-decoration: none; padding-bottom: .2rem;
+  border-bottom: 2px solid transparent;
+}
+nav a:hover { color: var(--ink); }
+nav a.here { color: var(--ink); border-bottom-color: var(--accent); }
+nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* --- library --------------------------------------------------------------- */
+.entry {
+  display: block; width: 100%; text-align: left; padding: .8rem 0; cursor: pointer;
+  border: 0; border-bottom: 1px solid var(--rule-soft); border-radius: 0;
+  background: none; color: inherit; text-transform: none; letter-spacing: normal;
+  font-family: var(--sans); font-weight: 400; font-size: 1rem;
+}
+.entry:hover { border-bottom-color: var(--ink); }
+.entry:hover .entry-name { color: var(--accent); }
+.entry-name { display: block; font: 400 1.1rem/1.3 var(--display); word-break: break-word; }
+.entry .meta { margin-top: .35rem; }
+.hit-text {
+  display: block; margin-top: .3rem; font: 400 .95rem/1.5 var(--display);
+  unicode-bidi: plaintext; text-align: start;
+}
+
+textarea {
+  width: 100%; padding: .5rem .6rem; font: 400 .9rem/1.6 var(--mono); resize: vertical;
+  border: 1px solid var(--rule); border-radius: 3px; background: var(--sheet); color: inherit;
+}
+textarea:focus { outline: none; border-color: var(--ink); }
+
+/* --- reader ---------------------------------------------------------------- */
+.reader-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.reader-head h2 { font: 400 1.5rem/1.2 var(--display); word-break: break-word; }
+#player { width: 100%; margin: 1.2rem 0 .4rem; }
+.cues {
+  margin-top: 1.2rem; max-height: 60vh; overflow: auto;
+  border-top: 1px solid var(--rule-soft);
+}
+.cue {
+  display: flex; gap: .8rem; align-items: baseline; padding: .45rem .5rem;
+  border-radius: 3px; cursor: pointer; scroll-margin: 40vh;
+  /* Each line takes its direction from its own first strong character, so Hebrew
+     reads right-to-left with punctuation in place and English lines do not. */
+  unicode-bidi: plaintext; text-align: start;
+  font: 400 1.02rem/1.7 var(--display);
+}
+.cue:hover { background: var(--rule-soft); }
+.cue:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cue .at {
+  flex: none; font: 500 .7rem/1.7 var(--mono); color: var(--ink-soft);
+  direction: ltr; unicode-bidi: isolate;
+}
+.cue.now { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.cue.now .at { color: var(--accent); }
+.sheet.plain { font: 400 1rem/1.75 var(--display); max-height: none; }
