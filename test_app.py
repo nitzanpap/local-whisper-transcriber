@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 TMP = Path(tempfile.mkdtemp(prefix="lwt-test-"))
@@ -21,15 +22,37 @@ import app  # noqa: E402  (all of these must follow the env var)
 import config  # noqa: E402
 import jobs  # noqa: E402
 import library  # noqa: E402
+import record  # noqa: E402
 import tools  # noqa: E402
 import transcribe  # noqa: E402
 import watch  # noqa: E402
 
+# Writes something big enough to look like real captured audio to the recorder,
+# which refuses to save a file that is only a header. With -list_devices or
+# -sources it prints a device list instead and exits non-zero, as ffmpeg does.
 FAKE_FFMPEG = """#!/bin/sh
 echo "fake ffmpeg running" >&2
+listing=""
 out=""
-while [ $# -gt 0 ]; do out="$1"; shift; done
-printf 'RIFFfake' > "$out"
+while [ $# -gt 0 ]; do
+  case "$1" in -list_devices|-sources) listing=1 ;; esac
+  out="$1"
+  shift
+done
+if [ -n "$listing" ]; then
+  if [ -n "$FAKE_NO_DEVICES" ]; then exit 1; fi
+  echo "[AVFoundation indev @ 0x7f9] AVFoundation video devices:" >&2
+  echo "[AVFoundation indev @ 0x7f9] [0] FaceTime HD Camera" >&2
+  echo "[AVFoundation indev @ 0x7f9] AVFoundation audio devices:" >&2
+  echo "[AVFoundation indev @ 0x7f9] [0] MacBook Pro Microphone" >&2
+  echo "[AVFoundation indev @ 0x7f9] [1] BlackHole 2ch" >&2
+  echo "Auto-detected sources for pulse:" >&2
+  echo "  alsa_input.pci-0000_00_1f.3.analog-stereo [Built-in Audio Analog Stereo]" >&2
+  echo "  alsa_output.pci-0000_00_1f.3.analog-stereo.monitor [Monitor of Built-in Audio]" >&2
+  exit 1
+fi
+[ -n "$RECORD_SILENCE" ] && exit 1
+awk 'BEGIN{ for (i = 0; i < 8192; i++) printf "A" }' > "$out"
 """
 
 FAKE_FFPROBE = """#!/bin/sh
@@ -67,6 +90,12 @@ def write_fakes() -> dict:
         p.chmod(0o755)
         paths[name] = str(p)
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # The system-audio helper is left out of the fake world on purpose. Pointing at
+    # a source that is not there is what stops these checks from invoking a real
+    # Swift compiler, and from reporting whichever permissions this particular
+    # machine happens to have granted. The tests that want it patch it in.
+    record.HELPER_SOURCE = TMP / "no-syscapture.swift"
+    record.HELPER_BIN = TMP / "data" / "no-syscapture"
     # settings keys are underscored: whisper-cli -> whisper_cli_path
     config.SETTINGS.write_text(json.dumps({f"{k.replace('-', '_')}_path": v for k, v in paths.items()}))
     return paths
@@ -275,6 +304,24 @@ async def main() -> None:
     check("sends exactly the bytes asked for", part.content == Path(src).read_bytes()[:4], str(part.content))
     check("unknown id is refused", client.get("/api/media/deadbeefdead").status_code == 404)
 
+    print("the recording routes")
+    check("state carries the recorder", "recording" in client.get("/api/state").json())
+    check("and anything left unsaved", "orphan_recordings" in client.get("/api/state").json())
+    check("stopping nothing answers 409", client.post("/api/record/stop").status_code == 409)
+    check("an unknown recording cannot be saved",
+          client.post("/api/record/keep/deadbeefdead").status_code == 400)
+    # Refused by the router before the handler sees it; safe_id is the backstop
+    # for anything that does get through.
+    check("nor one named to escape the work dir",
+          not client.post("/api/record/keep/..%2F..%2Fetc").is_success)
+    try:
+        app.safe_id("../../etc/passwd")
+        raise AssertionError("FAIL: a traversing recording id was accepted")
+    except app.HTTPException as exc:
+        check("a traversing id is rejected outright", exc.status_code == 400)
+    devices_route = client.get("/api/record/devices").json()
+    check("devices are offered over http", len(devices_route["devices"]) >= 2, str(devices_route)[:120])
+
     print("serving the page")
     page = client.get("/")
     check("index is served", page.status_code == 200 and "<title>" in page.text)
@@ -361,6 +408,191 @@ async def main() -> None:
     check("it reaches history", any(h.get("work_seconds") is not None for h in jobs.history()))
     shown = library.find(costed["id"])
     check("and the library can show it", shown and shown["work_seconds"] is not None, str(shown))
+
+    print("what can be recorded from")
+    listing = tools.capture([tools.binary("ffmpeg"), "-list_devices", "true"])
+    _, printed = await listing
+    macos = record._parse_avfoundation(printed)
+    check("reads the audio half of the mac device list",
+          [d["name"] for d in macos] == ["MacBook Pro Microphone", "BlackHole 2ch"], str(macos))
+    check("and leaves the cameras out of it", not any("Camera" in d["name"] for d in macos))
+    check("indices come back as ffmpeg's own", [d["id"] for d in macos] == ["0", "1"], str(macos))
+    linux = record._parse_pulse(printed)
+    check("reads pulse sources too", len(linux) == 2, str(linux))
+    check("using the human name, not the identifier",
+          "Built-in Audio Analog Stereo" in [d["name"] for d in linux], str(linux))
+    check("a loopback device is recognised", record.is_loopback({"name": "BlackHole 2ch", "id": "1"}))
+    check("so is a pulse monitor",
+          record.is_loopback({"name": "Monitor of Built-in", "id": "alsa_output.x.monitor"}))
+    check("a microphone is not", not record.is_loopback({"name": "MacBook Pro Microphone", "id": "0"}))
+    offered = await record.devices()
+    check("the route offers what it found", len(offered["devices"]) >= 2, str(offered)[:120])
+    check("and says nothing is missing", offered["advice"] == [], str(offered["advice"]))
+
+    os.environ["FAKE_NO_DEVICES"] = "1"
+    empty = await record.devices()
+    del os.environ["FAKE_NO_DEVICES"]
+    check("no devices at all is called out", empty["advice"] == ["noDevices"], str(empty["advice"]))
+
+    print("the recording command")
+    both = {"devices": ["0", "1"], "max_seconds": 60, "wav": Path("/tmp/m.wav")}
+    cmd = " ".join(record.capture_command(both))
+    check("two sources become two inputs", cmd.count("-i ") == 2, cmd)
+    check("mixed here, not by the operating system", "join=inputs=2:channel_layout=stereo" in cmd)
+    check("each source flattened to mono first", cmd.count("channel_layouts=mono") == 2, cmd)
+    check("drift between two capture clocks corrected", "aresample=async=1000" in cmd)
+    check("it stops by itself", "-t 60" in cmd, cmd)
+    one = " ".join(record.capture_command({**both, "devices": ["0"]}))
+    check("one source needs no join", "join=" not in one and one.count("-i ") == 1, one)
+
+    print("the computer's audio without a driver")
+    sysrec = {"devices": ["0", record.SYSTEM_AUDIO], "max_seconds": 60,
+              "wav": Path("/tmp/m.wav"), "fifo": Path("/tmp/sys.pcm"), "log": []}
+    cmd = " ".join(record.capture_command(sysrec))
+    check("the microphone is the only device opened", cmd.count("avfoundation") <= 1, cmd)
+    check("the computer's side is a pipe, not a device", "/tmp/sys.pcm" in cmd, cmd)
+    check("whose raw format has to be spelled out",
+          "-f s16le" in cmd and "-ar 48000" in cmd, cmd)
+    check("and the two are still kept apart",
+          "join=inputs=2:channel_layout=stereo" in cmd, cmd)
+    code, message = record._why_nothing_arrived({**sysrec, "helper_code": record.HELPER_DENIED})
+    check("a refused permission is named, not guessed at",
+          code == "insufficient_permissions" and "Screen Recording" in message, message)
+    check("and is not blamed on two capture sessions", "Aggregate" not in message, message)
+
+    async def with_helper(granted: bool) -> dict:
+        """devices() as it looks on a machine where the helper exists."""
+        async def fake(prompt: bool = False) -> dict:
+            return {"helper": Path("/x/syscapture"), "granted": granted}
+        was, record.system_audio = record.system_audio, fake
+        try:
+            return await record.devices()
+        finally:
+            record.system_audio = was
+
+    got = await with_helper(False)
+    entry = next((d for d in got["devices"] if d["id"] == record.SYSTEM_AUDIO), None)
+    check("system audio is offered as a source", entry is not None, str(got["devices"]))
+    check("as a loopback, so it is the computer's side by default", bool(entry and entry["loopback"]))
+    check("nobody is told to install a driver", "needLoopback" not in got["advice"], str(got["advice"]))
+    check("the permission is asked about instead",
+          got["advice"] == ["needScreenRecording"], str(got["advice"]))
+    check("nothing to advise once it is allowed",
+          (await with_helper(True))["advice"] == [], str(got["advice"]))
+
+    print("recording, then transcribing both speakers apart")
+    recordings = TMP / "recordings"
+    config.save_settings({"recording_folder": str(recordings), "default_model_path": model,
+                          "record_label_voice": "Me", "record_label_computer": "Them",
+                          "default_language": "en"})
+    config.WORK_DIR.mkdir(parents=True, exist_ok=True)
+    live = await record.start("0", "1")
+    # The fake ffmpeg exits at once, so this may already have run its whole
+    # course. What matters is that starting did not report a failure.
+    check("starting reported no trouble", live["status"] != "failed", str(live.get("error")))
+    check("and the two sources are kept apart", live["stereo"])
+    await record.TASK
+    saved = record.public()
+    check("saved when it finished", saved["status"] == "saved", str(saved)[:200])
+    kept = Path(saved["path"])
+    check("as an .m4a in the chosen folder",
+          kept.suffix == ".m4a" and kept.parent == recordings, str(kept))
+    check("named for when it happened", kept.stem[:2].isdigit(), kept.stem)
+    check("scratch cleaned up", not list(config.WORK_DIR.glob(f"{config.RECORDING_PREFIX}*")))
+    check("queued for transcription by itself", saved["job_id"] is not None)
+
+    await jobs.PUMP
+    # The work directory is gone once the job completes, so history is the record.
+    dual = next(h for h in jobs.history() if h["id"] == saved["job_id"])
+    check("completed", dual["status"] == "completed", str(dual)[:200])
+    check("the job knows it has two tracks", len(dual["tracks"]) == 2, str(dual["tracks"]))
+    check("one channel each", [t["channel"] for t in dual["tracks"]] == [0, 1], str(dual["tracks"]))
+    transcript = (recordings / f"{kept.stem}{config.TRANSCRIPT_SUFFIX}.txt").read_text().splitlines()
+    check("both speakers are in the transcript",
+          any(line.startswith("Me: ") for line in transcript) and
+          any(line.startswith("Them: ") for line in transcript), str(transcript))
+    check("every line is owned by somebody", all(":" in line for line in transcript), str(transcript))
+    check("interleaved by when it was said, not by track",
+          transcript[:2] == ["Me: shalom olam", "Them: shalom olam"], str(transcript))
+    check("twice the lines of one track", len(transcript) == 6, str(len(transcript)))
+    srt = (recordings / f"{kept.stem}{config.TRANSCRIPT_SUFFIX}.srt").read_text()
+    check("subtitles are labelled too", "Me: shalom olam" in srt)
+    check("and renumbered across both", "\n6\n" in srt, srt[-120:])
+
+    print("one channel at a time")
+    channel_job = jobs.make_job(src, model, str(out), "channels")
+    await transcribe.to_wav(channel_job, src, TMP / "left.wav", channel=1)
+    check("a channel is pulled out by name",
+          any("pan=mono|c0=c1" in line for line in channel_job["log"]), str(list(channel_job["log"])))
+    plain_job = jobs.make_job(src, model, str(out), "plain")
+    await transcribe.to_wav(plain_job, src, TMP / "flat.wav")
+    check("and left alone when there is only one",
+          not any("pan=" in line for line in plain_job["log"]))
+
+    merged = transcribe.merge_tracks([("Me", [(0, 1000, "first"), (4000, 5000, "third")]),
+                                      ("Them", [(2000, 3000, "second")])])
+    check("merging sorts by time", [text for _, _, text in merged] ==
+          ["Me: first", "Them: second", "Me: third"], str(merged))
+    unlabelled = transcribe.merge_tracks([("", [(0, 1, "bare")])])
+    check("an unlabelled track is left as it was", unlabelled == [(0, 1, "bare")], str(unlabelled))
+
+    print("the progress bar across two tracks")
+    spanned = jobs.make_job(src, model, str(out), "spanned")
+    spanned["percent_base"], spanned["percent_span"] = 50.0, 50.0
+    await tools.stream([tools.binary("whisper-cli")], spanned, "whisper_failed")
+    check("the second track fills the second half", spanned["percent"] == 100.0, str(spanned["percent"]))
+    check("track names appear in the job", jobs.track_files(Path("/w"), 1, 2)[1].name == "segments-1.txt")
+    check("and not when there is only one", jobs.track_files(Path("/w"), 0, 1)[1].name == "segments.txt")
+
+    print("a recording that captured nothing")
+    record.RECORDING = None
+    os.environ["RECORD_SILENCE"] = "1"
+    try:
+        await record.start("0", "")
+        raise AssertionError("FAIL: a silent recording was reported as working")
+    except config.Failed as exc:
+        check("refused rather than saved", exc.code in ("recording_failed", "insufficient_permissions"),
+              exc.code)
+    finally:
+        del os.environ["RECORD_SILENCE"]
+    check("nothing was written to the recordings folder", len(list(recordings.glob("*.m4a"))) == 1,
+          str(list(recordings.glob("*.m4a"))))
+    check("and no empty scratch left lying about",
+          not list(config.WORK_DIR.glob(f"{config.RECORDING_PREFIX}*")),
+          str(list(config.WORK_DIR.glob(f"{config.RECORDING_PREFIX}*"))))
+    try:
+        await record.stop()
+        raise AssertionError("FAIL: stopping nothing was allowed")
+    except config.Failed as exc:
+        check("stopping nothing is refused", exc.code == "not_recording")
+
+    print("audio the app died before saving")
+    record.RECORDING = None
+    stranded = config.WORK_DIR / f"{config.RECORDING_PREFIX}deadbeef1234"
+    stranded.mkdir(parents=True, exist_ok=True)
+    (stranded / "master.wav").write_bytes(b"A" * 192000)  # a second of 48 kHz stereo
+    (stranded / "recording.json").write_text(json.dumps({
+        "id": "deadbeef1234", "status": "recording", "devices": ["0", "1"],
+        "labels": ["Me", "Them"], "folder": str(recordings), "basename": "rescued",
+        "started_at": 1.0, "transcribe": False}))
+    # A day old: well past the six hours that clears ordinary scratch, and inside
+    # the long reprieve that captured audio gets.
+    day_ago = time.time() - 86400
+    os.utime(stranded, (day_ago, day_ago))
+    jobs.sweep_work_dirs()
+    check("the sweep leaves unsaved audio alone", (stranded / "master.wav").exists())
+    waiting = record.orphans()
+    check("offered back", [r["id"] for r in waiting] == ["deadbeef1234"], str(waiting))
+    check("with how long it is", waiting[0]["seconds"] == 1.0, str(waiting[0]))
+    rescued = await record.keep_orphan("deadbeef1234")
+    check("saving it works", rescued["status"] == "saved", str(rescued)[:160])
+    check("landing where it was going", (recordings / "rescued.m4a").exists())
+    check("and it is no longer offered", record.orphans() == [], str(record.orphans()))
+    check("not queued when settings say not to", rescued["job_id"] is None)
+
+    record.RECORDING = None
+    config.save_settings({"recording_folder": "", "record_voice_device": "",
+                          "record_computer_device": ""})
 
     print("source folders, looked at on demand")
     config.save_settings({"source_folders": [str(TMP / "watched")], "output_folder": ""})

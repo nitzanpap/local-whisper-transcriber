@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run's answer worthless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # macOS because that is where this app runs and where the darwin-only paths
+    # live — the native file picker, avfoundation device listing. Linux because
+    # it is cheap and covers the pulse path. The suite fakes ffmpeg and
+    # whisper-cli, so neither runner needs a model or a real toolchain.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Pinned to exact releases: setup-uv publishes no floating major tag past
+      # v7, and a moving tag is a build that changes without a commit anyway.
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          # Dependencies are declared inside the script itself (PEP 723), so the
+          # script is what the cache key should follow. None of the files this
+          # action looks for by default exist in this repo.
+          cache-dependency-glob: test_app.py
+
+      - name: Self-check
+        run: uv run --script test_app.py
+
+      - name: The page's scripts parse
+        run: |
+          for file in web/*.js; do
+            node --check "$file"
+          done
