@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the bundle's Info.plist at build time.
+
+     Without a microphone usage description macOS will not raise the microphone
+     prompt, and the Microphone pane in System Settings has no way to add an
+     application by hand — so an app missing this key can never be granted access
+     at all. A denied microphone is handed silence rather than an error, which is
+     how this went unnoticed: recordings succeeded, transcribed the computer's
+     side, and had digital zero where the voice should have been. -->
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Local Whisper Transcriber records your voice so it can be transcribed on this machine. Nothing is uploaded.</string>
+</dict>
+</plist>
