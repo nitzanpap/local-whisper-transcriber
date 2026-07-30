@@ -88,6 +88,12 @@ final class Writer: NSObject, SCStreamOutput {
     }
 }
 
+/// Consumes the frames ScreenCaptureKit insists on producing, and keeps none.
+final class Discard: NSObject, SCStreamOutput {
+    func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer,
+                of type: SCStreamOutputType) {}
+}
+
 @main
 struct SysCapture {
     static func main() async {
@@ -115,9 +121,12 @@ struct SysCapture {
         // EPIPE would otherwise kill the process before the write can be ignored.
         signal(SIGPIPE, SIG_IGN)
 
-        // Opening a FIFO for writing blocks until ffmpeg opens it for reading, which
-        // is the handshake that keeps the two ends from racing at startup.
-        let fd = open(target, O_WRONLY)
+        // O_CREAT because the usual target is a plain file that does not exist yet;
+        // without it this failed with ENOENT on every recording the app made and
+        // worked only in the one place a FIFO had already been created. A FIFO still
+        // works: opening one for writing blocks until the reader arrives, which is
+        // the handshake that keeps the two ends from racing.
+        let fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
         if fd < 0 {
             FileHandle.standardError.write(Data("syscapture: cannot write to \(target)\n".utf8))
             exit(2)
@@ -149,6 +158,11 @@ struct SysCapture {
             let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
             let writer = Writer(fd: fd)
             try stream.addStreamOutput(writer, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+            // The video nobody wants still has to be taken. An SCStream with no
+            // screen consumer can run without ever delivering an audio buffer, so
+            // this drains the 2x2 frames it was configured for and drops them.
+            try stream.addStreamOutput(Discard(), type: .screen,
+                                       sampleHandlerQueue: .global(qos: .utility))
             try await stream.startCapture()
 
             // Stopping is the normal end of a recording, so it exits 0: whatever
