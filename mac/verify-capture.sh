@@ -119,7 +119,16 @@ verdict() {
           { d[NR]=$1; sum+=$1 }
           END { if (NR) printf "      gap lengths: shortest %.3fs longest %.3fs mean %.3fs\n", d[1], d[NR], sum/NR }'
 
-    if awk -v p="$per_second" 'BEGIN { exit !(p >= 1.0) }'; then
+    # Two per second is the line, chosen from measurements rather than taste. The
+    # shredded microphone gave 3.8 and 5.8 gaps a second; music with real pauses
+    # gave 1.0, speech 0.2 to 0.6. The first threshold here was 1.0 and failed a
+    # recording that was perfectly good, which is the more expensive mistake: it
+    # sends someone looking for a bug that is not there.
+    #
+    # Gap uniformity looked like the better discriminator and is not. The broken
+    # recording spread 1.88x and honest music 1.5x, so it is reported as
+    # information and kept out of the verdict.
+    if awk -v p="$per_second" 'BEGIN { exit !(p >= 2.0) }'; then
         echo "   FAILED — chopped into pieces, not a continuous recording"
         return 1
     fi
@@ -191,8 +200,9 @@ echo
 if [ "$RAW$ONE$BOTH$LEFT$RIGHT" = "00000" ]; then
     echo "All of it passed: two sources, kept apart, whole, no driver installed."
 else
-    echo "Files kept in $KEEP — play mic-raw.wav and hear whether it stutters."
-    echo "Something came out silent. If only the left channel did, it is the"
-    echo "microphone permission (Privacy & Security → Microphone) rather than this."
+    echo "Files kept in $KEEP — play them and hear for yourself."
+    echo "A silent computer channel is worth checking the configuration for before the"
+    echo "code: run mac/state.sh, and remember that a tone from afplay has no window"
+    echo "and may not be captured at all. A silent microphone is usually its permission."
     exit 1
 fi
