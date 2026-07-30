@@ -330,6 +330,19 @@ no model.
 
 ---
 
+## Recording without headphones
+
+The microphone hears the speakers. That is not something the capture can fix — a microphone in a
+room with a speaker hears the speaker — so the same sentence arrives on both channels and used to
+be transcribed twice, once as you and once as the machine.
+
+The transcript drops the microphone's copy. The computer's channel is kept because it is the
+better one: taken digitally, before any of it reached the air, where the microphone's version has
+been through a speaker and a room and comes back softened. Only the voice side is thinned, and
+only where the machine was saying the same thing at the same moment, so talking over the audio
+keeps your line. Headphones remain better if you have them, since nothing beats not having the
+problem.
+
 ## Known: a quiet channel can still sort to the front
 
 Voice activity detection is no longer used on a recording with more than one track, which was the

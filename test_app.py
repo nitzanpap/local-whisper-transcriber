@@ -62,19 +62,26 @@ echo 123.5
 # Prints segments to stdout the way whisper-cli does, progress to stderr.
 # With --offset-t it emits the later half only, with absolute timestamps.
 FAKE_WHISPER = """#!/bin/sh
+# Each track says something different, because two channels of a real recording do.
+# When both said the same thing the echo suppression could not tell a conversation
+# from a microphone hearing the speakers, and quietly removed a whole speaker.
 offset=0
+who=""
 while [ $# -gt 0 ]; do
-  case "$1" in --offset-t) offset="$2"; shift ;; esac
+  case "$1" in
+    --offset-t) offset="$2"; shift ;;
+    *audio-1.wav) who="gam ani " ;;
+  esac
   shift
 done
 echo "whisper_print_progress_callback: progress =  50%" >&2
 if [ "$offset" = "0" ]; then
-  echo "[00:00:00.000 --> 00:00:02.000]   shalom olam"
-  echo "[00:00:02.000 --> 00:00:04.000]   ma nishma"
+  echo "[00:00:00.000 --> 00:00:02.000]   ${who}shalom olam"
+  echo "[00:00:02.000 --> 00:00:04.000]   ${who}ma nishma"
   [ -n "$HALF" ] && exit 137  # as if the process were killed mid-run
 fi
 [ -n "$SLOW" ] && sleep 30
-echo "[00:00:04.000 --> 00:01:06.500]   od segment"
+echo "[00:00:04.000 --> 00:01:06.500]   ${who}od segment"
 echo "whisper_print_progress_callback: progress = 100%" >&2
 exit ${FAIL_CODE:-0}
 """
@@ -576,7 +583,7 @@ async def main() -> None:
           any(line.startswith("Them: ") for line in transcript), str(transcript))
     check("every line is owned by somebody", all(":" in line for line in transcript), str(transcript))
     check("interleaved by when it was said, not by track",
-          transcript[:2] == ["Me: shalom olam", "Them: shalom olam"], str(transcript))
+          transcript[:2] == ["Me: shalom olam", "Them: gam ani shalom olam"], str(transcript))
     check("twice the lines of one track", len(transcript) == 6, str(len(transcript)))
     srt = (recordings / f"{kept.stem}{config.TRANSCRIPT_SUFFIX}.srt").read_text()
     check("subtitles are labelled too", "Me: shalom olam" in srt)
@@ -598,6 +605,25 @@ async def main() -> None:
           ["Me: first", "Them: second", "Me: third"], str(merged))
     unlabelled = transcribe.merge_tracks([("", [(0, 1, "bare")])])
     check("an unlabelled track is left as it was", unlabelled == [(0, 1, "bare")], str(unlabelled))
+
+    print("the microphone's echo of the speakers")
+    echoed = [("Me", [(0, 3000, "Testing, testing, one two three"), (4000, 6000, "that was the video")]),
+              ("Them", [(200, 3200, "Testing testing one, two, three.")])]
+    lines = transcribe.merge_tracks(echoed)
+    check("the machine's copy is the one kept",
+          [l for l in lines if "Testing" in l[2]] == [(200, 3200, "Them: Testing testing one, two, three.")],
+          str(lines))
+    check("and what the person actually said survives",
+          any("that was the video" in l[2] for l in lines), str(lines))
+    apart = [("Me", [(0, 3000, "shall we start")]), ("Them", [(9000, 11000, "shall we start")])]
+    check("the same words at a different time are two people agreeing",
+          len(transcribe.merge_tracks(apart)) == 2, str(transcribe.merge_tracks(apart)))
+    unrelated = [("Me", [(0, 3000, "I think we should ship it")]),
+                 ("Them", [(500, 2500, "Testing testing one two three")])]
+    check("talking over the audio keeps both",
+          len(transcribe.merge_tracks(unrelated)) == 2, str(transcribe.merge_tracks(unrelated)))
+    check("a single track is never thinned",
+          len(transcribe.merge_tracks([("", [(0, 1, "alone")])])) == 1)
 
     print("the progress bar across two tracks")
     spanned = jobs.make_job(src, model, str(out), "spanned")

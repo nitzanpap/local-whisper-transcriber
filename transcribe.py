@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from config import Failed
@@ -118,6 +119,48 @@ async def to_wav(job: dict, source: str, wav: Path, channel: int | None = None) 
     )
 
 
+# How alike two lines have to be before one is taken for an echo of the other.
+# Generous, because the microphone's copy has been through a speaker and a room and
+# comes back with words softened or dropped.
+ECHO_SIMILARITY = 0.75
+
+
+def _bare(text: str) -> str:
+    """Words only, lowercased, for comparing what was said rather than how."""
+    return " ".join(re.findall(r"\w+", text.lower()))
+
+
+def drop_echo(tracks: list[tuple[str, list[tuple[int, int, str]]]]
+              ) -> list[tuple[str, list[tuple[int, int, str]]]]:
+    """Remove the microphone's copy of whatever the speakers were playing.
+
+    Recording without headphones means the microphone hears the computer, so the
+    same sentence arrives on both channels and is transcribed twice — once as the
+    person and once as the machine. It is not a fault in the capture and cannot be
+    fixed there: a microphone in a room with a speaker hears the speaker.
+
+    The computer's channel is kept because it is the better copy. It was taken
+    digitally, before any of it reached the air; the microphone's version has been
+    through a speaker, a room and back, and is the one that comes out garbled. Only
+    the microphone's side is thinned, and only where the machine was saying the same
+    thing at the same time, so anyone speaking over the audio keeps their line.
+    """
+    if len(tracks) < 2:
+        return tracks
+    (voice_label, voice_segments), *rest = tracks
+    others = [seg for _, segments in rest for seg in segments]
+    kept = []
+    for start, end, text in voice_segments:
+        spoken = _bare(text)
+        echo = any(
+            other_start < end and start < other_end
+            and SequenceMatcher(None, spoken, _bare(other_text)).ratio() >= ECHO_SIMILARITY
+            for other_start, other_end, other_text in others)
+        if not echo:
+            kept.append((start, end, text))
+    return [(voice_label, kept), *rest]
+
+
 def merge_tracks(tracks: list[tuple[str, list[tuple[int, int, str]]]]) -> list[tuple[int, int, str]]:
     """Several tracks' segments as one stream, each line owned by whoever said it.
 
@@ -126,7 +169,7 @@ def merge_tracks(tracks: list[tuple[str, list[tuple[int, int, str]]]]) -> list[t
     with no label contributes its text unchanged, which is the single-track case.
     """
     merged = []
-    for label, segments in tracks:
+    for label, segments in drop_echo(tracks):
         for start, end, text in segments:
             merged.append((start, end, f"{label}: {text}" if label else text))
     merged.sort(key=lambda seg: (seg[0], seg[1]))
