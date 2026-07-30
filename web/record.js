@@ -33,7 +33,12 @@ function recOptions(select, devices, chosen, preferLoopback) {
   // Nothing remembered: guess the obvious one. A loopback device exists to carry
   // the computer's own audio and is never the microphone, so the two guesses
   // cannot land on the same device.
-  const guess = devices.find(d => (preferLoopback ? d.loopback : !d.loopback));
+  //
+  // For the voice, the machine's own default input before anything else. Taking
+  // the first device in the list instead is what once put a Bluetooth headset on
+  // somebody's voice channel and recorded nothing at all from it.
+  const guess = (!preferLoopback && devices.find(d => d.default && !d.loopback))
+    || devices.find(d => (preferLoopback ? d.loopback : !d.loopback));
   select.value = guess ? guess.id : NONE;
 }
 

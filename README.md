@@ -351,11 +351,19 @@ Things that are deliberately absent, with the reason:
   mono samples into a FIFO that ffmpeg reads as an ordinary input, so nothing is installed and
   the only cost is a permission. A driver is still accepted where the helper cannot be built,
   and the advice for setting one up is still there when it is the only way left.
-- **The helper is a pipe, not a second capture device.** Feeding ffmpeg through a FIFO rather
-  than opening a second avfoundation session means only the microphone is opened as a device,
-  which sidesteps the question of whether a given Mac will open two capture sessions at once.
-  The format is stated on ffmpeg's command line because raw samples carry no header, and raw
-  is what makes a stream cut short still playable: every prefix of it is valid audio.
+- **Nothing is mixed while recording.** Each side is captured to its own file and the stereo
+  master is built at the end. Mixing two live captures in one ffmpeg meant reconciling two
+  independent clocks in real time, and `aresample` reconciled them by inserting silence —
+  0.237 s of it nearly four times a second, measured, reproducible. The louder side survived
+  and the quieter one was destroyed, so a voice arrived in fragments too broken for VAD to
+  call speech and the failure surfaced as a transcription problem with nothing wrong with the
+  transcriber. Combining finished files leaves nothing to guess at, and drift is corrected
+  once rather than continuously. Nothing is asked of a live device either: demanding a sample
+  rate or a channel layout of a live capture puts a resampler in the one path that cannot
+  afford to fall behind, so the format is settled during the mix.
+- **What gets mixed is what recorded, not what was selected.** A source chosen and then silent
+  is given no channel and no speaker label, which is how an empty track used to reach a
+  transcript.
 - **The helper is compiled on first use, not shipped.** A binary in the repository would need
   signing to be worth trusting and would be another thing to keep current; `swiftc` from
   Xcode's command line tools builds it in a few seconds into the data directory, staged and
