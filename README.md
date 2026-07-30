@@ -330,22 +330,24 @@ no model.
 
 ---
 
-## Known: a two-speaker transcript can come out in the wrong order
+## Known: a quiet channel can still sort to the front
 
-All of one side's lines can appear before all of the other's, whoever actually spoke first. The
-interleaving is not at fault — it sorts by timestamp and is tested — the timestamps are.
+Voice activity detection is no longer used on a recording with more than one track, which was the
+main cause of a two-speaker transcript arriving as all of one side followed by all of the other.
+VAD removes the silence and then reports boundaries spanning what it removed: measured against a
+file built to prove it, speech at 0–3 s and again at 13–15 s came back as **one segment,
+`00:01.190 --> 00:14.430`**, holding both utterances. A track is one channel of a conversation, so
+a segment spanning the recording sorts ahead of everything on the other channel. Without VAD the
+same recording gives a line per utterance, in the right places, with a clean gap where the other
+side was speaking.
 
-`whisper-cli --vad` removes the silence it does not judge to be speech and then reports segment
-boundaries that span what it removed. Measured against a file built to prove it, speech at 0–3 s
-and again at 13–15 s with ten seconds of digital silence between: VAD returned **one segment,
-`00:01.190 --> 00:14.430`**, holding the text of both utterances. `--vad-max-speech-duration-s`
-does not split it. Without VAD the boundary is correct but the second utterance is missed
-altogether.
-
-A track is one channel of a recording, so a segment spanning the whole thing sorts before
-everything on the other channel and the conversation collapses into two blocks. Neither VAD
-setting is usable as it stands. The fix is to let VAD locate the speech and then transcribe each
-region on its own with `--offset-t`, so every segment carries a true absolute time. Unimplemented.
+What remains: a channel carrying continuous quiet sound — a video playing under a conversation, or
+crosstalk from the room — can still come back as one long segment covering most of the recording,
+and that segment sorts by its start. Measured on a real recording, the computer's channel returned
+`00:00.000 --> 00:22.040` for a sentence spoken around 15–21 s. Trimming to speech regions first
+does not help there, because such a channel has no silence to find. The honest fix is to transcribe
+each speech region separately with `--offset-t` so every segment carries a true absolute time, and
+to find those regions per channel rather than by level alone. Unimplemented.
 
 ## Known: the recording indicator shows nothing
 
