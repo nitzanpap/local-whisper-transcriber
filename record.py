@@ -255,7 +255,7 @@ def _input_args(device: str, rec: dict) -> list[str]:
         # format the helper promised is stated here instead. Wallclock timestamps
         # for the same reason as a real device: it is a live source, and aresample
         # needs something to correct against.
-        return ["-f", "s16le", "-ar", "48000", "-ac", "1",
+        return ["-f", "s16le", "-ar", "48000", "-ac", "1", "-thread_queue_size", "1024",
                 "-use_wallclock_as_timestamps", "1", "-i", str(rec["fifo"])]
     # No wallclock timestamps on a real device, which was a mistake worth naming.
     # A capture device hands its audio over in bursts, and stamping each burst with
@@ -266,14 +266,20 @@ def _input_args(device: str, rec: dict) -> list[str]:
     # device's own sample clock is continuous, so letting it supply the timestamps
     # is both simpler and correct — aresample still corrects the drift between two
     # devices, which is the only thing it was ever needed for.
+    #
+    # thread_queue_size is the other half, and the half that actually mattered. Its
+    # default holds eight packets per input, which two live captures overflow within
+    # seconds; ffmpeg then drops what will not fit and says so only at warning level,
+    # which -loglevel error was hiding. Dropped packets are how a voice ends up
+    # arriving in pieces, at a healthy peak level, several times a second.
     if sys.platform == "darwin":
         # ":N" is avfoundation for "no video, audio device N".
-        return ["-f", "avfoundation", "-i", f":{device}"]
-    return ["-f", "pulse", "-i", device]
+        return ["-f", "avfoundation", "-thread_queue_size", "1024", "-i", f":{device}"]
+    return ["-f", "pulse", "-thread_queue_size", "1024", "-i", device]
 
 
 def capture_command(rec: dict) -> list[str]:
-    cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y"]
+    cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "warning", "-y"]
     for device in rec["devices"]:
         cmd += _input_args(device, rec)
     if len(rec["devices"]) == 2:

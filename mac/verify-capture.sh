@@ -98,8 +98,8 @@ ONE_STREAM="aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono,ares
 echo "== the computer's audio on its own =="
 mkfifo "$WORK/sys.pcm"
 "$HELPER" "$WORK/sys.pcm" & HELPER_PID=$!
-ffmpeg -hide_banner -nostdin -loglevel error -y \
-       -f s16le -ar 48000 -ac 1 -use_wallclock_as_timestamps 1 -i "$WORK/sys.pcm" \
+ffmpeg -hide_banner -nostdin -loglevel warning -y \
+       -f s16le -ar 48000 -ac 1 -thread_queue_size 1024 -use_wallclock_as_timestamps 1 -i "$WORK/sys.pcm" \
        -af "$ONE_STREAM" -t "$SECONDS_EACH" -c:a pcm_s16le "$WORK/system.wav"
 kill -INT "$HELPER_PID" 2>/dev/null; wait "$HELPER_PID" 2>/dev/null
 ONE=0; verdict "system audio" "$WORK/system.wav" || ONE=1
@@ -114,9 +114,9 @@ mkfifo "$WORK/sys2.pcm"
 "$HELPER" "$WORK/sys2.pcm" & HELPER2_PID=$!
 # The same filter graph record.py builds: each source flattened to mono, drift
 # corrected, then joined so voice is the left channel and the computer the right.
-ffmpeg -hide_banner -nostdin -loglevel error -y \
-       -f avfoundation -i ":$MIC" \
-       -f s16le -ar 48000 -ac 1 -use_wallclock_as_timestamps 1 -i "$WORK/sys2.pcm" \
+ffmpeg -hide_banner -nostdin -loglevel warning -y \
+       -f avfoundation -thread_queue_size 1024 -i ":$MIC" \
+       -f s16le -ar 48000 -ac 1 -thread_queue_size 1024 -use_wallclock_as_timestamps 1 -i "$WORK/sys2.pcm" \
        -filter_complex "[0:a]$ONE_STREAM[voice];[1:a]$ONE_STREAM[computer];[voice][computer]join=inputs=2:channel_layout=stereo[out]" \
        -map "[out]" -t "$SECONDS_EACH" -c:a pcm_s16le "$WORK/both.wav"
 kill -INT "$HELPER2_PID" 2>/dev/null; wait "$HELPER2_PID" 2>/dev/null
