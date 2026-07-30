@@ -27,6 +27,12 @@ evidence rather than a hunch.
 
 ## QA and debugging
 
+- [ ] **Nothing exercises the packaged app.** Four faults reached the installed app because every
+      check ran in a browser: `window.confirm` returning falsy in the webview, a missing
+      `record.py`, a signature broken by the app's own first run, and the app serving its own copy
+      of `web/` so edits appeared to do nothing. `rebuild.sh` now checks the mechanics of a build;
+      nothing checks its behaviour.
+
 - [ ] **Sleep and lid-close are untested.** The likeliest real interruption of a long recording, and
       nobody knows what happens to either capture.
 - [ ] **Nothing tests the app bundle.** Both packaging faults — a missing `record.py`, and a
