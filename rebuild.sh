@@ -60,6 +60,25 @@ codesign --verify --deep --strict "$INSTALLED" 2>/dev/null \
     && ok "installed, and still verifies" \
     || bad "the installed copy does not verify"
 
+# The stale entries, cleared the way Apple provides for it. Every build changes the
+# code hash, so macOS stops recognising the grants and the rows in System Settings go
+# on looking exactly like working ones — which is its own trap: the app is refused
+# while appearing to be allowed. Resetting makes it ask again instead.
+#
+# Only removal can be scripted. Granting is a human decision by design, and rightly:
+# anything able to hand itself the microphone without being asked would be malware.
+say "permissions"
+BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INSTALLED/Contents/Info.plist" 2>/dev/null)
+if [ -n "$BUNDLE" ]; then
+    for service in ScreenCapture Microphone; do
+        tccutil reset "$service" "$BUNDLE" >/dev/null 2>&1 \
+            && ok "$service cleared, it will ask again" \
+            || printf '  \033[33m—\033[0m could not clear %s; remove it by hand in System Settings\n' "$service"
+    done
+else
+    printf '  \033[33m—\033[0m no bundle identifier, so permissions were left alone\n'
+fi
+
 say "starting"
 open -a "$INSTALLED"
 n=0
@@ -83,9 +102,9 @@ esac
 
 cat <<DONE
 
-  The code hash changes with every build, so macOS treats this as a new app:
-  remove the old entries with − in System Settings → Privacy & Security →
-  Screen & System Audio Recording, and let it ask again on your first recording.
+  The permissions were cleared, so the app will ask for them again the first time
+  you record. Allow both, then quit and reopen it: macOS applies screen recording
+  only to a process that starts afterwards.
 
   bash mac/state.sh   what this machine is configured to do
 DONE
