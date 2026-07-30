@@ -21,8 +21,11 @@ const longClock = (s) => {
 
 function recOptions(select, devices, chosen, preferLoopback) {
   const esc = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  // The system-audio source is ours rather than the machine's, so its name is a
+  // translated string here instead of whatever the backend called it.
   select.innerHTML = `<option value="">${esc(t("rec.nothing"))}</option>` + devices
-    .map(d => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
+    .map(d => `<option value="${esc(d.id)}">${esc(d.builtin ? t("rec.systemAudio") : d.name)}</option>`)
+    .join("");
   if (chosen && devices.some(d => d.id === chosen)) {
     select.value = chosen;
     return;
@@ -209,9 +212,18 @@ document.addEventListener("click", async (e) => {
 });
 
 // Everything on this screen that script wrote has to be written again in the new
-// language. The dropdowns hold device names, which are not ours to translate.
+// language. The dropdowns are mostly device names, which are not ours to
+// translate — but the system-audio entry is ours, so they are rebuilt too.
 function redrawRecord() {
   if (!recFound) return;
+  for (const [id, preferLoopback] of [["rec-voice", false], ["rec-computer", true]]) {
+    // Whatever is selected now, not what was remembered when the view loaded, and
+    // put back by hand afterwards: "Nothing" is a deliberate choice that
+    // recOptions would otherwise treat as nothing chosen yet and guess over.
+    const was = $(id).value;
+    recOptions($(id), recDevices, was, preferLoopback);
+    $(id).value = was;
+  }
   recAdvice(recFound);
   recPlan();
 }

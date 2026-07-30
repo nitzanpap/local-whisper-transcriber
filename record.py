@@ -32,7 +32,7 @@ from pathlib import Path
 
 import jobs
 import watch
-from config import (DEFAULT_EXTRA, Failed, RECORDING_PREFIX, TRANSCRIPT_SUFFIX,
+from config import (DATA_DIR, DEFAULT_EXTRA, Failed, RECORDING_PREFIX, TRANSCRIPT_SUFFIX,
                     WORK_DIR, recording_config, save_settings, settings)
 from tools import binary, capture
 from transcribe import duration_seconds
@@ -43,6 +43,9 @@ TASK: asyncio.Task | None = None
 # Our own child. Deliberately not tools.PROC: cancelling a transcription must
 # not stop a recording, and stopping a recording must not stop a transcription.
 PROC: asyncio.subprocess.Process | None = None
+# The system-audio helper, when one is feeding ffmpeg. Stopped with ffmpeg, and
+# separately, because it is a sibling of the recording rather than a child of it.
+HELPER: asyncio.subprocess.Process | None = None
 
 LIVE = ("recording", "stopping", "saving")
 MAX_LOG = 120
@@ -50,10 +53,96 @@ MAX_LOG = 120
 # A WAV shorter than this is a header and nothing else.
 EMPTY_WAV = 2048
 
+# The helper's own exit code for a permission macOS would not give. Kept in step
+# with DENIED in mac/syscapture.swift.
+HELPER_DENIED = 3
+
 # What a device is called when it exists to carry audio back into the machine.
 # Used to preselect the right one and to notice when there is none.
 LOOPBACK_HINTS = ("blackhole", "loopback", "soundflower", "vb-cable", "vb cable",
                   "aggregate", "multi-output", "monitor of", ".monitor")
+
+
+# --- the computer's own audio, without a driver -------------------------------
+
+
+# Offered in place of a loopback device, and not an avfoundation index: nothing
+# opens it, because capture_command turns it into a pipe from the helper instead.
+# It is presented as a loopback so that the existing preselection picks it for the
+# computer side and the advice about installing a driver stays quiet.
+SYSTEM_AUDIO = "system"
+
+HELPER_SOURCE = Path(__file__).parent / "mac" / "syscapture.swift"
+# Built once, into the data directory rather than scratch, which gets swept. A
+# packaged .app ships this already built and signed and only ever finds it here.
+HELPER_BIN = DATA_DIR / "syscapture"
+
+
+async def helper_path() -> Path | None:
+    """The system-audio helper, compiled on first use if this Mac can compile it.
+
+    Nothing is built on Linux, where a PulseAudio monitor source already appears
+    as an ordinary input and none of this is needed.
+    """
+    if sys.platform != "darwin":
+        return None
+    try:
+        fresh = HELPER_BIN.stat().st_mtime >= HELPER_SOURCE.stat().st_mtime
+    except OSError:
+        # No source to compare against means a shipped binary: trust it if it runs.
+        fresh = HELPER_BIN.is_file() and not HELPER_SOURCE.is_file()
+    if fresh and os.access(HELPER_BIN, os.X_OK):
+        return HELPER_BIN
+    return await _build_helper()
+
+
+async def _build_helper() -> Path | None:
+    swiftc = shutil.which("swiftc")
+    if swiftc is None or not HELPER_SOURCE.is_file():
+        return None
+    # Staged and moved, so a build interrupted halfway cannot leave a half-written
+    # binary behind for the next run to trust.
+    staged = HELPER_BIN.with_name("syscapture.building")
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        code, _ = await capture(
+            [swiftc, "-O", "-parse-as-library", "-o", str(staged), str(HELPER_SOURCE)],
+            timeout=300)
+    except (Failed, OSError):
+        return None
+    if code != 0 or not staged.is_file():
+        staged.unlink(missing_ok=True)
+        return None
+    try:
+        staged.replace(HELPER_BIN)
+    except OSError:
+        return None
+    return HELPER_BIN
+
+
+async def _granted(helper: Path, prompt: bool) -> bool:
+    """Whether Screen Recording is allowed. `prompt` is the only thing that asks."""
+    try:
+        code, out = await capture([str(helper), "--request" if prompt else "--probe"],
+                                  timeout=120 if prompt else 20)
+    except (Failed, OSError):
+        return False
+    if code != 0:
+        return False
+    for line in reversed(out.splitlines()):
+        try:
+            return bool(json.loads(line).get("granted"))
+        except ValueError:
+            continue
+    return False
+
+
+async def system_audio(prompt: bool = False) -> dict | None:
+    """The driverless computer-audio source, or None where there cannot be one."""
+    helper = await helper_path()
+    if helper is None:
+        return None
+    return {"helper": helper, "granted": await _granted(helper, prompt)}
 
 
 # --- what is available to record from ----------------------------------------
@@ -116,10 +205,20 @@ async def devices() -> dict:
     found = _parse_avfoundation(out) if sys.platform == "darwin" else _parse_pulse(out)
     for device in found:
         device["loopback"] = is_loopback(device)
+    # Listed last so that it is the computer side's first loopback without ever
+    # being mistaken for the microphone, whose guess takes the first that is not.
+    sysaudio = await system_audio()
+    if sysaudio is not None:
+        found.append({"id": SYSTEM_AUDIO, "name": "System audio",
+                      "loopback": True, "builtin": True})
     conf = recording_config()
     advice = []
     if not found:
         advice.append("noDevices")
+    elif sysaudio is not None and not sysaudio["granted"]:
+        # A permission that has not been given yet, which is one click rather than
+        # a driver to install — so it is worth saying instead of the older advice.
+        advice.append("needScreenRecording")
     elif not any(d["loopback"] for d in found):
         advice.append("needLoopback")
     return {
@@ -150,7 +249,14 @@ ONE_STREAM = ("aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono"
               ",aresample=async=1000:first_pts=0")
 
 
-def _input_args(device: str) -> list[str]:
+def _input_args(device: str, rec: dict) -> list[str]:
+    if device == SYSTEM_AUDIO:
+        # A FIFO carrying raw samples has no header to describe itself, so the
+        # format the helper promised is stated here instead. Wallclock timestamps
+        # for the same reason as a real device: it is a live source, and aresample
+        # needs something to correct against.
+        return ["-f", "s16le", "-ar", "48000", "-ac", "1",
+                "-use_wallclock_as_timestamps", "1", "-i", str(rec["fifo"])]
     if sys.platform == "darwin":
         # ":N" is avfoundation for "no video, audio device N".
         return ["-f", "avfoundation", "-use_wallclock_as_timestamps", "1", "-i", f":{device}"]
@@ -160,7 +266,7 @@ def _input_args(device: str) -> list[str]:
 def capture_command(rec: dict) -> list[str]:
     cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y"]
     for device in rec["devices"]:
-        cmd += _input_args(device)
+        cmd += _input_args(device, rec)
     if len(rec["devices"]) == 2:
         graph = (f"[0:a]{ONE_STREAM}[voice];[1:a]{ONE_STREAM}[computer];"
                  "[voice][computer]join=inputs=2:channel_layout=stereo[out]")
@@ -195,6 +301,22 @@ async def start(voice: str, computer: str) -> dict:
     chosen = [d for d in (voice.strip(), computer.strip()) if d]
     if not chosen:
         raise Failed("invalid_input_path", "Choose at least one thing to record.")
+
+    helper = None
+    if SYSTEM_AUDIO in chosen:
+        # Asked for by the click that starts the recording, not silently at startup:
+        # a permission prompt out of nowhere is worse than one with a reason.
+        sysaudio = await system_audio(prompt=True)
+        if sysaudio is None:
+            raise Failed("dependency_not_found",
+                         "The system-audio helper could not be built. Xcode's command line "
+                         "tools provide the compiler it needs (xcode-select --install).")
+        if not sysaudio["granted"]:
+            raise Failed("insufficient_permissions",
+                         "macOS has not allowed this app to capture the computer's audio. Open "
+                         "System Settings → Privacy & Security → Screen Recording, allow it "
+                         "there, then start the app again and record.")
+        helper = sysaudio["helper"]
 
     conf = recording_config()
     folder = Path(conf["folder"]).expanduser()
@@ -239,8 +361,16 @@ async def start(voice: str, computer: str) -> dict:
         "error": None,
         "work": work,
         "wav": work / "master.wav",
+        "helper": helper,
+        "fifo": work / "system.pcm",
         "log": deque(maxlen=MAX_LOG),
     }
+    if helper is not None:
+        try:
+            os.mkfifo(rec["fifo"])
+        except OSError as exc:
+            raise Failed("recording_failed",
+                         f"The pipe for the computer's audio could not be made: {exc}")
     RECORDING = rec
     _checkpoint(rec)
     TASK = asyncio.create_task(_run(rec))
@@ -271,9 +401,49 @@ async def _until_audio_arrives(rec: dict, timeout: float = 3.0) -> None:
         await asyncio.sleep(0.1)
 
 
+async def _start_helper(rec: dict) -> bool:
+    """Begin capturing the computer's audio into the FIFO ffmpeg is about to read.
+
+    Started before ffmpeg deliberately: opening a FIFO for writing blocks until
+    something opens it for reading, so this waits for ffmpeg rather than racing it.
+    """
+    global HELPER
+    cmd = [str(rec["helper"]), str(rec["fifo"])]
+    rec["log"].append("$ " + shlex.join(cmd))
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE, start_new_session=True,
+        )
+    except OSError as exc:
+        _failed(rec, "recording_failed", f"The system-audio helper would not start: {exc}")
+        return False
+    HELPER = proc
+    asyncio.create_task(_drain_helper(rec, proc))
+    return True
+
+
+async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
+    """The helper's own words, and the exit code that says whether it was allowed."""
+    global HELPER
+    try:
+        assert proc.stderr is not None
+        async for raw in proc.stderr:
+            line = raw.decode("utf-8", "replace").rstrip()
+            if line:
+                rec["log"].append(line)
+        await proc.wait()
+    finally:
+        if HELPER is proc:
+            HELPER = None
+        rec["helper_code"] = proc.returncode
+
+
 async def _run(rec: dict) -> None:
     """One recording, start to finish: capture, then save what was captured."""
     global PROC
+    if rec.get("helper") is not None and not await _start_helper(rec):
+        return
     cmd = capture_command(rec)
     rec["log"].append("$ " + shlex.join(cmd))
     try:
@@ -293,6 +463,10 @@ async def _run(rec: dict) -> None:
         await proc.wait()
     finally:
         PROC = None
+        # ffmpeg is done reading, so the helper has nobody to write to. It would
+        # notice on its own at the next buffer, but not being asked to linger is
+        # cheaper than waiting for that.
+        _signal_helper(signal.SIGINT)
 
     if not rec["keep"]:
         rec["status"] = "discarded"
@@ -312,13 +486,21 @@ async def _run(rec: dict) -> None:
 
 def _why_nothing_arrived(rec: dict) -> tuple[str, str]:
     text = " ".join(rec["log"]).lower()
+    # The helper reports a refused permission as its exit code, so this is known
+    # rather than guessed from log text. Checked first: when the computer's audio
+    # was never allowed, nothing else that went wrong afterwards is the cause.
+    if rec.get("helper_code") == HELPER_DENIED:
+        return ("insufficient_permissions",
+                "macOS did not let this app capture the computer's audio. Open System "
+                "Settings → Privacy & Security → Screen Recording, allow it there, then "
+                "start the app again and record.")
     denied = ("not permitted", "input/output error", "permission denied",
               "cannot open", "no such device", "invalid device")
     if sys.platform == "darwin" and any(hint in text for hint in denied):
         return ("insufficient_permissions",
                 "macOS did not let this app use the microphone. Open System Settings → "
                 "Privacy & Security → Microphone, allow it there, and record again.")
-    if len(rec["devices"]) == 2:
+    if len(rec["devices"]) == 2 and SYSTEM_AUDIO not in rec["devices"]:
         # Two devices means two capture sessions at once, and a machine that will
         # not open both leaves one way out worth naming: build an Aggregate Device
         # in Audio MIDI Setup holding both, and record that as a single source.
@@ -430,13 +612,22 @@ async def _insist(rec: dict, grace: float = 10.0) -> None:
 
 
 def _signal(sig: int) -> None:
-    if PROC is None or PROC.returncode is not None:
+    _signal_proc(PROC, sig)
+    _signal_helper(sig)
+
+
+def _signal_helper(sig: int) -> None:
+    _signal_proc(HELPER, sig)
+
+
+def _signal_proc(proc: asyncio.subprocess.Process | None, sig: int) -> None:
+    if proc is None or proc.returncode is not None:
         return
     try:
-        os.killpg(os.getpgid(PROC.pid), sig)
+        os.killpg(os.getpgid(proc.pid), sig)
     except (ProcessLookupError, PermissionError, AttributeError, OSError):
         try:
-            PROC.send_signal(sig)
+            proc.send_signal(sig)
         except (ProcessLookupError, OSError):
             pass
 

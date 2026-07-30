@@ -70,6 +70,12 @@ const STRINGS = {
     "rec.noDevicesWhat": "ffmpeg listed no recording devices at all. On macOS this usually " +
       "means the app has not been allowed to use the microphone yet: System Settings → " +
       "Privacy & Security → Microphone.",
+    "rec.systemAudio": "System audio (no driver needed)",
+    "rec.needScreenRecordingTitle": "One permission away from recording your computer's audio",
+    "rec.needScreenRecordingWhat": "This app can capture what your speakers are playing " +
+      "without any driver, but macOS calls that screen recording and asks first. Starting a " +
+      "recording will request it; allow it there and you may need to start the app again. " +
+      "Your voice alone will record fine in the meantime.",
     "rec.howTo": "How to set that up",
     "rec.loopbackSteps":
       "1. Install a loopback driver:\n" +
@@ -268,6 +274,11 @@ const STRINGS = {
     "rec.noDevicesTitle": "לא נמצאו התקני קלט",
     "rec.noDevicesWhat": "‏ffmpeg לא מצא שום התקן הקלטה. ב‑macOS זה בדרך כלל אומר שלא ניתנה " +
       "לאפליקציה הרשאה למיקרופון: הגדרות המערכת → פרטיות ואבטחה → מיקרופון.",
+    "rec.systemAudio": "האודיו של המחשב (בלי דרייבר)",
+    "rec.needScreenRecordingTitle": "הרשאה אחת מפרידה בינינו לבין הקלטת האודיו של המחשב",
+    "rec.needScreenRecordingWhat": "האפליקציה יכולה להקליט את מה שהרמקולים מנגנים בלי שום " +
+      "דרייבר, אבל ‏macOS קורא לזה הקלטת מסך ומבקש רשות קודם. התחלת הקלטה תבקש אותה; אשרו " +
+      "שם, וייתכן שיהיה צריך להפעיל את האפליקציה מחדש. בינתיים הקול שלכם לבד יוקלט בסדר גמור.",
     "rec.howTo": "איך מגדירים את זה",
     "rec.loopbackSteps":
       "1. התקינו דרייבר loopback:\n" +

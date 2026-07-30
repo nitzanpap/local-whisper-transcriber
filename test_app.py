@@ -90,6 +90,12 @@ def write_fakes() -> dict:
         p.chmod(0o755)
         paths[name] = str(p)
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # The system-audio helper is left out of the fake world on purpose. Pointing at
+    # a source that is not there is what stops these checks from invoking a real
+    # Swift compiler, and from reporting whichever permissions this particular
+    # machine happens to have granted. The tests that want it patch it in.
+    record.HELPER_SOURCE = TMP / "no-syscapture.swift"
+    record.HELPER_BIN = TMP / "data" / "no-syscapture"
     # settings keys are underscored: whisper-cli -> whisper_cli_path
     config.SETTINGS.write_text(json.dumps({f"{k.replace('-', '_')}_path": v for k, v in paths.items()}))
     return paths
@@ -438,6 +444,41 @@ async def main() -> None:
     check("it stops by itself", "-t 60" in cmd, cmd)
     one = " ".join(record.capture_command({**both, "devices": ["0"]}))
     check("one source needs no join", "join=" not in one and one.count("-i ") == 1, one)
+
+    print("the computer's audio without a driver")
+    sysrec = {"devices": ["0", record.SYSTEM_AUDIO], "max_seconds": 60,
+              "wav": Path("/tmp/m.wav"), "fifo": Path("/tmp/sys.pcm"), "log": []}
+    cmd = " ".join(record.capture_command(sysrec))
+    check("the microphone is the only device opened", cmd.count("avfoundation") <= 1, cmd)
+    check("the computer's side is a pipe, not a device", "/tmp/sys.pcm" in cmd, cmd)
+    check("whose raw format has to be spelled out",
+          "-f s16le" in cmd and "-ar 48000" in cmd, cmd)
+    check("and the two are still kept apart",
+          "join=inputs=2:channel_layout=stereo" in cmd, cmd)
+    code, message = record._why_nothing_arrived({**sysrec, "helper_code": record.HELPER_DENIED})
+    check("a refused permission is named, not guessed at",
+          code == "insufficient_permissions" and "Screen Recording" in message, message)
+    check("and is not blamed on two capture sessions", "Aggregate" not in message, message)
+
+    async def with_helper(granted: bool) -> dict:
+        """devices() as it looks on a machine where the helper exists."""
+        async def fake(prompt: bool = False) -> dict:
+            return {"helper": Path("/x/syscapture"), "granted": granted}
+        was, record.system_audio = record.system_audio, fake
+        try:
+            return await record.devices()
+        finally:
+            record.system_audio = was
+
+    got = await with_helper(False)
+    entry = next((d for d in got["devices"] if d["id"] == record.SYSTEM_AUDIO), None)
+    check("system audio is offered as a source", entry is not None, str(got["devices"]))
+    check("as a loopback, so it is the computer's side by default", bool(entry and entry["loopback"]))
+    check("nobody is told to install a driver", "needLoopback" not in got["advice"], str(got["advice"]))
+    check("the permission is asked about instead",
+          got["advice"] == ["needScreenRecording"], str(got["advice"]))
+    check("nothing to advise once it is allowed",
+          (await with_helper(True))["advice"] == [], str(got["advice"]))
 
     print("recording, then transcribing both speakers apart")
     recordings = TMP / "recordings"

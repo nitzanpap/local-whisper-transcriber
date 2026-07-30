@@ -113,9 +113,20 @@ Me: right, and that is end of quarter
 Both dropdowns are optional. One source alone records fine; it just has nobody to
 distinguish, so the transcript is unlabelled.
 
-**Your computer's audio needs a loopback driver first.** macOS offers apps the microphone and
-nothing else — there is no input device carrying what your speakers are playing until you
-install one. The Record view says so, with the steps, when it cannot find one. In short:
+**Your computer's audio needs a permission, not a driver.** macOS offers apps the microphone
+and nothing else — there is no input device carrying what your speakers are playing. It will
+hand the audio over directly, though, so the second dropdown offers **System audio** and
+nothing has to be installed. macOS files that under screen recording and asks first: starting
+a recording raises the prompt, and after allowing it you may have to start the app again
+before it takes effect. Nothing is captured of your screen — only the audio.
+
+The helper that does this is `mac/syscapture.swift`, about a hundred lines against
+ScreenCaptureKit, compiled once on first use into `~/.local-whisper-transcriber/` by the Swift
+compiler that comes with Xcode's command line tools. If that compiler is missing the option
+simply is not offered, and the older advice below takes its place.
+
+**If you would rather use a loopback driver,** or you are on a Mac too old for the above, that
+still works and the Record view still explains it when it finds no other way. In short:
 
 ```bash
 brew install blackhole-2ch
@@ -244,13 +255,18 @@ Settings → Tool paths.
 
 **A model you just downloaded is not listed.** The scan runs once per process — restart it.
 
-**The second recording dropdown offers nothing useful.** There is no loopback driver
-installed, so nothing on this machine can hear what your speakers are playing. Section 3 has
-the steps; your voice alone records fine until then.
+**The second recording dropdown offers nothing useful.** **System audio** appears there
+whenever the helper can be built, so its absence means no Swift compiler:
+`xcode-select --install`. Failing that, a loopback driver still works and section 3 has the
+steps; your voice alone records fine until then.
+
+**Recording the computer's audio refuses to start.** The permission has not been given:
+System Settings → Privacy & Security → Screen Recording. macOS often only applies it to a
+process that starts afterwards, so start the app again before trying once more.
 
 **A recording came out silent, or refused to start.** Almost always microphone permission:
 System Settings → Privacy & Security → Microphone. The Record view's process log has whatever
-ffmpeg said.
+ffmpeg said, and whatever the system-audio helper said alongside it.
 
 **A recording of two sources failed but one alone works.** Some machines will not open two
 capture sessions at once. Combine both devices into one **Aggregate Device** in Audio MIDI
@@ -322,10 +338,21 @@ Things that are deliberately absent, with the reason:
 - **No screen video.** It would be the largest part of the file and contributes nothing to a
   transcript, and ffmpeg's screen capture drifts out of sync with audio over an hour. For
   video, Cmd-Shift-5 or OBS alongside this is better than a worse version of both.
-- **No bundled audio driver.** Recording the computer's own audio needs one, but shipping a
-  system extension would mean signing, an installer and an approval prompt, for something
-  BlackHole already does in one `brew install`. The app detects whether one is present and
-  says what to do when it is not.
+- **No bundled audio driver.** Recording the computer's own audio used to need one. It does
+  not any more: `mac/syscapture.swift` asks ScreenCaptureKit for the system mix and writes raw
+  mono samples into a FIFO that ffmpeg reads as an ordinary input, so nothing is installed and
+  the only cost is a permission. A driver is still accepted where the helper cannot be built,
+  and the advice for setting one up is still there when it is the only way left.
+- **The helper is a pipe, not a second capture device.** Feeding ffmpeg through a FIFO rather
+  than opening a second avfoundation session means only the microphone is opened as a device,
+  which sidesteps the question of whether a given Mac will open two capture sessions at once.
+  The format is stated on ffmpeg's command line because raw samples carry no header, and raw
+  is what makes a stream cut short still playable: every prefix of it is valid audio.
+- **The helper is compiled on first use, not shipped.** A binary in the repository would need
+  signing to be worth trusting and would be another thing to keep current; `swiftc` from
+  Xcode's command line tools builds it in a few seconds into the data directory, staged and
+  moved so an interrupted build cannot leave something half-written to be trusted later. Where
+  there is no compiler the option is not offered rather than failing at the click.
 - **The recording master is a WAV, not the .m4a that is kept.** A WAV's header comes first, so
   a recording cut short by a crash is still playable; an `.m4a` missing its trailing index is
   nothing at all. Stopping transcodes the WAV into place and deletes it.
