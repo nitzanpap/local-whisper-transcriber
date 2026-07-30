@@ -1,5 +1,58 @@
 # Local Whisper Transcriber
 
+Turn recordings into transcripts on your own machine. Nothing is uploaded, there is no account and
+no telemetry, and it records meetings as well as transcribing them — your voice and your computer's
+audio kept apart, so the transcript says who said what without a diarisation model.
+
+<!-- Screenshots go in docs/. Four are worth having, in this order:
+     docs/record.png     the Record view mid-recording, with the level meter moving
+     docs/transcribe.png a file queued, with the progress bar partway
+     docs/library.png    the library with a transcript open beside its audio
+     docs/hebrew.png     the same screen in Hebrew, showing the right-to-left layout
+     Take them at 1280x800 with the window at its natural size. -->
+
+![The Record view](docs/record.png)
+
+## Start here
+
+```bash
+git clone https://github.com/nitzanpap/local-whisper-transcriber
+cd local-whisper-transcriber
+./setup.sh
+```
+
+`setup.sh` checks for everything the app needs, offers to install only what is missing, and runs
+the checks at the end. It asks before every install and can be run again any time — which makes it
+the fastest way to answer "what is not ready yet".
+
+Then:
+
+```bash
+uv run --script app.py
+```
+
+and open http://127.0.0.1:8765.
+
+| | |
+|---|---|
+| `uv run --script app.py` | the app |
+| `uv run --script test_app.py` | the checks — about five seconds, no model needed |
+| `bash mac/state.sh` | what your machine is configured to do |
+| `bash mac/verify-capture.sh` | recording, tested against real hardware |
+
+**If something audio-related misbehaves, run `mac/state.sh` before reading the code.** Most of what
+looks like a bug on macOS is a disconnected default device, a muted output, or a permission granted
+to the wrong application — it prints all of those. There is a section below on the ones that cost a
+long afternoon.
+
+## Known limits, in short
+
+It is not packaged for anyone but a developer yet: the app is ad-hoc signed rather than notarised,
+so macOS will warn, and `ffmpeg`, `whisper-cli` and the model are installed alongside rather than
+bundled. `setup.sh` handles all of that on your own machine; distributing it to somebody else's
+needs bundling and an Apple Developer account, and neither is done.
+
+
 Record a meeting and turn it into a transcript, on your own machine. Press record, or pick a
 file, or point it at a folder and forget about it — and get a `.txt` and a `.srt` next to the
 recording.
