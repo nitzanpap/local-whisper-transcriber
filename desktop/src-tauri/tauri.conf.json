@@ -26,8 +26,10 @@
       "../../transcribe.py": "backend/transcribe.py",
       "../../jobs.py": "backend/jobs.py",
       "../../library.py": "backend/library.py",
+      "../../record.py": "backend/record.py",
       "../../watch.py": "backend/watch.py",
-      "../../web/": "backend/web/"
+      "../../web/": "backend/web/",
+      "../../mac/": "backend/mac/"
     },
     "macOS": {
       "minimumSystemVersion": "10.15"
