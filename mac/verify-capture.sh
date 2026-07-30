@@ -17,10 +17,16 @@ set -u
 HELPER="${HELPER:-$HOME/.local-whisper-transcriber/syscapture}"
 SECONDS_EACH="${SECONDS_EACH:-5}"
 
+# Rebuilt every run rather than reused. A stale binary here reported a crash from
+# a line that had already been deleted, and the fix was tested against the bug.
+if [ -f mac/syscapture.swift ] && command -v swiftc >/dev/null; then
+    mkdir -p "$(dirname "$HELPER")"
+    swiftc -O -parse-as-library -o "$HELPER" mac/syscapture.swift || {
+        echo "the helper would not compile"; exit 1; }
+    echo "helper built from mac/syscapture.swift"
+fi
 if [ ! -x "$HELPER" ]; then
-    echo "No helper at $HELPER."
-    echo "Open the Record view once and it will build itself, or:"
-    echo "  swiftc -O -parse-as-library -o \"$HELPER\" mac/syscapture.swift"
+    echo "No helper at $HELPER and no compiler to make one."
     exit 1
 fi
 command -v ffmpeg >/dev/null || { echo "ffmpeg is not on PATH."; exit 1; }
@@ -126,7 +132,7 @@ echo "== the computer's audio on its own =="
 mkfifo "$WORK/sys.pcm"
 "$HELPER" "$WORK/sys.pcm" & HELPER_PID=$!
 ffmpeg -hide_banner -nostdin -loglevel warning -y \
-       -f s16le -ar 48000 -ac 1 -thread_queue_size 1024 -use_wallclock_as_timestamps 1 -i "$WORK/sys.pcm" \
+       -f s16le -ar 48000 -ac 1 -i "$WORK/sys.pcm" \
        -af "$ONE_STREAM" -t "$SECONDS_EACH" -c:a pcm_s16le "$WORK/system.wav"
 kill -INT "$HELPER_PID" 2>/dev/null; wait "$HELPER_PID" 2>/dev/null
 ONE=0; verdict "system audio" "$WORK/system.wav" || ONE=1
@@ -137,16 +143,23 @@ MIC="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 |
        sed -n 's/^\[AVFoundation[^]]*\] *\[\([0-9]*\)\] \(.*Microphone.*\)$/\1/p' | head -1)"
 MIC="${MIC:-0}"
 echo "   microphone is device $MIC"
-mkfifo "$WORK/sys2.pcm"
-"$HELPER" "$WORK/sys2.pcm" & HELPER2_PID=$!
-# The same filter graph record.py builds: each source flattened to mono, drift
-# corrected, then joined so voice is the left channel and the computer the right.
+# What record.py now does, and it matters that this mirrors it rather than
+# inventing its own arrangement: for several rounds this script kept both sources
+# in one live ffmpeg after record.py had stopped doing that, so it went on
+# reproducing a fault that had already been fixed and reported it as unfixed.
+#
+# Each side captured on its own, to its own file, with nothing asked of the device.
+"$HELPER" "$KEEP/computer.pcm" & HELPER2_PID=$!
 ffmpeg -hide_banner -nostdin -loglevel warning -y \
-       -f avfoundation -thread_queue_size 1024 -i ":$MIC" \
-       -f s16le -ar 48000 -ac 1 -thread_queue_size 1024 -use_wallclock_as_timestamps 1 -i "$WORK/sys2.pcm" \
-       -filter_complex "[0:a]$ONE_STREAM[voice];[1:a]$ONE_STREAM[computer];[voice][computer]join=inputs=2:channel_layout=stereo[out]" \
-       -map "[out]" -t "$SECONDS_EACH" -c:a pcm_s16le "$WORK/both.wav"
+       -thread_queue_size 1024 -f avfoundation -i ":$MIC" \
+       -t "$SECONDS_EACH" -c:a pcm_s16le "$KEEP/voice.wav"
 kill -INT "$HELPER2_PID" 2>/dev/null; wait "$HELPER2_PID" 2>/dev/null
+# Then combined, once, from files that are complete.
+ffmpeg -hide_banner -nostdin -loglevel warning -y \
+       -i "$KEEP/voice.wav" \
+       -f s16le -ar 48000 -ac 1 -i "$KEEP/computer.pcm" \
+       -filter_complex "[0:a]$ONE_STREAM[voice];[1:a]$ONE_STREAM[computer];[voice][computer]join=inputs=2:channel_layout=stereo[out]" \
+       -map "[out]" -c:a pcm_s16le "$WORK/both.wav"
 
 BOTH=0; verdict "mixed" "$WORK/both.wav" || BOTH=1
 # Each channel on its own, because a stereo file with sound in it proves nothing
