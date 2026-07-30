@@ -177,7 +177,20 @@ function renderRecording(rec, orphans) {
                  : t("rec.oneChannel"),
       t("rec.stopsAfter", { n: Math.round(rec.max_seconds / 60) }),
     ].map(x => `<span>${x}</span>`).join("<i>·</i>");
-    $("rec-tape").classList.toggle("idle", rec.status === "recording");
+    // Driven by what the capture reports, never by a timer. The bar that used to
+    // sweep on a 1.6s loop looked exactly like a level meter and moved whether or
+    // not any audio existed, which is how a microphone recording digital zero went
+    // unnoticed. A meter with nothing to show now shows nothing.
+    const live = rec.live || {};
+    const heard = Object.keys(live).length > 0;
+    $("rec-tape").classList.toggle("idle", rec.status === "recording" && !heard);
+    if (heard) {
+      // LUFS runs from about -70 (silence) to 0 (as loud as it goes); speech sits
+      // around -25, so the useful part of the scale is the top half.
+      const width = (v) => Math.max(0, Math.min(100, ((v + 60) / 60) * 100));
+      const loudest = Math.max(...Object.values(live));
+      $("rec-tape").querySelector("i").style.width = width(loudest) + "%";
+    }
     $("rec-stop").disabled = rec.status !== "recording";
     $("rec-throw").disabled = rec.status !== "recording";
   }
