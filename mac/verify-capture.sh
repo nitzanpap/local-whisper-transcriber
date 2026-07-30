@@ -52,8 +52,12 @@ esac
 
 # Something has to be playing or a correct capture is indistinguishable from a
 # broken one. A tone through the default output is the least intrusive way.
+#
+# Long enough for all three stages with room to spare. It used to be sized for two,
+# and once a third was added the tone ran out partway through — so the last stage
+# recorded a machine that had gone quiet and reported it as a capture failure.
 ffmpeg -hide_banner -loglevel error -f lavfi \
-       -i "sine=frequency=440:duration=$((SECONDS_EACH * 2 + 4))" -y "$WORK/tone.wav"
+       -i "sine=frequency=440:duration=$((SECONDS_EACH * 3 + 12))" -y "$WORK/tone.wav"
 afplay "$WORK/tone.wav" & TONE_PID=$!
 sleep 1
 
