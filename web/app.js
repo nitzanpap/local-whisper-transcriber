@@ -17,6 +17,12 @@ const when = s => s ? new Date(s * 1000).toLocaleString([], { month: "short", da
 function ask(message) {
   return new Promise((resolve) => {
     const box = $("confirm");
+    // Moved to be a child of body before it is shown. position:fixed is relative to
+    // the nearest ancestor with a transform or an animation rather than to the
+    // viewport, and this page animates its containers — so left where it was
+    // written, the backdrop covered a band across the middle of the screen instead
+    // of the screen, while still swallowing every click behind it.
+    if (box.parentNode !== document.body) document.body.appendChild(box);
     $("confirm-text").textContent = message;
     box.hidden = false;
     $("confirm-yes").focus();
@@ -31,6 +37,10 @@ function ask(message) {
     document.addEventListener("keydown", onKey);
     $("confirm-yes").onclick = () => done(true);
     $("confirm-no").onclick = () => done(false);
+    // Clicking away answers no as well. A dialog that covers the page and cannot be
+    // dismissed by any of the three things people try is a trap, and this one
+    // covered the page whether it looked like it or not.
+    box.onclick = (e) => { if (e.target === box) done(false); };
   });
 }
 

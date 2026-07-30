@@ -562,8 +562,8 @@
 <!-- Our own confirmation, because window.confirm does nothing in the webview the
      desktop app runs in: it returns falsy, so every action guarded by it silently
      did nothing at all. Six of them, including discarding a recording. -->
-<div id="confirm" class="sheet" hidden>
-  <div class="sheet-box" role="alertdialog" aria-modal="true" aria-labelledby="confirm-text">
+<div id="confirm" class="confirm-sheet" hidden>
+  <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirm-text">
     <p id="confirm-text"></p>
     <div class="line">
       <button id="confirm-yes" class="solid" data-i18n="confirm.yes">Yes</button>
