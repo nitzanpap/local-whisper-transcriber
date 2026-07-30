@@ -137,6 +137,7 @@ const STRINGS = {
     "lib.jumpTo": "Jump to {at}",
 
     // Settings
+    "set.refine": "Refinements",
     "set.basics": "The basics",
     "set.spokenLanguage": "Language spoken in your recordings",
     "set.detect": "Work it out automatically",
@@ -339,6 +340,7 @@ const STRINGS = {
     "lib.noHits": "אין תמליל שמכיל את זה.",
     "lib.jumpTo": "מעבר ל‑{at}",
 
+    "set.refine": "עידונים",
     "set.basics": "העיקר",
     "set.spokenLanguage": "השפה המדוברת בהקלטות שלכם",
     "set.detect": "לזהות לבד",

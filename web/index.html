@@ -366,6 +366,12 @@
       </div>
     </div>
 
+    <!-- Everything above changes the result for everybody; everything in here is a
+         refinement most people set once or never. Closed by default so the basics
+         are two decisions rather than five, and open at a click rather than behind
+         a different screen. -->
+    <details class="more">
+      <summary data-i18n="set.refine">Refinements</summary>
     <div class="field" style="margin-top:1.4rem">
       <label class="label" for="set-vocab" data-i18n="set.vocabulary">Words it keeps getting wrong</label>
       <textarea id="set-vocab" rows="2" spellcheck="false"
@@ -404,6 +410,7 @@
         </div>
       </div>
     </div>
+    </details>
   </section>
 
   <section class="step">

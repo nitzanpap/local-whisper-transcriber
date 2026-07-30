@@ -351,3 +351,17 @@ textarea:focus { outline: none; border-color: var(--ink); }
 body.waiting { cursor: progress; }
 body.waiting main, body.waiting .note { pointer-events: none; opacity: .6; transition: opacity .15s; }
 button[data-busy] { position: relative; }
+
+/* Settings that most people set once or never. A disclosure rather than another
+   screen: the point is to shorten the common path, not to hide the controls from
+   anyone who came looking for them. */
+.more { margin-top: 1.8rem; border-top: 1px solid var(--rule); padding-top: 1.1rem; }
+.more > summary {
+  cursor: pointer; color: var(--ink-soft); font-size: .82rem;
+  letter-spacing: .12em; text-transform: uppercase; list-style: none;
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before { content: "+ "; }
+.more[open] > summary::before { content: "− "; }
+.more > summary:hover { color: var(--ink); }
+.more[open] > summary { margin-bottom: 1.4rem; }
