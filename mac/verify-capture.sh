@@ -63,14 +63,25 @@ verdict() {
     fi
     # A level says something arrived, not that it arrived whole. Dropouts inserted
     # by a timestamp problem leave audio at a healthy peak and still destroy it:
-    # the giveaway is many short silences of near-identical length, which speech
-    # does not produce. Checking only the level once let exactly that through.
-    local gaps
-    gaps=$(ffmpeg -v info -nostdin -i "$file" -af "silencedetect=noise=-45dB:d=0.1" -f null - 2>&1 |
+    # the giveaway is many short silences of near-identical length, which real
+    # sound does not produce. Checking only the level once let exactly that through.
+    #
+    # The threshold has to follow the signal rather than sit at a fixed floor. A
+    # channel holding nothing but room noise hovers around any fixed level and
+    # crosses it constantly, which reads as chopped when it is merely quiet — a
+    # false alarm this script raised on its own first attempt at the check.
+    local floor
+    floor=$(awk -v p="${peak%% *}" 'BEGIN { printf "%.0f", p - 25 }')
+    if awk -v p="${peak%% *}" 'BEGIN { exit !(p < -40) }'; then
+        echo "      too quiet to judge continuity, so not judged"
+        echo "   OK (level only)"
+        return 0
+    fi
+    local gaps per_second
+    gaps=$(ffmpeg -v info -nostdin -i "$file" -af "silencedetect=noise=${floor}dB:d=0.1" -f null - 2>&1 |
            grep -c 'silence_start')
-    local per_second
     per_second=$(awk -v g="$gaps" -v d="${SECONDS_EACH:-5}" 'BEGIN { printf "%.1f", g / d }')
-    echo "      $gaps silence runs (${per_second}/s)"
+    echo "      $gaps silence runs below ${floor} dB (${per_second}/s)"
     if awk -v p="$per_second" 'BEGIN { exit !(p >= 1.0) }'; then
         echo "   FAILED — chopped into pieces, not a continuous recording"
         return 1
