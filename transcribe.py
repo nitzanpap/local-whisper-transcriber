@@ -158,7 +158,14 @@ async def transcribe(job: dict, wav: Path, segments_file: Path, resume_ms: int =
 def write_outputs(job: dict, work: Path, segments: list[tuple[int, int, str]]) -> None:
     """Write the requested formats aside, then move them into place."""
     if not segments:
-        raise Failed("malformed_chunk_output", "whisper-cli produced no transcript segments")
+        # Not malformed output, which is what this used to say and what sent one
+        # investigation looking for a broken pipeline. whisper recognised nothing,
+        # and by far the likeliest reason is that there was nothing to recognise:
+        # a source too quiet to be speech, or the wrong input device chosen.
+        raise Failed("no_speech_found",
+                     "No speech was recognised in this recording. If it was recorded here, "
+                     "check that the right microphone is selected — an input that is silent or "
+                     "very quiet gets this far and then transcribes to nothing.")
     out_dir = Path(job["out_dir"])
     for ext in ("txt", "srt"):
         if not job[f"want_{ext}"]:
