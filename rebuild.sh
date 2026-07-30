@@ -18,8 +18,30 @@ ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; exit 1; }
 say()  { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
+# Something moving while a slow step runs. A build takes the better part of a minute
+# and printed nothing at all until it finished, which is indistinguishable from being
+# stuck — and the honest response to a script that looks stuck is to kill it.
+# Only when a terminal is watching. Piped into a file or a log, the cursor codes are
+# not animation, they are literal junk in the middle of the output.
+working() {
+    label=$1; shift
+    if [ ! -t 1 ]; then "$@"; return $?; fi
+    "$@" &
+    pid=$!
+    printf '  %s' "$label"
+    while kill -0 "$pid" 2>/dev/null; do
+        printf '.'
+        sleep 1
+    done
+    wait "$pid"
+    code=$?
+    printf '\r\033[K'          # take the dots back, so the tick lands on a clean line
+    return $code
+}
+
 say "checks first"
-uv run --script test_app.py >/dev/null 2>&1 \
+run_checks() { uv run --script test_app.py >/dev/null 2>&1; }
+working "running the checks" run_checks \
     && ok "the suite passes" \
     || bad "the suite fails — run: uv run --script test_app.py"
 for f in web/*.js; do
@@ -28,7 +50,8 @@ done
 ok "the frontend parses"
 
 say "building"
-(cd desktop && npm run build) >/tmp/lwt-build.log 2>&1 \
+build_it() { (cd desktop && npm run build) >/tmp/lwt-build.log 2>&1; }
+working "compiling" build_it \
     || { tail -20 /tmp/lwt-build.log; bad "the build failed — full log in /tmp/lwt-build.log"; }
 [ -d "$BUILT" ] || bad "the build reported success but produced no bundle"
 ok "built"
@@ -82,9 +105,12 @@ fi
 say "starting"
 open -a "$INSTALLED"
 n=0
+[ -t 1 ] && printf '  waiting for the backend'
 until curl -s -m 2 http://127.0.0.1:8765/api/state >/dev/null 2>&1 || [ "$n" -ge 60 ]; do
+    [ -t 1 ] && printf '.'
     sleep 2; n=$((n + 2))
 done
+[ -t 1 ] && printf '\r\033[K'
 [ "$n" -lt 60 ] || bad "the app started but its backend never answered"
 
 # It has to be OUR app answering. It was a stale server the last time this looked fine.
