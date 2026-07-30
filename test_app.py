@@ -493,6 +493,18 @@ async def main() -> None:
     check("the driverless one by its own id",
           record.name_for(record.SYSTEM_AUDIO, listing) == record.SYSTEM_AUDIO)
 
+    print("a side that recorded nothing is named")
+    check("silence is reported by side",
+          record.quiet_sides({"voice": -91.0, "computer": -4.0}) == ["voice"])
+    check("a healthy recording says nothing",
+          record.quiet_sides({"voice": -14.0, "computer": -4.0}) == [])
+    check("a level that could not be measured is not called silent",
+          record.quiet_sides({"voice": None, "computer": -4.0}) == [])
+    check("both sides can be silent at once",
+          record.quiet_sides({"voice": -91.0, "computer": -91.0}) == ["voice", "computer"])
+    check("a quiet voice is not mistaken for a dead one",
+          record.quiet_sides({"voice": -45.0}) == [])
+
     print("which sides actually recorded")
     (TMP / "voice.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
     (TMP / "computer.pcm").write_bytes(b"")
