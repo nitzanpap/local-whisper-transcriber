@@ -633,6 +633,26 @@ async def main() -> None:
     check("track names appear in the job", jobs.track_files(Path("/w"), 1, 2)[1].name == "segments-1.txt")
     check("and not when there is only one", jobs.track_files(Path("/w"), 0, 1)[1].name == "segments.txt")
 
+    print("a disk that is filling up")
+    check("plenty of room is not low", not record.disk_is_low(50_000_000_000))
+    check("a few hundred megabytes is", record.disk_is_low(100_000_000))
+    check("the line is where the constant says",
+          record.disk_is_low(record.LOW_DISK - 1) and not record.disk_is_low(record.LOW_DISK))
+    watched = {"status": "recording", "log": [], "id": "x"}
+    async def stops_when_full():
+        real, record.LOW_DISK = record.LOW_DISK, 10 ** 18   # every disk is full now
+        try:
+            await record._watch_disk(watched, poll=0.01)
+        finally:
+            record.LOW_DISK = real
+    await stops_when_full()
+    check("a recording is stopped rather than left to fill the disk",
+          watched["status"] == "stopping" and watched.get("low_disk") is True, str(watched))
+    check("and the log says why", any("disk" in line for line in watched["log"]), str(watched["log"]))
+    quiet = {"status": "saved", "log": []}
+    await record._watch_disk(quiet, poll=0.01)
+    check("a recording already over is left alone", quiet["status"] == "saved")
+
     print("a recording that captured nothing")
     record.RECORDING = None
     os.environ["RECORD_SILENCE"] = "1"
