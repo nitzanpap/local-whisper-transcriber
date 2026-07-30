@@ -95,7 +95,22 @@ section { margin-bottom: 2rem; }
 @media (min-width: 34rem) { .grid.two { grid-template-columns: 1fr 11rem; } }
 /* Two fields of equal weight — device names and speaker labels need the same room. */
 @media (min-width: 34rem) { .grid.even { grid-template-columns: 1fr 1fr; } }
-.field > .label { display: block; color: var(--ink-soft); margin-bottom: .4rem; }
+/* The label is the thing you read in order to decide, so it carries the weight and
+   the full ink. It used to be the soft colour with the control below it in the
+   strong one, which put the emphasis on the machinery rather than the question. */
+.field > .label {
+  display: block;
+  color: var(--ink);
+  font-size: 1.02rem;
+  font-weight: 500;
+  margin-bottom: .35rem;
+}
+/* Vertical rhythm between fields, so spacing stops being set by hand one element
+   at a time. Eighteen inline margins were doing this job at slightly different
+   values, which is what a settings page reads as "noisy" for. */
+.field + .field,
+.field + .line,
+.line + .field { margin-top: 1.5rem; }
 .line { display: flex; align-items: center; gap: .5rem; border-bottom: 1px solid var(--rule); }
 .line:focus-within { border-color: var(--ink); }
 input[type=text], select {
@@ -138,7 +153,10 @@ details.tight summary { cursor: pointer; color: var(--ink-soft); font: 500 .7rem
 details.tight summary::marker { color: var(--rule); }
 details.tight[open] summary { color: var(--ink); }
 details.tight > div { padding: .5rem 0 .25rem; display: grid; gap: 1.1rem; }
-.hint { color: var(--ink-soft); font-size: .82rem; }
+/* Explanation under a control, one step down rather than three: at .82rem it was
+   small enough to look like fine print, which is the wrong signal for the sentence
+   that tells you what the setting actually does. */
+.hint { color: var(--ink-soft); font-size: .9rem; line-height: 1.5; max-width: 62ch; }
 
 /* --- buttons --- */
 button {
@@ -150,7 +168,11 @@ button {
 button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: .4; cursor: not-allowed; }
-button.solid { background: var(--ink); border-color: var(--ink); color: var(--paper); padding: .78rem 1.5rem; }
+/* The one action a screen exists for should look like it. */
+button.solid {
+  background: var(--ink); border-color: var(--ink); color: var(--paper);
+  padding: .85rem 1.9rem; font-size: 1.02rem; letter-spacing: .04em;
+}
 button.solid:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.link { border: 0; padding: .3rem 0; text-decoration: underline; text-underline-offset: 3px; }
 button.danger:hover { color: var(--accent); border-color: var(--accent); }
