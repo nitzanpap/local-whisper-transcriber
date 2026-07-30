@@ -714,6 +714,14 @@ async def main() -> None:
     check("vad flags only when a model is set", "--vad --vad-model /models/silero.bin" in cmd, cmd)
     plain = " ".join(transcribe.whisper_command(job, Path("/tmp/a.wav")))
     check("no vad flags otherwise", "--vad" not in plain)
+    # VAD reports boundaries spanning the silence it removed, and a segment spanning
+    # the recording sorts ahead of everything on the other channel.
+    two_track = jobs.make_job(src, model, str(out), "two", vad_model="/models/silero.bin",
+                              tracks=[{"channel": 0, "label": "Me"},
+                                      {"channel": 1, "label": "Them"}])
+    both = " ".join(transcribe.whisper_command(two_track, Path("/tmp/a.wav")))
+    check("and none at all when two speakers have to be ordered against each other",
+          "--vad" not in both, both)
 
     vocab_job = jobs.make_job(src, model, str(out), "vocab", vocabulary=" Grafana, escalation  ")
     cmd = transcribe.whisper_command(vocab_job, Path("/tmp/a.wav"))

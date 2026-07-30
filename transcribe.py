@@ -140,9 +140,17 @@ def whisper_command(job: dict, wav: Path, resume_ms: int = 0) -> list[str]:
         # Timestamps stay absolute across an offset, so resumed output needs no
         # stitching — it simply continues the same segment file.
         cmd += ["--offset-t", str(resume_ms)]
-    if job.get("vad_model"):
-        # Voice activity detection: skips silence, which is where whisper likes to
-        # invent text. Off unless a VAD model is configured.
+    # Voice activity detection skips silence, which is where whisper likes to invent
+    # text. It cannot be used on a recording with more than one track, though,
+    # because it removes the silence and then reports segment boundaries spanning
+    # what it removed: measured against a file built to prove it, speech at 0-3s and
+    # again at 13-15s came back as one segment from 00:01.190 to 00:14.430 holding
+    # both utterances. A track is one channel of a conversation, so a segment
+    # spanning the recording sorts ahead of everything on the other channel and the
+    # transcript collapses into all of one speaker followed by all of the other.
+    # Without it the same recording gives a line per utterance, in the right places,
+    # with a clean gap where the other side was talking.
+    if job.get("vad_model") and len(job.get("tracks") or [1]) < 2:
         cmd += ["--vad", "--vad-model", job["vad_model"]]
     if job.get("vocabulary", "").strip():
         # --prompt alone primes only the first window, which on a 40-minute meeting
