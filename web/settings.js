@@ -70,7 +70,7 @@ async function openSettings() {
     : t("set.silenceMissing");
   $("vad-help").textContent = conf.vad_model_path ? "" : VAD_DOWNLOAD;
 
-  $("set-rec-auto").value = conf.record_auto_transcribe === false ? "off" : "on";
+  $("set-rec-auto").value = conf.record_auto_transcribe === true ? "on" : "off";
   $("set-rec-minutes").value = conf.record_max_minutes || "";
 
   $("set-reading-size").value = display("reading_size", "1.02rem");

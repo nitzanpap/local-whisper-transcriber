@@ -596,6 +596,18 @@ async def _run(rec: dict) -> None:
     PROCS.extend(procs)
     try:
         await asyncio.gather(*(_drain(rec, proc) for proc in procs))
+        # A capture that ends before anybody asked it to has failed, not finished.
+        # Ending the recording along with it would throw away the source that is
+        # still working — a Bluetooth microphone dropping out two minutes into a
+        # meeting used to take the computer's audio down with it. Whatever survives
+        # keeps recording until the recording is stopped or runs out of time.
+        if rec["status"] == "recording" and HELPER is not None and HELPER.returncode is None:
+            for proc in procs:
+                if proc.returncode not in (0, None):
+                    rec["log"].append(
+                        f"# a capture exited by itself with {proc.returncode}; "
+                        "the rest of the recording carries on")
+            await _await_helper(rec)
     finally:
         PROC = None
         PROCS.clear()
@@ -617,8 +629,10 @@ async def _drain(rec: dict, proc: asyncio.subprocess.Process) -> None:
 
 async def _await_helper(rec: dict, poll: float = 0.2) -> None:
     """Wait out a recording that only the helper is making."""
-    deadline = time.monotonic() + rec["max_seconds"]
-    while time.monotonic() < deadline:
+    # Measured from when the recording began, so a source lost halfway does not
+    # quietly grant the rest another full allowance.
+    deadline = rec["started_at"] + rec["max_seconds"]
+    while time.time() < deadline:
         if HELPER is None or HELPER.returncode is not None:
             return
         if rec["status"] not in ("recording", "stopping"):

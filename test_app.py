@@ -535,7 +535,7 @@ async def main() -> None:
     recordings = TMP / "recordings"
     config.save_settings({"recording_folder": str(recordings), "default_model_path": model,
                           "record_label_voice": "Me", "record_label_computer": "Them",
-                          "default_language": "en"})
+                          "default_language": "en", "record_auto_transcribe": True})
     config.WORK_DIR.mkdir(parents=True, exist_ok=True)
     live = await record.start("0", "1")
     # The fake ffmpeg exits at once, so this may already have run its whole
@@ -550,7 +550,7 @@ async def main() -> None:
           kept.suffix == ".m4a" and kept.parent == recordings, str(kept))
     check("named for when it happened", kept.stem[:2].isdigit(), kept.stem)
     check("scratch cleaned up", not list(config.WORK_DIR.glob(f"{config.RECORDING_PREFIX}*")))
-    check("queued for transcription by itself", saved["job_id"] is not None)
+    check("queued for transcription when asked to be", saved["job_id"] is not None)
 
     await jobs.PUMP
     # The work directory is gone once the job completes, so history is the record.
