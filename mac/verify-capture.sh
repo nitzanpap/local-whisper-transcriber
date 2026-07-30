@@ -8,7 +8,9 @@
 # actually arrived in each, because a silent file and a working one are the same
 # size and only the levels tell them apart.
 #
-# Nothing is kept: everything goes in a temporary directory that is removed on exit.
+# The recordings are kept in ~/Desktop/capture-check so they can be listened to.
+# Three separate verdicts from this script have been wrong about their own output,
+# and a file you can play is the only thing that settles it.
 
 set -u
 
@@ -24,6 +26,10 @@ fi
 command -v ffmpeg >/dev/null || { echo "ffmpeg is not on PATH."; exit 1; }
 
 WORK="$(mktemp -d)"
+# Kept rather than swept. This check has misjudged its own output three times, and
+# the only cure for that is a file the person running it can play.
+KEEP="${KEEP:-$HOME/Desktop/capture-check}"
+mkdir -p "$KEEP"
 trap 'rm -rf "$WORK"; [ -n "${TONE_PID:-}" ] && kill "$TONE_PID" 2>/dev/null' EXIT
 
 echo "== permission =="
@@ -82,6 +88,14 @@ verdict() {
            grep -c 'silence_start')
     per_second=$(awk -v g="$gaps" -v d="${SECONDS_EACH:-5}" 'BEGIN { printf "%.1f", g / d }')
     echo "      $gaps silence runs below ${floor} dB (${per_second}/s)"
+    # The count alone cannot tell a dropout from a pause for breath. Inserted
+    # silence is metronomic — the same length every time — and speech never is,
+    # so the spread of the durations is the honest discriminator.
+    ffmpeg -v info -nostdin -i "$file" -af "silencedetect=noise=${floor}dB:d=0.1" -f null - 2>&1 |
+        sed -n 's/.*silence_duration: //p' | sort -n | awk '
+          { d[NR]=$1; sum+=$1 }
+          END { if (NR) printf "      gap lengths: shortest %.3fs longest %.3fs mean %.3fs\n", d[1], d[NR], sum/NR }'
+
     if awk -v p="$per_second" 'BEGIN { exit !(p >= 1.0) }'; then
         echo "   FAILED — chopped into pieces, not a continuous recording"
         return 1
@@ -94,6 +108,19 @@ verdict() {
 # zero, -t sees a stream that began 1.8 billion seconds ago and writes a header
 # and nothing else. Getting this wrong here once looked like a capture failure.
 ONE_STREAM="aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono,aresample=async=1000:first_pts=0"
+
+# The control that should have come first. If the microphone arrives in pieces with
+# no filter, no second input and no format demanded of it, then ffmpeg's
+# avfoundation capture is the problem and no amount of adjusting the graph above it
+# will help. If it arrives whole, the fault is ours and it is in the graph.
+echo "== control: the microphone alone, nothing asked of it =="
+MIC0="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 |
+        sed -n 's/^\[AVFoundation[^]]*\] *\[\([0-9]*\)\] \(.*Microphone.*\)$/\1/p' | head -1)"
+MIC0="${MIC0:-0}"
+echo "   speak now, for $SECONDS_EACH seconds (device $MIC0)"
+ffmpeg -hide_banner -nostdin -loglevel warning -y \
+       -f avfoundation -i ":$MIC0" -t "$SECONDS_EACH" -c:a pcm_s16le "$KEEP/mic-raw.wav"
+RAW=0; verdict "microphone, unfiltered" "$KEEP/mic-raw.wav" || RAW=1
 
 echo "== the computer's audio on its own =="
 mkfifo "$WORK/sys.pcm"
@@ -131,9 +158,10 @@ LEFT=0; verdict "left, your microphone" "$WORK/left.wav" || LEFT=1
 RIGHT=0; verdict "right, the computer" "$WORK/right.wav" || RIGHT=1
 
 echo
-if [ "$ONE$BOTH$LEFT$RIGHT" = "0000" ]; then
-    echo "All four passed: two sources, kept apart, no driver installed."
+if [ "$RAW$ONE$BOTH$LEFT$RIGHT" = "00000" ]; then
+    echo "All of it passed: two sources, kept apart, whole, no driver installed."
 else
+    echo "Files kept in $KEEP — play mic-raw.wav and hear whether it stutters."
     echo "Something came out silent. If only the left channel did, it is the"
     echo "microphone permission (Privacy & Security → Microphone) rather than this."
     exit 1
