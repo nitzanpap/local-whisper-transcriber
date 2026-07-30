@@ -47,8 +47,18 @@ say "audio routing — what there is to capture, and from where"
 osascript -e 'set ov to output volume of (get volume settings)
 set mt to output muted of (get volume settings)
 return "   output volume " & ov & ", muted " & mt' 2>/dev/null || echo "   (volume unreadable)"
-printf '   default output : %s\n' "$(defaults read com.apple.systempreferences 2>/dev/null >/dev/null; \
-    system_profiler SPAudioDataType 2>/dev/null | awk '/Output Source|Default Output Device: Yes/{f=1} f&&/^ *[A-Za-z].*:$/{print $0}' | head -1 | sed 's/^ *//;s/:$//' || echo unknown)"
+# Which devices macOS considers default, which is not the same as which are
+# plugged in. A disconnected Bluetooth headset can remain the default output, and
+# then everything plays to a device that is not there: nothing is audible and
+# nothing reaches the system mix, so a capture of it is correctly silent. That
+# accounted for every silent computer channel in a long afternoon of looking.
+system_profiler SPAudioDataType 2>/dev/null | awk '
+  /^ *[A-Za-z0-9].*:$/ { name=$0; sub(/^ */,"",name); sub(/:$/,"",name) }
+  /Default Output Device: Yes/ { print "   default output : " name }
+  /Default Input Device: Yes/  { print "   default input  : " name }
+' || echo "   (default devices unreadable)"
+echo "   If either names a device that is not connected, fix that in Sound before"
+echo "   reading anything else here as a fault in the code."
 echo "   avfoundation inputs, by the index the app stores:"
 ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 |
     sed -n '/audio devices/,$p' | sed -n 's/^\[AVFoundation[^]]*\] */   /p' | grep '^ *\[' | head -8
