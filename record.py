@@ -191,6 +191,61 @@ def _parse_pulse(text: str) -> list[dict]:
     return found
 
 
+async def _default_input_name() -> str:
+    """The input macOS would pick by itself, which is the sensible first guess.
+
+    Handy asks CoreAudio for its default input rather than taking the first device
+    it is offered, and it is right to: "first in the list" put a Bluetooth headset
+    on somebody's voice channel here, which recorded forty decibels of nothing.
+    """
+    if sys.platform != "darwin":
+        return ""
+    try:
+        _, out = await capture(["system_profiler", "SPAudioDataType"], timeout=20)
+    except (Failed, OSError):
+        return ""
+    name = ""
+    for raw in out.splitlines():
+        line = raw.strip()
+        if line.endswith(":") and not line.startswith("Default"):
+            name = line[:-1]
+        elif "Default Input Device: Yes" in line:
+            return name
+    return ""
+
+
+def resolve_saved(saved: str, found: list[dict]) -> str:
+    """A remembered device, found again in today's list by the name it was saved as.
+
+    By name, because avfoundation numbers devices by position and the position
+    moves. A stored "1" meant the built-in microphone one day and a disconnected
+    headset the next, and the recording that came back was silence that looked
+    exactly like a bug in the recorder.
+    """
+    if not saved:
+        return ""
+    if saved == SYSTEM_AUDIO:
+        return SYSTEM_AUDIO
+    for device in found:
+        if device["name"] == saved:
+            return device["id"]
+    # Saved before this was stored by name: a bare index, honoured only while some
+    # device still sits at it.
+    if saved.isdigit() and any(device["id"] == saved for device in found):
+        return saved
+    return ""
+
+
+def name_for(device_id: str, found: list[dict]) -> str:
+    """What to remember a chosen device as."""
+    if device_id == SYSTEM_AUDIO:
+        return SYSTEM_AUDIO
+    for device in found:
+        if device["id"] == device_id:
+            return device["name"]
+    return device_id
+
+
 def is_loopback(device: dict) -> bool:
     haystack = f"{device['name']} {device['id']}".lower()
     return any(hint in haystack for hint in LOOPBACK_HINTS)
@@ -214,6 +269,9 @@ async def devices() -> dict:
     if sysaudio is not None:
         found.append({"id": SYSTEM_AUDIO, "name": "System audio",
                       "loopback": True, "builtin": True})
+    default_input = await _default_input_name()
+    for device in found:
+        device["default"] = bool(default_input) and device["name"] == default_input
     conf = recording_config()
     advice = []
     if not found:
@@ -226,8 +284,9 @@ async def devices() -> dict:
         advice.append("needLoopback")
     return {
         "devices": found,
-        "voice": conf["voice"],
-        "computer": conf["computer"],
+        # Remembered by name, handed back as whatever index that name has today.
+        "voice": resolve_saved(conf["voice"], found),
+        "computer": resolve_saved(conf["computer"], found),
         "folder": conf["folder"],
         "labels": list(conf["labels"]),
         "advice": advice,
@@ -444,9 +503,16 @@ async def start(voice: str, computer: str) -> dict:
     await _until_audio_arrives(rec)
     if rec["status"] == "failed":
         raise Failed(rec["error"]["code"], rec["error"]["message"])
-    # Remember the choice, so the next recording is one decision lighter.
-    save_settings({"record_voice_device": rec["voice"],
-                   "record_computer_device": rec["computer"]})
+    # Remember the choice by name, so the next recording is one decision lighter and
+    # still points at the same device after something is plugged in or unplugged.
+    try:
+        _, listing = await capture(_list_command(), timeout=30)
+        known = _parse_avfoundation(listing) if sys.platform == "darwin" \
+            else _parse_pulse(listing)
+    except (Failed, OSError):
+        known = []
+    save_settings({"record_voice_device": name_for(rec["voice"], known),
+                   "record_computer_device": name_for(rec["computer"], known)})
     return public()
 
 

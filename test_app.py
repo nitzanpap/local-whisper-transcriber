@@ -473,6 +473,26 @@ async def main() -> None:
     one = " ".join(record.mix_command(rec, ["voice"]))
     check("one side needs no join", "join=" not in one and one.count("-i ") == 1, one)
 
+    print("remembering a device by what it is, not where it sits")
+    listing = [{"id": "0", "name": "WH-1000XM3"}, {"id": "1", "name": "MacBook Pro Microphone"}]
+    check("a remembered name finds its device again",
+          record.resolve_saved("MacBook Pro Microphone", listing) == "1")
+    moved = [{"id": "0", "name": "MacBook Pro Microphone"}, {"id": "1", "name": "WH-1000XM3"}]
+    check("and still finds it after the indices move",
+          record.resolve_saved("MacBook Pro Microphone", moved) == "0")
+    check("a device that is gone is not guessed at",
+          record.resolve_saved("Some Old Headset", listing) == "")
+    check("an index saved by an older version still works",
+          record.resolve_saved("1", listing) == "1")
+    check("but not once nothing sits at it",
+          record.resolve_saved("7", listing) == "")
+    check("the driverless source is not a device to look up",
+          record.resolve_saved(record.SYSTEM_AUDIO, listing) == record.SYSTEM_AUDIO)
+    check("and a choice is remembered by name",
+          record.name_for("1", listing) == "MacBook Pro Microphone")
+    check("the driverless one by its own id",
+          record.name_for(record.SYSTEM_AUDIO, listing) == record.SYSTEM_AUDIO)
+
     print("which sides actually recorded")
     (TMP / "voice.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
     (TMP / "computer.pcm").write_bytes(b"")
