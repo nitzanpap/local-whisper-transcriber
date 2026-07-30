@@ -28,11 +28,13 @@ let DENIED: Int32 = 3
 
 /// Turns whatever ScreenCaptureKit produces into the one format ffmpeg is told to expect.
 final class Writer: NSObject, SCStreamOutput {
-    private let out: FileHandle
+    private let fd: Int32
     private let lock = NSLock()
+    /// Set once the reader has gone, so the capture can stop rather than spin.
+    private(set) var gone = false
 
-    init(out: FileHandle) {
-        self.out = out
+    init(fd: Int32) {
+        self.fd = fd
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -56,14 +58,33 @@ final class Writer: NSObject, SCStreamOutput {
             }
         }
         guard !mono.isEmpty else { return }
-        let data = mono.withUnsafeBufferPointer { Data(buffer: $0) }
         // Serialised because SCStream may deliver on more than one queue, and two
         // half-written frames interleaved would be audible as noise.
         lock.lock()
         defer { lock.unlock() }
-        // A write that fails means the reader is gone — ffmpeg hit its -t limit or
-        // was stopped. That is a finished recording, not an error to shout about.
-        out.write(data)
+        // write(2) rather than FileHandle.write, which raises an Objective-C
+        // exception on a broken pipe that Swift cannot catch — the process simply
+        // dies. And a broken pipe is the normal end of every recording: ffmpeg
+        // reaches its -t limit or is stopped, and stops reading. Ignoring the error
+        // is the whole point, so the call has to be one that returns an error
+        // rather than one that throws something uncatchable.
+        mono.withUnsafeBufferPointer { buf in
+            guard var p = UnsafeRawPointer(buf.baseAddress) else { return }
+            var left = buf.count * MemoryLayout<Int16>.size
+            while left > 0 {
+                let n = write(fd, p, left)
+                if n > 0 {
+                    p += n
+                    left -= n
+                    continue
+                }
+                // EINTR is worth retrying; anything else means the reader is gone
+                // and there is nothing useful left to do with these samples.
+                if n < 0 && errno == EINTR { continue }
+                gone = true
+                return
+            }
+        }
     }
 }
 
@@ -96,7 +117,8 @@ struct SysCapture {
 
         // Opening a FIFO for writing blocks until ffmpeg opens it for reading, which
         // is the handshake that keeps the two ends from racing at startup.
-        guard let out = FileHandle(forWritingAtPath: target) else {
+        let fd = open(target, O_WRONLY)
+        if fd < 0 {
             FileHandle.standardError.write(Data("syscapture: cannot write to \(target)\n".utf8))
             exit(2)
         }
@@ -125,7 +147,7 @@ struct SysCapture {
             let filter = SCContentFilter(
                 display: display, excludingApplications: [], exceptingWindows: [])
             let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
-            let writer = Writer(out: out)
+            let writer = Writer(fd: fd)
             try stream.addStreamOutput(writer, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
             try await stream.startCapture()
 
@@ -136,7 +158,7 @@ struct SysCapture {
                 await group.next()
             }
             try? await stream.stopCapture()
-            try? out.close()
+            close(fd)
             exit(0)
         } catch {
             let text = "\(error)"
