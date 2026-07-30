@@ -147,7 +147,7 @@ def state() -> dict:
     saved = conf.get("default_model_path", "")
     return {
         "environment": environment(),
-        "settings": {"default_language": "he", "default_extra_args": DEFAULT_EXTRA,
+        "settings": {"default_language": "auto", "default_extra_args": DEFAULT_EXTRA,
                      "output_folder": "", **conf, "source_folders": source_folders()},
         "models": find_models(str(Path(saved).parent) if saved else ""),
         "resumable": jobs.resumable(),
@@ -409,7 +409,7 @@ def pick(kind: str = "file") -> dict:
 @app.get("/api/settings")
 def get_settings() -> dict:
     conf = recording_config()
-    return {"default_language": "he", "default_extra_args": DEFAULT_EXTRA,
+    return {"default_language": "auto", "default_extra_args": DEFAULT_EXTRA,
             "output_folder": "", **settings(), "source_folders": source_folders(),
             # Resolved rather than raw, so the fields show the values in force
             # instead of the blanks that mean "use the default".
