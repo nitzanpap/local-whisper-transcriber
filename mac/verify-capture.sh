@@ -61,6 +61,19 @@ ffmpeg -hide_banner -loglevel error -f lavfi \
 afplay "$WORK/tone.wav" & TONE_PID=$!
 sleep 1
 
+# afplay has no window, and ScreenCaptureKit builds its filter from a display and
+# attributes audio to the applications on it. A process with no window may simply
+# not be part of what that filter captures — which would make this tone a bad test
+# of the computer's audio while being a perfectly good one for the microphone.
+# Anything playing in a real, windowed application settles it.
+if [ -z "${QUIET:-}" ]; then
+    echo
+    echo "   NOTE: the tone is played by afplay, which has no window. If the computer"
+    echo "   channel comes back silent, start something playing in a browser or a media"
+    echo "   player and run this again before treating that as a fault in the helper."
+    echo
+fi
+
 # Reports the loudest sample in a file. -91 dB is ffmpeg's way of saying silence.
 level() {
     ffmpeg -hide_banner -nostdin -i "$1" -af volumedetect -f null - 2>&1 |
