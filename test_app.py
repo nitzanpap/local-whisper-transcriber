@@ -52,7 +52,7 @@ if [ -n "$listing" ]; then
   exit 1
 fi
 [ -n "$RECORD_SILENCE" ] && exit 1
-dd if=/dev/zero bs=1024 count=8 2>/dev/null | tr '\\000' 'A' > "$out"
+awk 'BEGIN{ for (i = 0; i < 8192; i++) printf "A" }' > "$out"
 """
 
 FAKE_FFPROBE = """#!/bin/sh
