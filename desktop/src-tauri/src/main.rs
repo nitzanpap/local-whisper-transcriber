@@ -57,6 +57,14 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
         // So the backend can stop itself if this app is force quit and never
         // gets the chance to kill it.
         .env("LWT_PARENT_PID", std::process::id().to_string())
+        // Python writes .pyc files next to the source it imports, and the source
+        // here lives inside the app bundle — so simply running the app dropped a
+        // __pycache__ into its own Resources and broke the code signature. codesign
+        // then reports a sealed resource missing or invalid, Gatekeeper refuses to
+        // open it on anybody else's machine, and macOS can stop honouring the
+        // permissions that were granted to it. The bytecode saves a fraction of a
+        // second on a process that then runs whisper for minutes.
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .spawn()
         .map_err(|e| match e.kind() {
             ErrorKind::NotFound => "uv disappeared between finding it and running it.".to_string(),
