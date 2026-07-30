@@ -214,12 +214,22 @@ async def main() -> None:
     waiting = jobs.make_job(src, model, str(out), "never-runs")
     jobs.QUEUE.append(waiting)  # appended directly: enqueue would start it
     check("removed from the queue", jobs.dequeue(waiting["id"]) and jobs.QUEUE == [])
-    check("removing it twice reports nothing to remove", jobs.dequeue(waiting["id"]) is False)
+    check("the queue itself reports nothing removed", jobs.dequeue(waiting["id"]) is False)
+    # Already gone is done, not an error: the button said remove and the job is not
+    # there. Refusing made the second click do nothing and say nothing.
+    check("but the route treats already gone as done",
+          app.dequeue(waiting["id"]) == {"ok": True, "was": "gone"})
+    running = jobs.make_job(src, model, str(out), "in-flight")
+    running["status"] = "running"
+    was_job, jobs.JOB = jobs.JOB, running
     try:
-        app.dequeue(waiting["id"])  # the route turns that into a 404
-        raise AssertionError("FAIL: removing a job twice was not rejected")
-    except app.HTTPException as exc:
-        check("route answers 404", exc.status_code == 404)
+        # The one the button used to refuse outright, which is what made pressing it
+        # look broken: a job that started between the page drawing and the click.
+        check("and removes the running job by cancelling it",
+              app.dequeue(running["id"]) == {"ok": True, "was": "running"})
+        check("which is what cancelling looks like", running["status"] == "cancelling")
+    finally:
+        jobs.JOB = was_job
 
     print("finding tools without a useful PATH")
     real_path = os.environ["PATH"]

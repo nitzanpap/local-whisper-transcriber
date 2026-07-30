@@ -233,10 +233,26 @@ async def start(body: StartIn) -> dict:
 
 @app.delete("/api/queue/{job_id}")
 def dequeue(job_id: str) -> dict:
-    """Drop a job that has not started. The running one is Cancel's business."""
-    if not jobs.dequeue(safe_id(job_id)):
-        raise HTTPException(404, {"code": "invalid_input_path", "message": "That job is not waiting any more."})
-    return {"ok": True}
+    """Remove a job, whether it is waiting its turn or running right now.
+
+    It used to refuse anything but a waiting job, on the grounds that the running
+    one was Cancel's business. From the queue that is a distinction without a
+    difference: the button says remove, and a job that started between the page
+    being drawn and the click being made is still the job the person pointed at.
+    Pressing it did nothing at all and said nothing either.
+
+    Already gone counts as done. Clicking twice, or clicking one that finished a
+    moment ago, is not an error worth a message.
+    """
+    safe_id(job_id)
+    if jobs.dequeue(job_id):
+        return {"ok": True, "was": "waiting"}
+    if (jobs.JOB or {}).get("id") == job_id and jobs.JOB["status"] == "running":
+        jobs.JOB["status"] = "cancelling"
+        jobs.JOB["stage"] = "cancelling"
+        kill_process_group()
+        return {"ok": True, "was": "running"}
+    return {"ok": True, "was": "gone"}
 
 
 @app.post("/api/resume/{job_id}")
