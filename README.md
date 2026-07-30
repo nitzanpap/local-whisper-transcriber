@@ -410,6 +410,10 @@ Things that are deliberately absent, with the reason:
   a recording made from a device that was asleep is exactly the same size as a good one and
   reports exactly the same success, and hours went into a transcription problem that was a
   microphone recording digital zero.
+- **A recording stops itself before the disk fills.** Space is checked while it runs, not only
+  before it starts, and a recording is ended and saved once there is less than about ten minutes
+  of room left. Running out mid-meeting loses the end of it and leaves the machine with nothing
+  free either; stopping early keeps everything up to that point and the log says why.
 - **A finished recording is not transcribed until asked.** Transcribing is the expensive half,
   and the minute a meeting ends is often the worst moment to give a machine over to it. The
   recording is on disk either way and the Library will run it whenever suits. Settings has the

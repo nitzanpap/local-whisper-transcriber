@@ -56,6 +56,16 @@ MAX_LOG = 120
 # A WAV shorter than this is a header and nothing else.
 EMPTY_WAV = 2048
 
+# A recording is stopped once the disk has less than this left, which is roughly
+# ten minutes of two sources. Stopping early keeps a meeting that is mostly there;
+# filling the disk loses the end of it and can take the machine down with it.
+LOW_DISK = 400_000_000
+
+
+def disk_is_low(free_bytes: int) -> bool:
+    return free_bytes < LOW_DISK
+
+
 # The helper's own exit code for a permission macOS would not give. Kept in step
 # with DENIED in mac/syscapture.swift.
 HELPER_DENIED = 3
@@ -577,6 +587,7 @@ async def _run(rec: dict) -> None:
     if not commands:
         # The computer's audio and nothing else: the helper is the whole capture,
         # so there is no ffmpeg to wait on.
+        asyncio.create_task(_watch_disk(rec))
         await _await_helper(rec)
         return await _finish(rec)
     procs = []
@@ -594,6 +605,7 @@ async def _run(rec: dict) -> None:
     PROC = procs[0]
     PROCS.clear()
     PROCS.extend(procs)
+    asyncio.create_task(_watch_disk(rec))
     try:
         await asyncio.gather(*(_drain(rec, proc) for proc in procs))
         # A capture that ends before anybody asked it to has failed, not finished.
@@ -615,6 +627,30 @@ async def _run(rec: dict) -> None:
         _signal_helper(signal.SIGINT)
 
     await _finish(rec)
+
+
+async def _watch_disk(rec: dict, poll: float = 20.0) -> None:
+    """Stop the recording before the disk fills rather than after.
+
+    Space is checked once before a recording starts, which says nothing about an
+    hour later. A capture that runs out of room mid-meeting loses the end of it and
+    leaves the machine with nothing free either; stopping while there is still room
+    keeps everything up to that point and says why in the log.
+    """
+    while rec["status"] == "recording":
+        try:
+            free = shutil.disk_usage(WORK_DIR).free
+        except OSError:
+            return  # unreadable is not a reason to end a recording
+        if disk_is_low(free):
+            rec["log"].append(
+                f"# only {free / 1e9:.1f} GB of disk left, so the recording was stopped "
+                "early and saved")
+            rec["low_disk"] = True
+            rec["status"] = "stopping"
+            _signal(signal.SIGINT)
+            return
+        await asyncio.sleep(poll)
 
 
 async def _drain(rec: dict, proc: asyncio.subprocess.Process) -> None:
