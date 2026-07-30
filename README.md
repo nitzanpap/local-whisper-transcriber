@@ -330,6 +330,30 @@ no model.
 
 ---
 
+## Known: a two-speaker transcript can come out in the wrong order
+
+All of one side's lines can appear before all of the other's, whoever actually spoke first. The
+interleaving is not at fault — it sorts by timestamp and is tested — the timestamps are.
+
+`whisper-cli --vad` removes the silence it does not judge to be speech and then reports segment
+boundaries that span what it removed. Measured against a file built to prove it, speech at 0–3 s
+and again at 13–15 s with ten seconds of digital silence between: VAD returned **one segment,
+`00:01.190 --> 00:14.430`**, holding the text of both utterances. `--vad-max-speech-duration-s`
+does not split it. Without VAD the boundary is correct but the second utterance is missed
+altogether.
+
+A track is one channel of a recording, so a segment spanning the whole thing sorts before
+everything on the other channel and the conversation collapses into two blocks. Neither VAD
+setting is usable as it stands. The fix is to let VAD locate the speech and then transcribe each
+region on its own with `--offset-t`, so every segment carries a true absolute time. Unimplemented.
+
+## Known: the recording indicator shows nothing
+
+The bar that moves while recording is a fixed 1.6-second animation. It reads as a level meter and
+reports movement whether or not any audio exists, which is how a microphone recording digital zero
+went unnoticed for hours. A real per-channel meter from ffmpeg's `ebur128` output is the
+replacement; until then, the level check at save time is what tells you a side was silent.
+
 ## Design notes
 
 Things that are deliberately absent, with the reason:
