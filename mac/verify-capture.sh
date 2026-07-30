@@ -64,12 +64,18 @@ verdict() {
     echo "   OK"
 }
 
+# The same filter record.py puts on every input. Not decoration: wallclock
+# timestamps start at the current time, so without first_pts=0 rebasing them to
+# zero, -t sees a stream that began 1.8 billion seconds ago and writes a header
+# and nothing else. Getting this wrong here once looked like a capture failure.
+ONE_STREAM="aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono,aresample=async=1000:first_pts=0"
+
 echo "== the computer's audio on its own =="
 mkfifo "$WORK/sys.pcm"
 "$HELPER" "$WORK/sys.pcm" & HELPER_PID=$!
 ffmpeg -hide_banner -nostdin -loglevel error -y \
        -f s16le -ar 48000 -ac 1 -use_wallclock_as_timestamps 1 -i "$WORK/sys.pcm" \
-       -t "$SECONDS_EACH" -c:a pcm_s16le "$WORK/system.wav"
+       -af "$ONE_STREAM" -t "$SECONDS_EACH" -c:a pcm_s16le "$WORK/system.wav"
 kill -INT "$HELPER_PID" 2>/dev/null; wait "$HELPER_PID" 2>/dev/null
 ONE=0; verdict "system audio" "$WORK/system.wav" || ONE=1
 
@@ -83,7 +89,6 @@ mkfifo "$WORK/sys2.pcm"
 "$HELPER" "$WORK/sys2.pcm" & HELPER2_PID=$!
 # The same filter graph record.py builds: each source flattened to mono, drift
 # corrected, then joined so voice is the left channel and the computer the right.
-ONE_STREAM="aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono,aresample=async=1000:first_pts=0"
 ffmpeg -hide_banner -nostdin -loglevel error -y \
        -f avfoundation -use_wallclock_as_timestamps 1 -i ":$MIC" \
        -f s16le -ar 48000 -ac 1 -use_wallclock_as_timestamps 1 -i "$WORK/sys2.pcm" \
