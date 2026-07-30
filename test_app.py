@@ -435,27 +435,58 @@ async def main() -> None:
     check("no devices at all is called out", empty["advice"] == ["noDevices"], str(empty["advice"]))
 
     print("the recording command")
-    both = {"devices": ["0", "1"], "max_seconds": 60, "wav": Path("/tmp/m.wav")}
-    cmd = " ".join(record.capture_command(both))
-    check("two sources become two inputs", cmd.count("-i ") == 2, cmd)
-    check("mixed here, not by the operating system", "join=inputs=2:channel_layout=stereo" in cmd)
-    check("each source flattened to mono first", cmd.count("channel_layouts=mono") == 2, cmd)
-    check("drift between two capture clocks corrected", "aresample=async=1000" in cmd)
+    rec = {"voice": "0", "computer": record.SYSTEM_AUDIO,
+           "devices": ["0", record.SYSTEM_AUDIO], "max_seconds": 60,
+           "wav": TMP / "m.wav", "voice_wav": TMP / "voice.wav",
+           "computer_wav": TMP / "computer.wav", "sys_pcm": TMP / "computer.pcm",
+           "log": []}
+    commands = record.capture_commands(rec)
+    check("the driverless source needs no ffmpeg of its own", len(commands) == 1, str(commands))
+    cmd = " ".join(commands[0])
+    check("the microphone is captured on its own", cmd.count("-i ") == 1, cmd)
+    check("into a file of its own", "voice.wav" in cmd, cmd)
+    check("nothing is mixed while recording",
+          "join=" not in cmd and "aresample" not in cmd, cmd)
+    check("and nothing is asked of the device",
+          "-ar " not in cmd and "channel_layouts" not in cmd, cmd)
     check("it stops by itself", "-t 60" in cmd, cmd)
-    one = " ".join(record.capture_command({**both, "devices": ["0"]}))
-    check("one source needs no join", "join=" not in one and one.count("-i ") == 1, one)
+    check("no microphone means no ffmpeg for it",
+          record.capture_commands({**rec, "voice": ""}) == [])
+    two = record.capture_commands({**rec, "computer": "1"})
+    check("two real devices become two captures, not two inputs", len(two) == 2, str(two))
+    check("each writing its own file",
+          "voice.wav" in " ".join(two[0]) and "computer.wav" in " ".join(two[1]))
+
+    print("combining the two afterwards, from finished files")
+    mix = " ".join(record.mix_command(rec, ["voice", "computer"]))
+    check("both captures become inputs", mix.count("-i ") == 2, mix)
+    check("mixed here, not by the operating system",
+          "join=inputs=2:channel_layout=stereo" in mix)
+    check("each side flattened to mono first", mix.count("channel_layouts=mono") == 2, mix)
+    check("drift corrected once, over files rather than clocks",
+          "aresample=async=1000" in mix)
+    check("the computer's side is the file the helper wrote, not a device",
+          "computer.pcm" in mix and "avfoundation" not in mix, mix)
+    check("whose raw format has to be spelled out",
+          "-f s16le" in mix and "-ar 48000" in mix, mix)
+    check("and the master is what comes out", "m.wav" in mix, mix)
+    one = " ".join(record.mix_command(rec, ["voice"]))
+    check("one side needs no join", "join=" not in one and one.count("-i ") == 1, one)
+
+    print("which sides actually recorded")
+    (TMP / "voice.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
+    (TMP / "computer.pcm").write_bytes(b"")
+    check("a side that caught nothing is not a channel",
+          record.captured_sources(rec) == ["voice"], str(record.captured_sources(rec)))
+    (TMP / "computer.pcm").write_bytes(b"x" * (record.EMPTY_WAV + 1))
+    check("and both are when both did", record.captured_sources(rec) == ["voice", "computer"])
+    (TMP / "voice.wav").unlink()
+    check("a side that never started is not one either",
+          record.captured_sources(rec) == ["computer"])
+    (TMP / "computer.pcm").unlink()
 
     print("the computer's audio without a driver")
-    sysrec = {"devices": ["0", record.SYSTEM_AUDIO], "max_seconds": 60,
-              "wav": Path("/tmp/m.wav"), "fifo": Path("/tmp/sys.pcm"), "log": []}
-    cmd = " ".join(record.capture_command(sysrec))
-    check("the microphone is the only device opened", cmd.count("avfoundation") <= 1, cmd)
-    check("the computer's side is a pipe, not a device", "/tmp/sys.pcm" in cmd, cmd)
-    check("whose raw format has to be spelled out",
-          "-f s16le" in cmd and "-ar 48000" in cmd, cmd)
-    check("and the two are still kept apart",
-          "join=inputs=2:channel_layout=stereo" in cmd, cmd)
-    code, message = record._why_nothing_arrived({**sysrec, "helper_code": record.HELPER_DENIED})
+    code, message = record._why_nothing_arrived({**rec, "helper_code": record.HELPER_DENIED})
     check("a refused permission is named, not guessed at",
           code == "insufficient_permissions" and "Screen Recording" in message, message)
     check("and is not blamed on two capture sessions", "Aggregate" not in message, message)
@@ -570,7 +601,9 @@ async def main() -> None:
     record.RECORDING = None
     stranded = config.WORK_DIR / f"{config.RECORDING_PREFIX}deadbeef1234"
     stranded.mkdir(parents=True, exist_ok=True)
-    (stranded / "master.wav").write_bytes(b"A" * 192000)  # a second of 48 kHz stereo
+    # What a crash actually leaves: the two captures, side by side, never combined.
+    (stranded / "voice.wav").write_bytes(b"A" * 96000)      # a second of 48 kHz mono
+    (stranded / "computer.pcm").write_bytes(b"B" * 96000)
     (stranded / "recording.json").write_text(json.dumps({
         "id": "deadbeef1234", "status": "recording", "devices": ["0", "1"],
         "labels": ["Me", "Them"], "folder": str(recordings), "basename": "rescued",
@@ -580,7 +613,7 @@ async def main() -> None:
     day_ago = time.time() - 86400
     os.utime(stranded, (day_ago, day_ago))
     jobs.sweep_work_dirs()
-    check("the sweep leaves unsaved audio alone", (stranded / "master.wav").exists())
+    check("the sweep leaves unsaved audio alone", (stranded / "voice.wav").exists())
     waiting = record.orphans()
     check("offered back", [r["id"] for r in waiting] == ["deadbeef1234"], str(waiting))
     check("with how long it is", waiting[0]["seconds"] == 1.0, str(waiting[0]))

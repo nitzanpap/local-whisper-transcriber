@@ -43,6 +43,9 @@ TASK: asyncio.Task | None = None
 # Our own child. Deliberately not tools.PROC: cancelling a transcription must
 # not stop a recording, and stopping a recording must not stop a transcription.
 PROC: asyncio.subprocess.Process | None = None
+# Every capture running now: one per real device. PROC is the first of them, kept
+# because _insist and the tests ask whether "the" child is still alive.
+PROCS: list[asyncio.subprocess.Process] = []
 # The system-audio helper, when one is feeding ffmpeg. Stopped with ffmpeg, and
 # separately, because it is a sibling of the recording rather than a child of it.
 HELPER: asyncio.subprocess.Process | None = None
@@ -241,55 +244,103 @@ async def devices() -> dict:
 # layout rather than a channel count is what makes this work against a 1-channel
 # built-in mic, a 2-channel loopback and a 3-channel aggregate alike.
 #
-# aresample keeps two independently clocked devices from drifting apart over an
-# hour: each capture session has its own clock, and without this the two channels
-# would slowly separate — which is exactly what an Aggregate Device's drift
-# correction exists to prevent in hardware.
+# aresample corrects the drift between two devices that were clocked separately.
+# Applied to finished files, never to a live capture: given a live input it is free
+# to insert silence to make the timestamps agree, and that is what shredded the
+# microphone when both sources were mixed as they arrived.
 ONE_STREAM = ("aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono"
               ",aresample=async=1000:first_pts=0")
 
 
-def _input_args(device: str, rec: dict) -> list[str]:
-    if device == SYSTEM_AUDIO:
-        # A FIFO carrying raw samples has no header to describe itself, so the
-        # format the helper promised is stated here instead. Wallclock timestamps
-        # for the same reason as a real device: it is a live source, and aresample
-        # needs something to correct against.
-        return ["-f", "s16le", "-ar", "48000", "-ac", "1", "-thread_queue_size", "1024",
-                "-use_wallclock_as_timestamps", "1", "-i", str(rec["fifo"])]
-    # No wallclock timestamps on a real device, which was a mistake worth naming.
-    # A capture device hands its audio over in bursts, and stamping each burst with
-    # the time it arrived describes a stream full of gaps that were never in the
-    # sound. aresample below then honours that description and fills the gaps with
-    # silence, which is audible as a stutter and, worse, quietly destroys speech:
-    # a voice chopped into 150 ms pieces reads to VAD as no voice at all. The
-    # device's own sample clock is continuous, so letting it supply the timestamps
-    # is both simpler and correct — aresample still corrects the drift between two
-    # devices, which is the only thing it was ever needed for.
-    #
-    # thread_queue_size is the other half, and the half that actually mattered. Its
-    # default holds eight packets per input, which two live captures overflow within
-    # seconds; ffmpeg then drops what will not fit and says so only at warning level,
-    # which -loglevel error was hiding. Dropped packets are how a voice ends up
-    # arriving in pieces, at a healthy peak level, several times a second.
-    if sys.platform == "darwin":
-        # ":N" is avfoundation for "no video, audio device N".
-        return ["-f", "avfoundation", "-thread_queue_size", "1024", "-i", f":{device}"]
-    return ["-f", "pulse", "-thread_queue_size", "1024", "-i", device]
+def capture_command(rec: dict, device: str, out: Path) -> list[str] | None:
+    """ffmpeg's part of a recording: the microphone, alone, to its own file.
+
+    Alone on purpose. Both sources used to arrive as two live inputs of one ffmpeg,
+    joined as they came, and that meant reconciling two independent clocks in real
+    time. aresample filled the difference with silence — measured at 0.237 s of it
+    nearly four times a second — which left the louder side intact and destroyed
+    the quieter one, so a voice came back in pieces too broken for VAD to consider
+    speech. The same microphone recorded on its own is clean. Nothing is mixed
+    until both captures have finished and there is nothing left to reconcile.
+    """
+    if not device:
+        return None
+    source = ["-f", "avfoundation", "-i", f":{device}"] if sys.platform == "darwin" \
+        else ["-f", "pulse", "-i", device]
+    # Nothing is asked of the device beyond what it offers. Demanding a rate or a
+    # layout of a live capture is resampling in the capture path, and the capture
+    # path is the one place that cannot afford to fall behind.
+    return ([binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "warning", "-y",
+             "-thread_queue_size", "1024"] + source
+            + ["-t", str(rec["max_seconds"]), "-c:a", "pcm_s16le", str(out)])
 
 
-def capture_command(rec: dict) -> list[str]:
+def capture_commands(rec: dict) -> list[list[str]]:
+    """One ffmpeg per real device. The driverless source is the helper's job.
+
+    One process each rather than one process with two inputs, which is the whole
+    change: a single ffmpeg had to reconcile two clocks as the audio arrived, and
+    filled the difference with silence.
+    """
+    out = []
+    for device, path in ((rec["voice"], rec["voice_wav"]),
+                         (rec["computer"], rec["computer_wav"])):
+        if device and device != SYSTEM_AUDIO:
+            out.append(capture_command(rec, device, path))
+    return out
+
+
+def _captured_bytes(rec: dict) -> int:
+    """How much audio has arrived, across whichever sources are running."""
+    total = 0
+    for key in ("voice_wav", "computer_wav", "sys_pcm"):
+        path = rec.get(key)
+        try:
+            total += path.stat().st_size
+        except (OSError, AttributeError):
+            pass
+    return total
+
+
+def captured_sources(rec: dict) -> list[str]:
+    """Which sides actually recorded something, in channel order: voice, then computer."""
+    out = []
+    for keys, label in ((("voice_wav",), "voice"), (("computer_wav", "sys_pcm"), "computer")):
+        for key in keys:
+            path = rec.get(key)
+            try:
+                if path is not None and path.stat().st_size > EMPTY_WAV:
+                    out.append(label)
+                    break
+            except OSError:
+                continue
+    return out
+
+
+def mix_command(rec: dict, sources: list[str]) -> list[str]:
+    """Combine the finished captures into the stereo master that gets kept.
+
+    Offline, from complete files, which is the whole point: there are no clocks
+    left to chase, so aresample corrects the drift between the two once instead of
+    guessing at it thousands of times while recording.
+    """
     cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "warning", "-y"]
-    for device in rec["devices"]:
-        cmd += _input_args(device, rec)
-    if len(rec["devices"]) == 2:
+    if "voice" in sources:
+        cmd += ["-i", str(rec["voice_wav"])]
+    if "computer" in sources:
+        if rec.get("computer_wav") is not None and rec["computer_wav"].is_file() \
+                and rec["computer_wav"].stat().st_size > EMPTY_WAV:
+            cmd += ["-i", str(rec["computer_wav"])]
+        else:
+            # Raw samples carry no header, so the format the helper promised is stated.
+            cmd += ["-f", "s16le", "-ar", "48000", "-ac", "1", "-i", str(rec["sys_pcm"])]
+    if len(sources) == 2:
         graph = (f"[0:a]{ONE_STREAM}[voice];[1:a]{ONE_STREAM}[computer];"
                  "[voice][computer]join=inputs=2:channel_layout=stereo[out]")
     else:
         graph = f"[0:a]{ONE_STREAM}[out]"
-    # -t so a recording forgotten about stops itself rather than filling the disk.
     return cmd + ["-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_s16le",
-                  "-t", str(rec["max_seconds"]), str(rec["wav"])]
+                  str(rec["wav"])]
 
 
 def _stamp() -> str:
@@ -375,17 +426,18 @@ async def start(voice: str, computer: str) -> dict:
         "job_id": None,
         "error": None,
         "work": work,
+        # Made at the end, out of the two beside it. Nothing writes to it while a
+        # recording is running.
         "wav": work / "master.wav",
         "helper": helper,
-        "fifo": work / "system.pcm",
+        # Each capture owns a file and nothing else writes to it. A plain file
+        # rather than the FIFO this used to be: there is no reader to hand off to
+        # any more, so there is no handshake to get wrong either.
+        "voice_wav": work / "voice.wav",
+        "computer_wav": work / "computer.wav",
+        "sys_pcm": work / "computer.pcm",
         "log": deque(maxlen=MAX_LOG),
     }
-    if helper is not None:
-        try:
-            os.mkfifo(rec["fifo"])
-        except OSError as exc:
-            raise Failed("recording_failed",
-                         f"The pipe for the computer's audio could not be made: {exc}")
     RECORDING = rec
     _checkpoint(rec)
     TASK = asyncio.create_task(_run(rec))
@@ -408,22 +460,18 @@ async def _until_audio_arrives(rec: dict, timeout: float = 3.0) -> None:
     while time.monotonic() < deadline:
         if rec["status"] != "recording":
             return
-        try:
-            if rec["wav"].stat().st_size > EMPTY_WAV:
-                return
-        except OSError:
-            pass
+        if _captured_bytes(rec) > EMPTY_WAV:
+            return
         await asyncio.sleep(0.1)
 
 
 async def _start_helper(rec: dict) -> bool:
     """Begin capturing the computer's audio into the FIFO ffmpeg is about to read.
 
-    Started before ffmpeg deliberately: opening a FIFO for writing blocks until
-    something opens it for reading, so this waits for ffmpeg rather than racing it.
+    It writes to a file of its own, so it neither waits for ffmpeg nor races it.
     """
     global HELPER
-    cmd = [str(rec["helper"]), str(rec["fifo"])]
+    cmd = [str(rec["helper"]), str(rec["sys_pcm"])]
     rec["log"].append("$ " + shlex.join(cmd))
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -459,44 +507,95 @@ async def _run(rec: dict) -> None:
     global PROC
     if rec.get("helper") is not None and not await _start_helper(rec):
         return
-    cmd = capture_command(rec)
-    rec["log"].append("$ " + shlex.join(cmd))
+    commands = capture_commands(rec)
+    if not commands:
+        # The computer's audio and nothing else: the helper is the whole capture,
+        # so there is no ffmpeg to wait on.
+        await _await_helper(rec)
+        return await _finish(rec)
+    procs = []
+    for cmd in commands:
+        rec["log"].append("$ " + shlex.join(cmd))
+        try:
+            procs.append(await asyncio.create_subprocess_exec(
+                *cmd, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE, start_new_session=True,
+            ))
+        except OSError as exc:
+            for started in procs:
+                _signal_proc(started, signal.SIGKILL)
+            return _failed(rec, "ffmpeg_failed", f"ffmpeg would not start: {exc}")
+    PROC = procs[0]
+    PROCS.clear()
+    PROCS.extend(procs)
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE, start_new_session=True,
-        )
-    except OSError as exc:
-        return _failed(rec, "ffmpeg_failed", f"ffmpeg would not start: {exc}")
-    PROC = proc
-    try:
-        assert proc.stderr is not None
-        async for raw in proc.stderr:
-            line = raw.decode("utf-8", "replace").rstrip()
-            if line:
-                rec["log"].append(line)
-        await proc.wait()
+        await asyncio.gather(*(_drain(rec, proc) for proc in procs))
     finally:
         PROC = None
-        # ffmpeg is done reading, so the helper has nobody to write to. It would
-        # notice on its own at the next buffer, but not being asked to linger is
-        # cheaper than waiting for that.
+        PROCS.clear()
+        # The captures are over, so the helper has nobody left to keep pace with.
         _signal_helper(signal.SIGINT)
 
+    await _finish(rec)
+
+
+async def _drain(rec: dict, proc: asyncio.subprocess.Process) -> None:
+    """One capture's own words, into the log the Record view shows."""
+    assert proc.stderr is not None
+    async for raw in proc.stderr:
+        line = raw.decode("utf-8", "replace").rstrip()
+        if line:
+            rec["log"].append(line)
+    await proc.wait()
+
+
+async def _await_helper(rec: dict, poll: float = 0.2) -> None:
+    """Wait out a recording that only the helper is making."""
+    deadline = time.monotonic() + rec["max_seconds"]
+    while time.monotonic() < deadline:
+        if HELPER is None or HELPER.returncode is not None:
+            return
+        if rec["status"] not in ("recording", "stopping"):
+            break
+        await asyncio.sleep(poll)
+    # Forgotten about, or asked to stop: either way the capture ends here.
+    _signal_helper(signal.SIGINT)
+
+
+async def _finish(rec: dict) -> None:
+    """Both captures are over. Combine them, then save what they caught."""
     if not rec["keep"]:
         rec["status"] = "discarded"
         rec["ended_at"] = time.time()
         shutil.rmtree(rec["work"], ignore_errors=True)
         return
-    try:
-        recorded = rec["wav"].stat().st_size
-    except OSError:
-        recorded = 0
-    if recorded <= EMPTY_WAV:
+    # Which sides recorded, rather than which were asked for. A source that was
+    # selected and then produced nothing is not a channel worth keeping, and
+    # labelling silence as a speaker is how an empty track reached a transcript.
+    sources = captured_sources(rec)
+    rec["sources"] = sources
+    if not sources:
         return _failed(rec, *_why_nothing_arrived(rec))
-    # Reached even when ffmpeg died of its own accord: whatever was captured
-    # before it stopped is still a recording, and still worth keeping.
+    if not await _mix(rec, sources):
+        return
+    # Reached even when a capture died of its own accord: whatever arrived before
+    # it stopped is still a recording, and still worth keeping.
     await _save(rec)
+
+
+async def _mix(rec: dict, sources: list[str]) -> bool:
+    cmd = mix_command(rec, sources)
+    rec["log"].append("$ " + shlex.join(cmd))
+    try:
+        code, out = await capture(cmd, timeout=1800)
+    except Failed as exc:
+        _failed(rec, exc.code, exc.message)
+        return False
+    if code != 0 or not rec["wav"].is_file():
+        rec["log"] += out.splitlines()[-10:]
+        _failed(rec, "ffmpeg_failed", "The recorded audio could not be combined into one file.")
+        return False
+    return True
 
 
 def _why_nothing_arrived(rec: dict) -> tuple[str, str]:
@@ -533,7 +632,7 @@ async def _save(rec: dict) -> None:
     """Turn the scratch WAV into the .m4a that gets kept, and queue it."""
     rec["status"] = "saving"
     _checkpoint(rec)
-    stereo = len(rec["devices"]) == 2
+    stereo = len(rec.get("sources") or rec["devices"]) == 2
     staged = rec["work"] / "recording.m4a"
     cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
            "-i", str(rec["wav"]), "-c:a", "aac", "-b:a", "160k" if stereo else "96k",
@@ -569,11 +668,13 @@ async def enqueue(rec: dict, path: Path) -> str | None:
     if not model or not Path(model).is_file():
         rec["log"].append("# no model chosen yet, so the recording was not queued")
         return None
-    if len(rec["devices"]) == 2:
-        # Left is the voice, right is the machine — the order capture_command used.
+    sources = rec.get("sources") or ["voice", "computer"][:len(rec["devices"])]
+    if len(sources) == 2:
+        # Left is the voice, right is the machine — the order mix_command used.
         tracks = [{"channel": 0, "label": rec["labels"][0]},
                   {"channel": 1, "label": rec["labels"][1]}]
     else:
+        # One side only, so there is nobody to tell apart and no label to carry.
         tracks = [{"channel": None, "label": ""}]
     job = jobs.make_job(
         str(path), model, watch.output_folder_for(path), f"{path.stem}{TRANSCRIPT_SUFFIX}",
@@ -596,10 +697,7 @@ def _failed(rec: dict, code: str, message: str) -> None:
     # Scratch is only worth keeping if there is audio in it. A failure that
     # captured nothing leaves nothing behind; one that captured a meeting and
     # then could not transcode it keeps the WAV, which orphans() will offer back.
-    try:
-        worth_keeping = rec["wav"].stat().st_size > EMPTY_WAV
-    except OSError:
-        worth_keeping = False
+    worth_keeping = _captured_bytes(rec) > EMPTY_WAV
     if worth_keeping:
         _checkpoint(rec)
     else:
@@ -627,7 +725,8 @@ async def _insist(rec: dict, grace: float = 10.0) -> None:
 
 
 def _signal(sig: int) -> None:
-    _signal_proc(PROC, sig)
+    for proc in list(PROCS) or [PROC]:
+        _signal_proc(proc, sig)
     _signal_helper(sig)
 
 
@@ -662,12 +761,14 @@ def public() -> dict | None:
     try:
         recorded = rec["wav"].stat().st_size
     except OSError:
-        recorded = 0
+        # While recording there is no master yet, so what has arrived is whatever
+        # the captures have written between them.
+        recorded = _captured_bytes(rec)
     return {
         "id": rec["id"], "status": rec["status"], "error": rec["error"],
         "started_at": rec["started_at"], "ended_at": rec["ended_at"],
         "path": rec["path"], "job_id": rec["job_id"],
-        "labels": rec["labels"], "stereo": len(rec["devices"]) == 2,
+        "labels": rec["labels"], "stereo": len(rec.get("sources") or rec["devices"]) == 2,
         "seconds": round((rec["ended_at"] or time.time()) - rec["started_at"], 1),
         "bytes": recorded, "max_seconds": rec["max_seconds"],
         "log": list(rec["log"]),
@@ -699,9 +800,11 @@ def orphans() -> list[dict]:
     for meta in WORK_DIR.glob(f"{RECORDING_PREFIX}*/recording.json"):
         try:
             record = json.loads(meta.read_text(encoding="utf-8"))
-            recorded = (meta.parent / "master.wav").stat().st_size
         except (OSError, ValueError):
             continue
+        recorded = _captured_bytes({"voice_wav": meta.parent / "voice.wav",
+                                    "computer_wav": meta.parent / "computer.wav",
+                                    "sys_pcm": meta.parent / "computer.pcm"})
         if record.get("id") == live or recorded <= EMPTY_WAV:
             continue
         out.append({
@@ -709,8 +812,10 @@ def orphans() -> list[dict]:
             "started_at": record.get("started_at"),
             "bytes": recorded,
             "stereo": len(record.get("devices") or []) == 2,
-            # 48 kHz, 16-bit, one or two channels: the WAV's own size is the clock.
-            "seconds": round(recorded / (2 * 48000 * (len(record.get("devices") or [1]))), 1),
+            # An estimate, and only that: 16-bit at 48 kHz per side. The microphone
+            # is recorded at whatever rate it offers rather than a rate we chose,
+            # so its own size no longer says exactly how long it ran.
+            "seconds": round(recorded / (2 * 48000 * max(1, len(record.get("devices") or [1]))), 1),
         })
     return sorted(out, key=lambda r: -(r["started_at"] or 0))
 
@@ -724,6 +829,8 @@ def _orphan(rec_id: str) -> dict | None:
     if (RECORDING or {}).get("id") == record.get("id"):
         return None
     return {**record, "work": work, "wav": work / "master.wav",
+            "voice_wav": work / "voice.wav", "computer_wav": work / "computer.wav",
+            "sys_pcm": work / "computer.pcm",
             "keep": True, "ended_at": None, "path": None, "job_id": None,
             "error": None, "max_seconds": 0, "log": deque(maxlen=MAX_LOG)}
 
@@ -737,7 +844,9 @@ async def keep_orphan(rec_id: str) -> dict:
     if RECORDING is not None and RECORDING["status"] in LIVE:
         raise Failed("already_recording", "Finish the recording that is running first.")
     RECORDING = rec
-    await _save(rec)
+    # The same ending the interrupted recording never reached: combine the two
+    # captures, then save. A crash leaves them side by side and nothing else.
+    await _finish(rec)
     if rec["status"] == "failed":
         raise Failed(rec["error"]["code"], rec["error"]["message"])
     return public()
