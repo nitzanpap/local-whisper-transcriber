@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Whisper Transcriber</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Local Whisper <em>Transcriber</em></h1>
+  <div class="masthead">
+    <nav aria-label="Views">
+      <a href="#/transcribe" data-view="transcribe" data-i18n="nav.transcribe">Transcribe</a>
+      <a href="#/library" data-view="library" data-i18n="nav.library">Library</a>
+      <a href="#/settings" data-view="settings" data-i18n="nav.settings">Settings</a>
+    </nav>
+    <div class="head-right">
+      <div id="lang-switch">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>
+          <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>
+        </svg>
+        <select id="lang" aria-label="Interface language"></select>
+      </div>
+      <p class="pill" id="env" aria-live="polite"></p>
+    </div>
+  </div>
+</header>
+
+<div id="view-transcribe">
+
+<!-- ============ compose ============ -->
+<main id="screen-new">
+
+  <div class="note" id="pending" hidden>
+    <h2 data-i18n="pending.title">New recordings</h2>
+    <p id="pending-what"></p>
+    <div class="actions">
+      <button class="solid" id="pending-go" data-i18n="pending.go">Transcribe them</button>
+      <button class="link" id="pending-later" data-i18n="pending.later">Not now</button>
+    </div>
+  </div>
+
+  <div class="note" id="resumable" hidden>
+    <h2 data-i18n="job.unfinished">Unfinished transcription</h2>
+    <div id="resumable-list"></div>
+  </div>
+
+  <section class="step">
+    <span class="label" id="lbl-file" data-i18n="new.source">Source</span>
+    <button class="invite" id="choose-file" hidden>
+      <b data-i18n="new.choose">Choose an audio or video file</b>
+      <span data-i18n="new.chooseHint">MP3, WAV, M4A, MP4, MOV — anything your ffmpeg reads.</span>
+    </button>
+    <div class="paste" id="paste-row" hidden>
+      <label class="label" for="source" data-i18n="new.paste">or paste a path</label>
+      <div class="line"><input type="text" id="source" spellcheck="false" placeholder="/Users/you/Documents/recording.m4a"></div>
+    </div>
+    <div class="file" id="file-card" hidden>
+      <div class="file-top">
+        <span class="file-name" id="file-name"></span>
+        <button class="link" id="change-file" data-i18n="new.change">Change</button>
+      </div>
+      <p class="meta" id="file-meta"></p>
+      <p class="hint" id="batch-note" hidden></p>
+    </div>
+  </section>
+
+  <div id="rest" hidden>
+    <section class="step reveal" id="rest-inner">
+      <span class="label" data-i18n="new.transcription">Transcription</span>
+      <div class="grid two">
+        <div class="field">
+          <label class="label" for="model-pick" data-i18n="new.model">whisper.cpp model</label>
+          <div class="line" id="model-line">
+            <select id="model-pick"></select>
+          </div>
+          <div class="line" id="model-line-manual" hidden>
+            <input type="text" id="model" spellcheck="false" placeholder="/path/to/ggml-large-v3.bin"
+                   aria-label="whisper.cpp model path">
+            <button class="link" id="choose-model">Browse</button>
+          </div>
+          <p class="hint" id="model-hint" hidden>No models found. Put a <code>ggml-*.bin</code> file in
+            <code>~/whisper-models</code>, or point at one.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="language" data-i18n="new.language">Language</label>
+          <div class="line">
+            <select id="language">
+              <option value="he">Hebrew</option>
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+              <option value="ru">Russian</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="auto">Detect</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="step">
+      <span class="label" data-i18n="new.result">Result</span>
+      <p class="out" id="out-preview"></p>
+      <div class="chips" style="margin-top:1rem">
+        <label class="chip"><input type="checkbox" id="want-txt" checked><span data-i18n="new.txt">Transcript · txt</span></label>
+        <label class="chip"><input type="checkbox" id="want-srt" checked><span data-i18n="new.srt">Subtitles · srt</span></label>
+      </div>
+
+      <details class="tight" style="margin-top:1.25rem">
+        <summary data-i18n="new.advanced">Advanced</summary>
+        <div>
+          <div class="field">
+            <label class="label" for="out-dir" data-i18n="new.outFolder">Output folder</label>
+            <div class="line">
+              <input type="text" id="out-dir" spellcheck="false">
+              <button class="link" id="choose-dir">Browse</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label" for="basename" data-i18n="new.outName">Output name</label>
+            <div class="line"><input type="text" id="basename" spellcheck="false"></div>
+          </div>
+          <div class="field">
+            <label class="label" for="extra" data-i18n="new.extra">Extra whisper-cli arguments</label>
+            <div class="line"><input type="text" id="extra" spellcheck="false"></div>
+            <p class="hint" data-i18n="new.extraHint">Split into separate tokens. Never run through a shell.</p>
+          </div>
+          <div class="chips">
+            <label class="chip"><input type="checkbox" id="keep"><span data-i18n="new.keep">Keep intermediate audio</span></label>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <div class="actions">
+      <button class="solid" id="start" disabled><span data-i18n="new.start">Start transcription</span></button>
+      <button class="link" id="reset" data-i18n="new.clear">Clear</button>
+    </div>
+  </div>
+
+  <div class="note" id="form-error" hidden tabindex="-1" role="alert">
+    <h2 id="form-error-msg"></h2>
+    <pre class="tech" id="form-error-details" hidden></pre>
+  </div>
+</main>
+
+<!-- ============ job ============ -->
+<main id="screen-job" hidden>
+  <p class="meta" id="job-meta"></p>
+
+  <div class="readout" style="margin-top:1.25rem">
+    <div>
+      <p class="count" id="job-count" aria-hidden="true">0<sup>%</sup></p>
+      <p class="stage" id="job-stage" role="status"></p>
+    </div>
+    <p class="clock"><b id="job-elapsed">0:00</b><span id="job-clock-label">elapsed</span></p>
+  </div>
+
+  <div class="tape" id="job-tape"><i></i></div>
+  <progress class="sr" id="job-progress" max="100" value="0" aria-label="Transcription progress"></progress>
+
+  <div class="note" id="job-error" hidden tabindex="-1" role="alert">
+    <h2 id="job-error-msg"></h2>
+    <p id="job-error-code"></p>
+    <details class="tight"><summary data-i18n="job.details">Technical details</summary><pre class="tech" id="job-error-details"></pre></details>
+  </div>
+
+  <div id="job-result" hidden>
+    <div id="job-files"></div>
+    <div class="actions" style="margin-top:1.25rem">
+      <button id="job-reveal" data-i18n="job.openFolder">Open folder</button>
+      <button id="job-copy" data-i18n="job.copy">Copy transcript</button>
+    </div>
+    <div class="sheet" id="job-preview" tabindex="0" aria-label="Transcript preview"></div>
+  </div>
+
+  <div class="actions">
+    <button class="danger" id="job-cancel" data-i18n="job.cancel">Cancel transcription</button>
+    <button class="solid" id="job-again" hidden data-i18n="job.again">Transcribe another file</button>
+  </div>
+
+  <details class="tight" style="margin-top:1.5rem">
+    <summary data-i18n="job.log">Process log</summary>
+    <pre class="tech" id="job-log"></pre>
+  </details>
+</main>
+
+<!-- ============ queue (visible while composing and while running) ============ -->
+<section class="step" id="queue-box" hidden style="margin-top:2.5rem">
+  <span class="label" data-i18n="job.waiting">Waiting</span>
+  <div id="queue-list"></div>
+</section>
+
+</div><!-- /view-transcribe -->
+
+<!-- ============ library ============ -->
+<div id="view-library" hidden>
+  <section class="step">
+    <label class="label" for="q" data-i18n="lib.search">Search every transcript</label>
+    <div class="line">
+      <input type="text" id="q" spellcheck="false" data-i18n-placeholder="lib.searchPlaceholder" placeholder="a word or phrase">
+    </div>
+    <p class="hint" id="search-status" aria-live="polite"></p>
+  </section>
+
+  <section class="step" id="hits-box" hidden>
+    <span class="label" data-i18n="lib.matches">Matches</span>
+    <div id="hits"></div>
+  </section>
+
+  <section class="step" id="entries-box">
+    <span class="label" data-i18n="lib.transcripts">Transcripts</span>
+    <div id="entries"></div>
+  </section>
+
+  <details class="tight" id="history-box" hidden>
+    <summary data-i18n="job.recent">Recent activity</summary>
+    <div class="scroller">
+      <table class="history">
+        <thead><tr><th data-i18n="th.file">File</th><th data-i18n="th.status">Status</th><th data-i18n="th.lang">Lang</th><th data-i18n="th.finished">Finished</th></tr></thead>
+        <tbody id="history"></tbody>
+      </table>
+    </div>
+  </details>
+
+  <section id="reader" hidden>
+    <div class="reader-head">
+      <div>
+        <h2 id="reader-name"></h2>
+        <p class="meta" id="reader-meta"></p>
+      </div>
+      <button class="link" id="reader-close" data-i18n="lib.back">Back to list</button>
+    </div>
+    <audio id="player" controls preload="metadata"></audio>
+    <p class="hint" id="player-note" hidden></p>
+    <div class="actions">
+      <button id="reader-copy" data-i18n="job.copy">Copy transcript</button>
+      <button id="reader-reveal" data-i18n="job.openFolder">Open folder</button>
+    </div>
+    <details class="tight">
+      <summary data-i18n="lib.details">How this was made</summary>
+      <dl class="facts" id="reader-facts"></dl>
+    </details>
+    <div class="cues" id="cues" tabindex="0" aria-label="Transcript"></div>
+  </section>
+</div>
+
+<!-- ============ settings ============ -->
+<div id="view-settings" hidden>
+
+  <section class="step">
+    <span class="label" data-i18n="set.basics">The basics</span>
+
+    <div class="grid two">
+      <div class="field">
+        <label class="label" for="set-language" data-i18n="set.spokenLanguage">Language spoken in your recordings</label>
+        <div class="line">
+          <select id="set-language">
+            <option value="he">עברית · Hebrew</option>
+            <option value="en">English</option>
+            <option value="ar">العربية · Arabic</option>
+            <option value="ru">Русский · Russian</option>
+            <option value="es">Español · Spanish</option>
+            <option value="fr">Français · French</option>
+            <option value="de">Deutsch · German</option>
+            <option value="auto" data-i18n="set.detect">Work it out automatically</option>
+          </select>
+        </div>
+        <p class="hint" data-i18n="set.languageHint">Get this wrong and the transcript is
+          nonsense — Hebrew read as English does not fail, it invents. Whatever you used
+          last time is remembered here.</p>
+      </div>
+
+      <div class="field">
+        <label class="label" for="set-quality" data-i18n="set.quality">Quality</label>
+        <div class="line"><select id="set-quality"></select></div>
+        <p class="hint" data-i18n="set.qualityHint">Bigger is more accurate and slower.</p>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:1.4rem">
+      <label class="label" for="set-vocab" data-i18n="set.vocabulary">Words it keeps getting wrong</label>
+      <textarea id="set-vocab" rows="2" spellcheck="false"
+                placeholder="Kubernetes, Grafana, onboarding, שיווק"></textarea>
+      <p class="hint" data-i18n="set.vocabularyHint">Names, jargon, product names. Telling it
+        which words to expect makes it reach for them instead of guessing. A couple of lines
+        is plenty; unrelated words make things worse.</p>
+    </div>
+
+    <div class="grid two" style="margin-top:1.4rem">
+      <div class="field">
+        <label class="label" for="set-silence" data-i18n="set.silence">Skip silence</label>
+        <div class="line">
+          <select id="set-silence">
+            <option value="on" data-i18n="set.silenceOn">Yes — recommended</option>
+            <option value="off" data-i18n="set.silenceOff">No</option>
+          </select>
+        </div>
+        <p class="hint" id="silence-hint"></p>
+      </div>
+      <div class="field">
+        <label class="label" for="set-reading-size" data-i18n="set.reading">Transcript text</label>
+        <div class="line">
+          <select id="set-reading-size">
+            <option value="0.92rem" data-i18n="set.small">Small</option>
+            <option value="1.02rem" data-i18n="set.normal">Normal</option>
+            <option value="1.18rem" data-i18n="set.large">Large</option>
+            <option value="1.35rem" data-i18n="set.larger">Larger</option>
+          </select>
+        </div>
+        <div class="line" style="margin-top:.5rem">
+          <select id="set-reading-face">
+            <option value="var(--display)">Serif</option>
+            <option value="var(--sans)">Sans serif</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="step">
+    <span class="label" data-i18n="set.sources">Where your recordings are</span>
+    <p class="hint" data-i18n="set.sourcesHint"></p>
+    <div class="field" style="margin-top:.8rem">
+      <label class="label sr" for="set-watch">Source folders</label>
+      <textarea id="set-watch" rows="2" spellcheck="false"
+                placeholder="/Users/you/Documents/Zoom"></textarea>
+    </div>
+    <div class="actions" style="margin-top:.8rem">
+      <button id="add-watch" data-i18n="set.addFolder">Add a folder…</button>
+      <button id="check-now" data-i18n="set.checkNow">Check for new recordings now</button>
+      <button id="queue-folder" data-i18n="set.queueFolder">Transcribe a folder now…</button>
+    </div>
+    <p class="hint" id="folder-result" hidden></p>
+
+    <div class="field" style="margin-top:1.4rem">
+      <label class="label" for="set-output-mode" data-i18n="set.output">Where transcripts go</label>
+      <div class="line">
+        <select id="set-output-mode">
+          <option value="beside" data-i18n="set.outputBeside">Next to each recording</option>
+          <option value="folder" data-i18n="set.outputFolder">All in one folder</option>
+        </select>
+      </div>
+      <div class="line" id="output-folder-row" hidden style="margin-top:.5rem">
+        <input type="text" id="set-output" spellcheck="false">
+        <button class="link" data-browse="folder" data-into="set-output" data-i18n="browse">Browse</button>
+      </div>
+    </div>
+  </section>
+
+  <details class="tight">
+    <summary data-i18n="set.expert">Expert</summary>
+    <div>
+      <div class="field">
+        <label class="label" for="set-model" data-i18n="set.modelFile">Model file</label>
+        <div class="line">
+          <input type="text" id="set-model" spellcheck="false">
+          <button class="link" data-browse="file" data-into="set-model" data-i18n="browse">Browse</button>
+        </div>
+        <p class="hint" id="model-help"></p>
+      </div>
+      <div class="field">
+        <label class="label" for="set-vad" data-i18n="set.silenceModel">Silence-detection model</label>
+        <div class="line">
+          <input type="text" id="set-vad" spellcheck="false" placeholder="…/ggml-silero-v5.1.2.bin">
+          <button class="link" data-browse="file" data-into="set-vad" data-i18n="browse">Browse</button>
+        </div>
+        <p class="hint" id="vad-help"></p>
+      </div>
+      <div class="field">
+        <label class="label" for="set-extra" data-i18n="set.extraArgs">Extra whisper-cli arguments</label>
+        <div class="line"><input type="text" id="set-extra" spellcheck="false"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="set-ffmpeg">ffmpeg</label>
+        <div class="line"><input type="text" id="set-ffmpeg" spellcheck="false"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="set-ffprobe">ffprobe</label>
+        <div class="line"><input type="text" id="set-ffprobe" spellcheck="false"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="set-whisper">whisper-cli</label>
+        <div class="line"><input type="text" id="set-whisper" spellcheck="false"></div>
+      </div>
+      <p class="hint" data-i18n="set.toolsHint">Leave the three above empty and it finds them
+        by itself, which is what normally happens.</p>
+    </div>
+  </details>
+
+  <section class="step">
+    <span class="label" data-i18n="set.backup">Backup</span>
+    <p class="hint" data-i18n="set.backupHint">Everything on this screen, as a file you can
+      keep or move to another computer. Your transcripts are not included — they are already
+      files, sitting next to your recordings.</p>
+    <div class="actions">
+      <button id="export-settings" data-i18n="set.export">Save settings to a file</button>
+      <button id="import-settings" data-i18n="set.import">Load settings from a file</button>
+    </div>
+    <p class="hint" id="backup-result" hidden aria-live="polite"></p>
+  </section>
+
+  <div class="actions">
+    <button class="solid" id="save-settings" data-i18n="set.save">Save settings</button>
+    <span class="hint" id="settings-saved" hidden data-i18n="set.saved">Saved.</span>
+    <button class="link danger" id="clear-history" data-i18n="set.clearHistory">Clear the list of past transcriptions</button>
+  </div>
+</div>
+
+</div>
+
+<script src="/i18n.js"></script>
+<script src="/app.js"></script>
+<script src="/library.js"></script>
+<script src="/settings.js"></script>
+</body>
+</html>
