@@ -61,6 +61,20 @@ verdict() {
         echo "   FAILED — nothing audible arrived"
         return 1
     fi
+    # A level says something arrived, not that it arrived whole. Dropouts inserted
+    # by a timestamp problem leave audio at a healthy peak and still destroy it:
+    # the giveaway is many short silences of near-identical length, which speech
+    # does not produce. Checking only the level once let exactly that through.
+    local gaps
+    gaps=$(ffmpeg -v info -nostdin -i "$file" -af "silencedetect=noise=-45dB:d=0.1" -f null - 2>&1 |
+           grep -c 'silence_start')
+    local per_second
+    per_second=$(awk -v g="$gaps" -v d="${SECONDS_EACH:-5}" 'BEGIN { printf "%.1f", g / d }')
+    echo "      $gaps silence runs (${per_second}/s)"
+    if awk -v p="$per_second" 'BEGIN { exit !(p >= 1.0) }'; then
+        echo "   FAILED — chopped into pieces, not a continuous recording"
+        return 1
+    fi
     echo "   OK"
 }
 
@@ -90,7 +104,7 @@ mkfifo "$WORK/sys2.pcm"
 # The same filter graph record.py builds: each source flattened to mono, drift
 # corrected, then joined so voice is the left channel and the computer the right.
 ffmpeg -hide_banner -nostdin -loglevel error -y \
-       -f avfoundation -use_wallclock_as_timestamps 1 -i ":$MIC" \
+       -f avfoundation -i ":$MIC" \
        -f s16le -ar 48000 -ac 1 -use_wallclock_as_timestamps 1 -i "$WORK/sys2.pcm" \
        -filter_complex "[0:a]$ONE_STREAM[voice];[1:a]$ONE_STREAM[computer];[voice][computer]join=inputs=2:channel_layout=stereo[out]" \
        -map "[out]" -t "$SECONDS_EACH" -c:a pcm_s16le "$WORK/both.wav"

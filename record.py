@@ -257,10 +257,19 @@ def _input_args(device: str, rec: dict) -> list[str]:
         # needs something to correct against.
         return ["-f", "s16le", "-ar", "48000", "-ac", "1",
                 "-use_wallclock_as_timestamps", "1", "-i", str(rec["fifo"])]
+    # No wallclock timestamps on a real device, which was a mistake worth naming.
+    # A capture device hands its audio over in bursts, and stamping each burst with
+    # the time it arrived describes a stream full of gaps that were never in the
+    # sound. aresample below then honours that description and fills the gaps with
+    # silence, which is audible as a stutter and, worse, quietly destroys speech:
+    # a voice chopped into 150 ms pieces reads to VAD as no voice at all. The
+    # device's own sample clock is continuous, so letting it supply the timestamps
+    # is both simpler and correct — aresample still corrects the drift between two
+    # devices, which is the only thing it was ever needed for.
     if sys.platform == "darwin":
         # ":N" is avfoundation for "no video, audio device N".
-        return ["-f", "avfoundation", "-use_wallclock_as_timestamps", "1", "-i", f":{device}"]
-    return ["-f", "pulse", "-use_wallclock_as_timestamps", "1", "-i", device]
+        return ["-f", "avfoundation", "-i", f":{device}"]
+    return ["-f", "pulse", "-i", device]
 
 
 def capture_command(rec: dict) -> list[str]:
