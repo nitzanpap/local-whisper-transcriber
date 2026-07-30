@@ -173,7 +173,10 @@ button.danger:hover { color: var(--accent); border-color: var(--accent); }
 .tape::before { content: ""; color: var(--rule); }
 .tape > i { color: var(--accent); width: 0; transition: width .45s cubic-bezier(.2,.7,.2,1); }
 .tape.done > i { color: var(--ink); } /* a full bar of accent reads as alarm, not success */
+/* Only while nothing has reported a level yet: a moving bar in a recorder reads as
+   a meter, and one that moves regardless of the audio is worse than none. */
 .tape.idle > i { animation: sweep 1.6s ease-in-out infinite; width: 22%; }
+.tape > i { transition: width .2s linear; }
 @keyframes sweep { 0%,100% { transform: translateX(0); } 50% { transform: translateX(355%); } }
 
 /* --- result --- */

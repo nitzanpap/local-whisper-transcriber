@@ -70,6 +70,13 @@ def disk_is_low(free_bytes: int) -> bool:
 # with DENIED in mac/syscapture.swift.
 HELPER_DENIED = 3
 
+# ebur128's momentary loudness. The filter computes it but prints nothing on its
+# own; ametadata is what puts it on stderr, a line at a time, where the log is
+# already being read. Measured on real speech at about -25 LUFS, and -120 for
+# digital silence.
+EBUR128_M = re.compile(r"lavfi\.r128\.M=(-?\d+(?:\.\d+)?)")
+SILENT_LUFS = -70.0
+
 # What a device is called when it exists to carry audio back into the machine.
 # Used to preselect the right one and to notice when there is none.
 LOOPBACK_HINTS = ("blackhole", "loopback", "soundflower", "vb-cable", "vb cable",
@@ -339,8 +346,17 @@ def capture_command(rec: dict, device: str, out: Path) -> list[str] | None:
     # Nothing is asked of the device beyond what it offers. Demanding a rate or a
     # layout of a live capture is resampling in the capture path, and the capture
     # path is the one place that cannot afford to fall behind.
-    return ([binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "warning", "-y",
+    return ([binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "info", "-y",
              "-thread_queue_size", "1024"] + source
+            # An output that keeps nothing and exists to report how loud the input
+            # is. The interface had a bar that swept on a timer whatever the audio
+            # was doing, which is how a microphone recording digital zero went
+            # unnoticed for hours; a meter has to measure something or it is
+            # decoration that lies. First, so that the recording stays the last
+            # thing on the line and reads as the point of the command.
+            + ["-t", str(rec["max_seconds"]),
+               "-af", "ebur128=metadata=1,ametadata=print:key=lavfi.r128.M",
+               "-f", "null", "-"]
             + ["-t", str(rec["max_seconds"]), "-c:a", "pcm_s16le", str(out)])
 
 
@@ -607,7 +623,12 @@ async def _run(rec: dict) -> None:
     PROCS.extend(procs)
     asyncio.create_task(_watch_disk(rec))
     try:
-        await asyncio.gather(*(_drain(rec, proc) for proc in procs))
+        # Labelled in the order capture_commands built them: the voice first, then a
+        # real device on the computer's side if one was chosen.
+        labels = [side for side, device in (("voice", rec["voice"]), ("computer", rec["computer"]))
+                  if device and device != SYSTEM_AUDIO]
+        await asyncio.gather(*(_drain(rec, proc, label)
+                               for proc, label in zip(procs, labels)))
         # A capture that ends before anybody asked it to has failed, not finished.
         # Ending the recording along with it would throw away the source that is
         # still working — a Bluetooth microphone dropping out two minutes into a
@@ -653,14 +674,25 @@ async def _watch_disk(rec: dict, poll: float = 20.0) -> None:
         await asyncio.sleep(poll)
 
 
-async def _drain(rec: dict, proc: asyncio.subprocess.Process) -> None:
-    """One capture's own words, into the log the Record view shows."""
+async def _drain(rec: dict, proc: asyncio.subprocess.Process, label: str = "voice") -> None:
+    """One capture's own words, and how loud it is while it says them."""
     assert proc.stderr is not None
     async for raw in proc.stderr:
         line = raw.decode("utf-8", "replace").rstrip()
-        if line:
-            rec["log"].append(line)
+        if not line:
+            continue
+        found = EBUR128_M.search(line)
+        if found:
+            # Kept out of the log: this arrives ten times a second and would bury
+            # everything worth reading.
+            try:
+                rec.setdefault("live", {})[label] = float(found.group(1))
+            except ValueError:
+                pass
+            continue
+        rec["log"].append(line)
     await proc.wait()
+    rec.setdefault("live", {}).pop(label, None)
 
 
 async def _await_helper(rec: dict, poll: float = 0.2) -> None:
@@ -938,6 +970,8 @@ def public() -> dict | None:
         # Named by side rather than by channel number, so the interface can say
         # which of the two it was without knowing how they were arranged.
         "levels": rec.get("levels") or {}, "quiet": rec.get("quiet") or [],
+        # What each source is hearing right now, in LUFS, while it records.
+        "live": rec.get("live") or {},
         "log": list(rec["log"]),
     }
 

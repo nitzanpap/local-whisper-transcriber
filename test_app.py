@@ -31,6 +31,8 @@ import watch  # noqa: E402
 # which refuses to save a file that is only a header. With -list_devices or
 # -sources it prints a device list instead and exits non-zero, as ffmpeg does.
 FAKE_FFMPEG = """#!/bin/sh
+# Reports loudness the way ebur128 does, so a meter driven by it can be tested.
+[ -n "$REPORT_LEVEL" ] && echo "[Parsed_ametadata_1 @ 0x1] lavfi.r128.M=-23.400" >&2
 echo "fake ffmpeg running" >&2
 listing=""
 out=""
@@ -632,6 +634,22 @@ async def main() -> None:
     check("the second track fills the second half", spanned["percent"] == 100.0, str(spanned["percent"]))
     check("track names appear in the job", jobs.track_files(Path("/w"), 1, 2)[1].name == "segments-1.txt")
     check("and not when there is only one", jobs.track_files(Path("/w"), 0, 1)[1].name == "segments.txt")
+
+    print("a meter that measures something")
+    fed = {"log": [], "live": {}}
+    check("loudness is read off the capture",
+          record.EBUR128_M.search("[Parsed_ametadata_1 @ 0x1] lavfi.r128.M=-23.400")
+          .group(1) == "-23.400")
+    check("and a line without it is not mistaken for one",
+          record.EBUR128_M.search("Guessed Channel Layout: mono") is None)
+    cmd = " ".join(record.capture_command(
+        {"max_seconds": 60, "voice": "0"}, "0", Path("/tmp/v.wav")))
+    check("the capture reports how loud it is", "ebur128=metadata=1" in cmd, cmd)
+    check("into an output that keeps nothing", "-f null -" in cmd, cmd)
+    check("printed, since the filter alone prints nothing",
+          "ametadata=print:key=lavfi.r128.M" in cmd, cmd)
+    check("and the recording is still the last thing on the line",
+          cmd.rstrip().endswith("/tmp/v.wav"), cmd)
 
     print("a disk that is filling up")
     check("plenty of room is not low", not record.disk_is_low(50_000_000_000))

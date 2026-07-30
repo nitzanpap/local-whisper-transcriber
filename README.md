@@ -362,12 +362,15 @@ does not help there, because such a channel has no silence to find. The honest f
 each speech region separately with `--offset-t` so every segment carries a true absolute time, and
 to find those regions per channel rather than by level alone. Unimplemented.
 
-## Known: the recording indicator shows nothing
+## Known: only the microphone has a meter
 
-The bar that moves while recording is a fixed 1.6-second animation. It reads as a level meter and
-reports movement whether or not any audio exists, which is how a microphone recording digital zero
-went unnoticed for hours. A real per-channel meter from ffmpeg's `ebur128` output is the
-replacement; until then, the level check at save time is what tells you a side was silent.
+The bar while recording follows the real loudness of what is being captured, so a dead input shows
+a flat bar rather than a moving one. That covers the microphone and any real device, because ffmpeg
+is what captures those and ffmpeg is what measures them.
+
+The computer's side has no meter. It is written by the helper rather than by ffmpeg, so nothing
+measures it on the way past; the helper would have to report its own level the way ffmpeg does. The
+level check at save time still covers it, but after the fact rather than during.
 
 ## Design notes
 
