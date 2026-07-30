@@ -301,8 +301,16 @@ files in an ordinary folder, never inside the dot-directory above.
 ## 8. Working on it
 
 ```bash
-uv run --script test_app.py     # ~80 checks, fake binaries, no model needed, ~5s
+uv run --script test_app.py     # ~180 checks, fake binaries, no model needed, ~5s
+bash mac/verify-capture.sh      # the one thing the checks cannot fake: real capture
 ```
+
+The checks fake ffmpeg and whisper-cli away, which is what makes them fast and what lets
+them run on a machine with no microphone. The cost is that capture itself is never exercised,
+so `mac/verify-capture.sh` exists to do it by hand: it records the computer's audio alone and
+then both sources together, and reports the level in each channel, because a silent recording
+and a working one are the same size and only the levels tell them apart. Run it from a
+terminal that holds Screen Recording permission, and expect to answer a prompt the first time.
 
 | File | What lives there |
 |---|---|
