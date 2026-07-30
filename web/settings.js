@@ -246,7 +246,7 @@ $("check-now").onclick = async () => {
 };
 
 $("clear-history").onclick = async () => {
-  if (!confirm(t("set.clearConfirm"))) return;
+  if (!await ask(t("set.clearConfirm"))) return;
   try {
     await api("/history", null, "DELETE");
   } catch (err) {

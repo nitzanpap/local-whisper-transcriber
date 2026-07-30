@@ -10,6 +10,8 @@ const STRINGS = {
     "env.ready": "ffmpeg + whisper-cli ready",
     "env.missing": "missing {names}",
     "env.offline": "not running",
+    "confirm.yes": "Yes",
+    "confirm.no": "Cancel",
     "browse": "Browse",
 
     // Transcribe
@@ -223,6 +225,8 @@ const STRINGS = {
     "env.ready": "ffmpeg ו‑whisper‑cli מוכנים",
     "env.missing": "חסר: {names}",
     "env.offline": "לא פועל",
+    "confirm.yes": "כן",
+    "confirm.no": "ביטול",
     "browse": "עיון",
 
     "new.source": "מקור",

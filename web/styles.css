@@ -365,3 +365,18 @@ button[data-busy] { position: relative; }
 .more[open] > summary::before { content: "− "; }
 .more > summary:hover { color: var(--ink); }
 .more[open] > summary { margin-bottom: 1.4rem; }
+
+/* Our own confirmation. It has to carry its own weight because it replaces a
+   browser dialog that the desktop app's webview does not provide. */
+.sheet {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+  background: rgba(0, 0, 0, .55);
+}
+.sheet[hidden] { display: none; }
+.sheet-box {
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 3px;
+  padding: 1.6rem 1.8rem; max-width: 34rem; margin: 1rem;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
+}
+.sheet-box > p { margin: 0 0 1.3rem; font-size: 1.02rem; line-height: 1.55; }
+.sheet-box .line { display: flex; align-items: center; gap: 1.2rem; }

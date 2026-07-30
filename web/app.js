@@ -11,6 +11,29 @@ const size = b => b > 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.r
 const tail = (p, n = 2) => p.split("/").filter(Boolean).slice(-n).join("/");
 const when = s => s ? new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
+// Asks, and resolves to what was answered. window.confirm is unavailable in the
+// desktop app's webview and returns falsy there, which turned every confirmation
+// into a silent refusal — the button did nothing and said nothing.
+function ask(message) {
+  return new Promise((resolve) => {
+    const box = $("confirm");
+    $("confirm-text").textContent = message;
+    box.hidden = false;
+    $("confirm-yes").focus();
+    const done = (answer) => {
+      box.hidden = true;
+      document.removeEventListener("keydown", onKey);
+      resolve(answer);
+    };
+    // Escape is the answer people expect from a dialog, and the one that cannot
+    // destroy anything.
+    const onKey = (e) => { if (e.key === "Escape") done(false); };
+    document.addEventListener("keydown", onKey);
+    $("confirm-yes").onclick = () => done(true);
+    $("confirm-no").onclick = () => done(false);
+  });
+}
+
 async function api(path, body, method) {
   const res = await fetch("/api" + path, {
     method: method || (body ? "POST" : "GET"),
@@ -180,7 +203,7 @@ $("start").onclick = async () => {
   try {
     const { existing } = await api("/collisions", body);
     if (existing.length) {
-      if (!confirm(`Files with this output name already exist. Replace them?\n\n${existing.join("\n")}`)) return;
+      if (!await ask(`Files with this output name already exist. Replace them?\n\n${existing.join("\n")}`)) return;
       body.overwrite = true;
     }
     await api("/start", body);
@@ -208,7 +231,7 @@ $("start").onclick = async () => {
 };
 
 $("job-cancel").onclick = async () => {
-  if (!confirm(t("job.cancelConfirm"))) return;
+  if (!await ask(t("job.cancelConfirm"))) return;
   try { await api("/cancel", {}); } catch (err) { formError(err.detail); }
   await refresh();
 };
@@ -296,7 +319,7 @@ document.addEventListener("click", async (e) => {
     if (dequeueId) await api("/queue/" + dequeueId, null, "DELETE");
     else if (resumeId) { pinned = false; await api("/resume/" + resumeId, {}, "POST"); }
     else if (discardId) {
-      if (!confirm(t("job.discardConfirm"))) return;
+      if (!await ask(t("job.discardConfirm"))) return;
       await api("/resume/" + discardId, null, "DELETE");
     } else return;
     await refresh();

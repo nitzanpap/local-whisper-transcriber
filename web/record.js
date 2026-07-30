@@ -127,7 +127,7 @@ $("rec-start").onclick = async (e) => {
 };
 
 async function stopRecording(keep) {
-  if (!keep && !confirm(t("rec.throwConfirm"))) return;
+  if (!keep && !await ask(t("rec.throwConfirm"))) return;
   try {
     await api("/record/stop?keep=" + (keep ? "true" : "false"), {});
     await refresh();
@@ -227,7 +227,7 @@ document.addEventListener("click", async (e) => {
   try {
     if (keep) await api("/record/keep/" + keep, {});
     else {
-      if (!confirm(t("rec.orphanDropConfirm"))) return;
+      if (!await ask(t("rec.orphanDropConfirm"))) return;
       await api("/record/keep/" + drop, null, "DELETE");
     }
     await refresh();
