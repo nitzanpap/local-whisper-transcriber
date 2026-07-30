@@ -364,6 +364,21 @@ Things that are deliberately absent, with the reason:
 - **What gets mixed is what recorded, not what was selected.** A source chosen and then silent
   is given no channel and no speaker label, which is how an empty track used to reach a
   transcript.
+- **Every finished recording is measured before it is called saved.** The loudest sample in
+  each side is checked, and a side that came back with nothing audible is named on the notice
+  that says the recording was kept — the last moment anyone could still go back and record it
+  again. Never fatal: a recording with one silent side is still a recording. This exists because
+  a recording made from a device that was asleep is exactly the same size as a good one and
+  reports exactly the same success, and hours went into a transcription problem that was a
+  microphone recording digital zero.
+- **A finished recording is not transcribed until asked.** Transcribing is the expensive half,
+  and the minute a meeting ends is often the worst moment to give a machine over to it. The
+  recording is on disk either way and the Library will run it whenever suits. Settings has the
+  switch for anyone who would rather it happened immediately.
+- **Losing one source does not end the recording.** A capture that stops before it was asked to
+  has failed rather than finished, and taking the other source down with it would turn a
+  half-recorded meeting into no meeting: a Bluetooth microphone dropping out used to end the
+  computer's audio too. Whatever survives keeps recording, and the log says what was lost.
 - **The helper is compiled on first use, not shipped.** A binary in the repository would need
   signing to be worth trusting and would be another thing to keep current; `swiftc` from
   Xcode's command line tools builds it in a few seconds into the data directory, staged and

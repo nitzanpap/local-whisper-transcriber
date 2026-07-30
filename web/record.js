@@ -184,9 +184,16 @@ function renderRecording(rec, orphans) {
 
   if (saved) {
     $("rec-done-title").textContent = t("rec.savedTitle", { at: longClock(rec.seconds) });
-    $("rec-done-what").textContent = rec.job_id
-      ? t("rec.savedQueued", { path: rec.path })
-      : t("rec.savedOnly", { path: rec.path });
+    // A side that recorded nothing is said here, on the notice that says the
+    // recording was saved, because that is the last moment anyone could still go
+    // back and record it again.
+    const quiet = (rec.quiet || []).map(side =>
+      side === "voice" ? t("rec.quietVoice") : t("rec.quietComputer"));
+    $("rec-done-what").textContent = [
+      rec.job_id ? t("rec.savedQueued", { path: rec.path })
+                 : t("rec.savedOnly", { path: rec.path }),
+      ...quiet,
+    ].join("\n\n");
     $("rec-open").onclick = () => api("/reveal", { path: rec.path.replace(/\/[^/]*$/, "") }).catch(() => {});
   }
 }

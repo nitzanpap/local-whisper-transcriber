@@ -596,6 +596,18 @@ async def _run(rec: dict) -> None:
     PROCS.extend(procs)
     try:
         await asyncio.gather(*(_drain(rec, proc) for proc in procs))
+        # A capture that ends before anybody asked it to has failed, not finished.
+        # Ending the recording along with it would throw away the source that is
+        # still working — a Bluetooth microphone dropping out two minutes into a
+        # meeting used to take the computer's audio down with it. Whatever survives
+        # keeps recording until the recording is stopped or runs out of time.
+        if rec["status"] == "recording" and HELPER is not None and HELPER.returncode is None:
+            for proc in procs:
+                if proc.returncode not in (0, None):
+                    rec["log"].append(
+                        f"# a capture exited by itself with {proc.returncode}; "
+                        "the rest of the recording carries on")
+            await _await_helper(rec)
     finally:
         PROC = None
         PROCS.clear()
@@ -617,8 +629,10 @@ async def _drain(rec: dict, proc: asyncio.subprocess.Process) -> None:
 
 async def _await_helper(rec: dict, poll: float = 0.2) -> None:
     """Wait out a recording that only the helper is making."""
-    deadline = time.monotonic() + rec["max_seconds"]
-    while time.monotonic() < deadline:
+    # Measured from when the recording began, so a source lost halfway does not
+    # quietly grant the rest another full allowance.
+    deadline = rec["started_at"] + rec["max_seconds"]
+    while time.time() < deadline:
         if HELPER is None or HELPER.returncode is not None:
             return
         if rec["status"] not in ("recording", "stopping"):
@@ -647,6 +661,45 @@ async def _finish(rec: dict) -> None:
     # Reached even when a capture died of its own accord: whatever arrived before
     # it stopped is still a recording, and still worth keeping.
     await _save(rec)
+
+
+# A channel quieter than this carried nothing worth transcribing. Chosen well below
+# a quiet voice — a whisper at arm's length measures around -40 — so that only
+# genuine silence or a dead device trips it.
+SILENT_DB = -60.0
+
+
+async def channel_levels(path: Path, sources: list[str]) -> dict[str, float | None]:
+    """The loudest sample in each side of a finished recording.
+
+    Measured because nothing else can tell the difference. A recording made from a
+    device that was asleep, or muted, or simply the wrong one, is exactly the same
+    size as a good one and reports exactly the same success. Several hours went into
+    a transcription problem that was a microphone recording digital zero, and this
+    is the check that would have said so in a second.
+    """
+    out: dict[str, float | None] = {}
+    for index, label in enumerate(sources):
+        pan = f"c{index}" if len(sources) > 1 else "c0"
+        peak = None
+        try:
+            _, text = await capture(
+                [binary("ffmpeg"), "-hide_banner", "-nostdin", "-i", str(path),
+                 "-af", f"pan=mono|c0={pan},volumedetect", "-f", "null", "-"],
+                timeout=600)
+            for line in text.splitlines():
+                if "max_volume:" in line:
+                    peak = float(line.split("max_volume:")[1].strip().split()[0])
+        except (Failed, OSError, ValueError, IndexError):
+            peak = None
+        out[label] = peak
+    return out
+
+
+def quiet_sides(levels: dict[str, float | None]) -> list[str]:
+    """Which sides came back with nothing audible in them."""
+    return [label for label, peak in levels.items()
+            if peak is not None and peak <= SILENT_DB]
 
 
 async def _mix(rec: dict, sources: list[str]) -> bool:
@@ -698,6 +751,15 @@ async def _save(rec: dict) -> None:
     """Turn the scratch WAV into the .m4a that gets kept, and queue it."""
     rec["status"] = "saving"
     _checkpoint(rec)
+    # Measured while the master still exists, and never fatal: a recording with one
+    # silent side is still a recording and still worth keeping. It is said out loud
+    # rather than left to be discovered in a transcript that is missing half a
+    # conversation.
+    sources = rec.get("sources") or ["voice", "computer"][:len(rec["devices"])]
+    rec["levels"] = await channel_levels(rec["wav"], sources)
+    rec["quiet"] = quiet_sides(rec["levels"])
+    if rec["quiet"]:
+        rec["log"].append("# nothing audible on: " + ", ".join(rec["quiet"]))
     stereo = len(rec.get("sources") or rec["devices"]) == 2
     staged = rec["work"] / "recording.m4a"
     cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
@@ -837,6 +899,9 @@ def public() -> dict | None:
         "labels": rec["labels"], "stereo": len(rec.get("sources") or rec["devices"]) == 2,
         "seconds": round((rec["ended_at"] or time.time()) - rec["started_at"], 1),
         "bytes": recorded, "max_seconds": rec["max_seconds"],
+        # Named by side rather than by channel number, so the interface can say
+        # which of the two it was without knowing how they were arranged.
+        "levels": rec.get("levels") or {}, "quiet": rec.get("quiet") or [],
         "log": list(rec["log"]),
     }
 

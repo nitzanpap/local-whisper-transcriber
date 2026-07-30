@@ -70,6 +70,10 @@ const STRINGS = {
     "rec.noDevicesWhat": "ffmpeg listed no recording devices at all. On macOS this usually " +
       "means the app has not been allowed to use the microphone yet: System Settings → " +
       "Privacy & Security → Microphone.",
+    "rec.quietVoice": "Nothing audible was recorded from your microphone. Check which " +
+      "input is selected, and that it is not muted or asleep.",
+    "rec.quietComputer": "Nothing audible was recorded from your computer. Check that " +
+      "sound was actually playing, and that the output is not muted.",
     "rec.systemAudio": "System audio (no driver needed)",
     "rec.needScreenRecordingTitle": "One permission away from recording your computer's audio",
     "rec.needScreenRecordingWhat": "This app can capture what your speakers are playing " +
@@ -274,6 +278,10 @@ const STRINGS = {
     "rec.noDevicesTitle": "לא נמצאו התקני קלט",
     "rec.noDevicesWhat": "‏ffmpeg לא מצא שום התקן הקלטה. ב‑macOS זה בדרך כלל אומר שלא ניתנה " +
       "לאפליקציה הרשאה למיקרופון: הגדרות המערכת → פרטיות ואבטחה → מיקרופון.",
+    "rec.quietVoice": "לא הוקלט שום דבר שנשמע מהמיקרופון. בדקו איזה קלט נבחר, ושהוא " +
+      "לא מושתק או רדום.",
+    "rec.quietComputer": "לא הוקלט שום דבר שנשמע מהמחשב. בדקו שבאמת התנגן צליל, ושהפלט " +
+      "לא מושתק.",
     "rec.systemAudio": "האודיו של המחשב (בלי דרייבר)",
     "rec.needScreenRecordingTitle": "הרשאה אחת מפרידה בינינו לבין הקלטת האודיו של המחשב",
     "rec.needScreenRecordingWhat": "האפליקציה יכולה להקליט את מה שהרמקולים מנגנים בלי שום " +

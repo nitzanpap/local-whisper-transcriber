@@ -52,9 +52,12 @@ def recording_config() -> dict:
         "voice": conf.get("record_voice_device") or "",
         "computer": conf.get("record_computer_device") or "",
         "labels": labels,
-        # On unless explicitly turned off: the point of recording here is the
-        # transcript, and a recording that just sits there is a surprise.
-        "transcribe": conf.get("record_auto_transcribe") is not False,
+        # Off unless explicitly turned on. Transcribing is the expensive half and
+        # the moment a meeting ends is often the worst time to spend a machine on
+        # it; the recording is safe on disk either way and the Library will
+        # transcribe it whenever asked. This was on by default once, which meant a
+        # long recording seized the machine the instant it was saved.
+        "transcribe": conf.get("record_auto_transcribe") is True,
         "max_seconds": minutes * 60,
         "max_minutes": minutes,
     }
