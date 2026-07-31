@@ -1,8 +1,17 @@
 // The computer's own audio, without asking anyone to install a driver.
 //
 // macOS has no system-audio *input* device, which is why this project used to
-// send people to BlackHole. ScreenCaptureKit hands the same audio over directly:
-// no kernel driver, no password, no reboot — one permission grant instead.
+// send people to BlackHole. A Core Audio process tap hands the same audio over
+// directly: no kernel driver, no password, no reboot.
+//
+// It used to be ScreenCaptureKit, which works and costs the wrong permission.
+// ScreenCaptureKit is a screen API: it can only ever ask for "Screen & System
+// Audio Recording", it will not run without a video stream, and so the helper
+// configured a two-pixel display capture at a frame a second and threw every
+// frame away purely to keep audio arriving. Asking somebody for their screen in
+// order to transcribe a meeting is a large thing to ask for a thing we do not
+// want. A process tap asks for "System Audio Recording Only", which is the
+// permission this actually needs, and takes no video at all.
 //
 // It writes raw signed 16-bit little-endian mono at 48 kHz to the path given,
 // and nothing else. Raw rather than a WAV because the reader is ffmpeg, which is
@@ -12,200 +21,239 @@
 // anyway, so carrying two channels this far would only be thrown away.
 //
 // Usage:
-//   syscapture --probe    print {"granted":bool} and exit, never prompting
-//   syscapture --request  the same, but ask macOS to prompt if it never has
-//   syscapture <path>     capture until SIGINT/SIGTERM, or until the reader goes
+//   syscapture <path>   capture until SIGINT/SIGTERM, or until the reader goes
 //
-// Exit codes matter to the caller: 3 means the permission was refused, which is
-// a sentence for the user rather than a bug, and record.py says so.
+// There is no permission probe, because Core Audio offers no way to ask without
+// asking: creating a tap succeeds whether or not the grant exists, and an
+// ungranted one simply delivers silence. So the permission is requested at the
+// moment of use, the way a normal application asks, and silence is reported
+// afterwards by the level check that already runs on every recording.
+//
+// Exit codes matter to the caller: 3 means the audio machinery refused outright,
+// which is a sentence for the user rather than a bug, and record.py says so.
 
 import AVFoundation
-import CoreGraphics
+import AudioToolbox
+import CoreAudio
 import Darwin
-import ScreenCaptureKit
 
 let DENIED: Int32 = 3
+let OUT_RATE = 48000.0
 
-/// Turns whatever ScreenCaptureKit produces into the one format ffmpeg is told to expect.
-final class Writer: NSObject, SCStreamOutput {
+func address(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
+    AudioObjectPropertyAddress(mSelector: selector,
+                               mScope: kAudioObjectPropertyScopeGlobal,
+                               mElement: kAudioObjectPropertyElementMain)
+}
+
+func fail(_ message: String, _ code: Int32 = 1) -> Never {
+    FileHandle.standardError.write(Data("syscapture: \(message)\n".utf8))
+    exit(code)
+}
+
+/// The UID of whatever the machine is playing through right now. The tap has to
+/// hang off a real output device, and that is the one carrying the meeting.
+func defaultOutputUID() -> String? {
+    var addr = address(kAudioHardwarePropertyDefaultOutputDevice)
+    var device = AudioDeviceID(0)
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                     &addr, 0, nil, &size, &device) == noErr,
+          device != kAudioObjectUnknown else { return nil }
+    var uidAddr = address(kAudioDevicePropertyDeviceUID)
+    var uid: CFString = "" as CFString
+    size = UInt32(MemoryLayout<CFString>.size)
+    let status = withUnsafeMutablePointer(to: &uid) {
+        AudioObjectGetPropertyData(device, &uidAddr, 0, nil, &size, $0)
+    }
+    return status == noErr ? uid as String : nil
+}
+
+/// Writes mono 16-bit samples to the far end, and knows when the far end has gone.
+final class Sink {
     private let fd: Int32
     private let lock = NSLock()
-    /// Set once the reader has gone, so the capture can stop rather than spin.
     private(set) var gone = false
 
-    init(fd: Int32) {
-        self.fd = fd
-    }
+    init(fd: Int32) { self.fd = fd }
 
-    func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio else { return }
-        // Deinterleaved float is what SCStream gives; averaging the channels is
-        // the downmix, and the clamp is what stops a sum louder than full scale
-        // from wrapping around into a click.
-        var mono: [Int16] = []
-        try? sb.withAudioBufferList { list, _ in
-            let bufs = Array(list)
-            guard let first = bufs.first else { return }
-            let frames = Int(first.mDataByteSize) / 4
-            mono.reserveCapacity(frames)
-            let channels = bufs.compactMap { $0.mData?.assumingMemoryBound(to: Float.self) }
-            guard !channels.isEmpty else { return }
-            for i in 0..<frames {
-                var sum: Float = 0
-                for c in channels { sum += c[i] }
-                let v = max(-1.0, min(1.0, sum / Float(channels.count)))
-                mono.append(Int16(v * 32767))
-            }
-        }
-        guard !mono.isEmpty else { return }
-        // Serialised because SCStream may deliver on more than one queue, and two
-        // half-written frames interleaved would be audible as noise.
+    func write(_ samples: UnsafeBufferPointer<Int16>) {
+        // Serialised because Core Audio may deliver on more than one thread, and
+        // two half-written frames interleaved would be audible as noise.
         lock.lock()
         defer { lock.unlock() }
-        // write(2) rather than FileHandle.write, which raises an Objective-C
-        // exception on a broken pipe that Swift cannot catch — the process simply
-        // dies. And a broken pipe is the normal end of every recording: ffmpeg
-        // reaches its -t limit or is stopped, and stops reading. Ignoring the error
-        // is the whole point, so the call has to be one that returns an error
-        // rather than one that throws something uncatchable.
-        mono.withUnsafeBufferPointer { buf in
-            guard var p = UnsafeRawPointer(buf.baseAddress) else { return }
-            var left = buf.count * MemoryLayout<Int16>.size
-            while left > 0 {
-                let n = write(fd, p, left)
-                if n > 0 {
-                    p += n
-                    left -= n
-                    continue
-                }
-                // EINTR is worth retrying; anything else means the reader is gone
-                // and there is nothing useful left to do with these samples.
-                if n < 0 && errno == EINTR { continue }
-                gone = true
-                return
+        guard var p = UnsafeRawPointer(samples.baseAddress) else { return }
+        var left = samples.count * MemoryLayout<Int16>.size
+        while left > 0 {
+            // write(2) rather than FileHandle.write, which raises an Objective-C
+            // exception on a broken pipe that Swift cannot catch — the process
+            // simply dies. And a broken pipe is the normal end of every recording:
+            // ffmpeg reaches its -t limit or is stopped, and stops reading.
+            let n = Darwin.write(fd, p, left)
+            if n > 0 {
+                p += n
+                left -= n
+                continue
             }
+            // EINTR is worth retrying; anything else means the reader is gone and
+            // there is nothing useful left to do with these samples.
+            if n < 0 && errno == EINTR { continue }
+            gone = true
+            return
         }
     }
 }
 
-/// Consumes the frames ScreenCaptureKit insists on producing, and keeps none.
-final class Discard: NSObject, SCStreamOutput {
-    func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer,
-                of type: SCStreamOutputType) {}
+let args = Array(CommandLine.arguments.dropFirst())
+guard let target = args.first, !target.isEmpty else {
+    fail("no output path given", 2)
 }
 
-@main
-struct SysCapture {
-    static func main() async {
-        let args = Array(CommandLine.arguments.dropFirst())
+// EPIPE would otherwise kill the process before the write can be ignored.
+signal(SIGPIPE, SIG_IGN)
 
-        // Asked before anything is offered in the UI, so it must never prompt:
-        // preflight reports what is already granted and stays silent otherwise.
-        if args.first == "--probe" {
-            print("{\"granted\":\(CGPreflightScreenCaptureAccess())}")
-            exit(0)
-        }
-        // Preflight cannot tell "refused" from "never asked", and refusing a user
-        // who has simply never been asked would be a dead end. This is the one
-        // place allowed to raise the system prompt.
-        if args.first == "--request" {
-            let granted = CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
-            print("{\"granted\":\(granted)}")
-            exit(0)
-        }
-        guard let target = args.first, !target.isEmpty else {
-            FileHandle.standardError.write(Data("syscapture: no output path given\n".utf8))
-            exit(2)
-        }
+// O_CREAT because the usual target is a plain file that does not exist yet;
+// without it this failed with ENOENT on every recording the app made and worked
+// only in the one place a FIFO had already been created. A FIFO still works:
+// opening one for writing blocks until the reader arrives, which is the handshake
+// that keeps the two ends from racing.
+let fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+if fd < 0 { fail("cannot write to \(target)", 2) }
+let sink = Sink(fd: fd)
 
-        // EPIPE would otherwise kill the process before the write can be ignored.
-        signal(SIGPIPE, SIG_IGN)
-
-        // O_CREAT because the usual target is a plain file that does not exist yet;
-        // without it this failed with ENOENT on every recording the app made and
-        // worked only in the one place a FIFO had already been created. A FIFO still
-        // works: opening one for writing blocks until the reader arrives, which is
-        // the handshake that keeps the two ends from racing.
-        let fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-        if fd < 0 {
-            FileHandle.standardError.write(Data("syscapture: cannot write to \(target)\n".utf8))
-            exit(2)
-        }
-
-        do {
-            let content = try await SCShareableContent.excludingDesktopWindows(
-                false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first else {
-                FileHandle.standardError.write(Data("syscapture: no display to capture from\n".utf8))
-                exit(2)
-            }
-
-            let cfg = SCStreamConfiguration()
-            cfg.capturesAudio = true
-            // Our own output would otherwise be captured too, and a transcript of
-            // the app playing back its own recording is not worth having.
-            cfg.excludesCurrentProcessAudio = true
-            cfg.sampleRate = 48000
-            cfg.channelCount = 2
-            // Audio is the whole point; the video ScreenCaptureKit insists on
-            // configuring is kept as small and as slow as it will go.
-            cfg.width = 2
-            cfg.height = 2
-            cfg.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-
-            let filter = SCContentFilter(
-                display: display, excludingApplications: [], exceptingWindows: [])
-            let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
-            let writer = Writer(fd: fd)
-            try stream.addStreamOutput(writer, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
-            // The video nobody wants still has to be taken. An SCStream with no
-            // screen consumer can run without ever delivering an audio buffer, so
-            // this drains the 2x2 frames it was configured for and drops them.
-            try stream.addStreamOutput(Discard(), type: .screen,
-                                       sampleHandlerQueue: .global(qos: .utility))
-            try await stream.startCapture()
-
-            // Stopping is the normal end of a recording, so it exits 0: whatever
-            // reached the far end before the signal is the recording.
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await waitForSignal() }
-                await group.next()
-            }
-            try? await stream.stopCapture()
-            close(fd)
-            exit(0)
-        } catch {
-            let text = "\(error)"
-            // -3801 is ScreenCaptureKit for "the user said no", which the caller
-            // turns into instructions rather than a stack trace.
-            let refused = text.contains("-3801") || text.lowercased().contains("declined")
-            FileHandle.standardError.write(Data("syscapture: \(text)\n".utf8))
-            exit(refused ? DENIED : 1)
-        }
-    }
-
-    /// Resolves on SIGINT or SIGTERM, the two ways record.py asks a capture to stop.
-    private static func waitForSignal() async {
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            let queue = DispatchQueue(label: "syscapture.signal")
-            var done = false
-            let finish = {
-                queue.async {
-                    guard !done else { return }
-                    done = true
-                    cont.resume()
-                }
-            }
-            for sig in [SIGINT, SIGTERM] {
-                signal(sig, SIG_IGN)
-                let src = DispatchSource.makeSignalSource(signal: sig, queue: queue)
-                src.setEventHandler { finish() }
-                src.resume()
-                sources.append(src)
-            }
-        }
-    }
+guard let outputUID = defaultOutputUID() else {
+    fail("no default output device to tap", 2)
 }
 
-// Signal sources must outlive the function that made them or they stop firing.
-nonisolated(unsafe) var sources: [DispatchSourceSignal] = []
+// A global tap: everything the machine is playing. Nothing is excluded, which is
+// what the ScreenCaptureKit version amounted to as well — it excluded the helper
+// process, and the helper has never made a sound.
+// ponytail: if the app's own playback ever needs excluding, translate the parent
+// pid with kAudioHardwarePropertyTranslatePIDToProcessObject and pass it here.
+let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+tapDescription.uuid = UUID()
+tapDescription.name = "Local Whisper Transcriber"
+tapDescription.isPrivate = true          // never shown in Audio MIDI Setup
+tapDescription.muteBehavior = .unmuted   // the meeting must still come out of the speakers
+
+var tap = AudioObjectID(kAudioObjectUnknown)
+if AudioHardwareCreateProcessTap(tapDescription, &tap) != noErr || tap == kAudioObjectUnknown {
+    fail("macOS would not create an audio tap", DENIED)
+}
+
+// What the tap will hand over: the device's own rate and channel count, in float.
+// Read rather than assumed — a Mac playing at 44.1 kHz would otherwise be written
+// out as though it were 48, which is a recording that plays back too fast and a
+// transcript with every timestamp wrong.
+var formatAddr = address(kAudioTapPropertyFormat)
+var asbd = AudioStreamBasicDescription()
+var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+guard AudioObjectGetPropertyData(tap, &formatAddr, 0, nil, &size, &asbd) == noErr,
+      let tapFormat = AVAudioFormat(streamDescription: &asbd) else {
+    AudioHardwareDestroyProcessTap(tap)
+    fail("the audio tap would not say what format it produces")
+}
+
+// An aggregate device is how a tap is listened to. Private, so it never appears
+// as a device anybody could pick by accident.
+let aggregateUID = UUID().uuidString
+let aggregate: [String: Any] = [
+    kAudioAggregateDeviceNameKey: "Local Whisper Transcriber",
+    kAudioAggregateDeviceUIDKey: aggregateUID,
+    kAudioAggregateDeviceMainSubDeviceKey: outputUID,
+    kAudioAggregateDeviceIsPrivateKey: true,
+    kAudioAggregateDeviceIsStackedKey: false,
+    kAudioAggregateDeviceTapAutoStartKey: true,
+    kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outputUID]],
+    kAudioAggregateDeviceTapListKey: [[
+        kAudioSubTapDriftCompensationKey: true,
+        kAudioSubTapUIDKey: tapDescription.uuid.uuidString,
+    ]],
+]
+var device = AudioObjectID(kAudioObjectUnknown)
+if AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &device) != noErr {
+    AudioHardwareDestroyProcessTap(tap)
+    fail("macOS would not open a device to listen to the tap", DENIED)
+}
+
+func tearDown(_ proc: AudioDeviceIOProcID?) {
+    if let proc {
+        AudioDeviceStop(device, proc)
+        AudioDeviceDestroyIOProcID(device, proc)
+    }
+    AudioHardwareDestroyAggregateDevice(device)
+    AudioHardwareDestroyProcessTap(tap)
+}
+
+// Whatever the device runs at, in whatever layout, arrives here as 48 kHz mono
+// 16-bit because that is what ffmpeg has been told on its own command line.
+guard let outFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: OUT_RATE,
+                                    channels: 1, interleaved: true),
+      let converter = AVAudioConverter(from: tapFormat, to: outFormat) else {
+    tearDown(nil)
+    fail("cannot convert \(tapFormat) to 48 kHz mono")
+}
+
+var ioProc: AudioDeviceIOProcID?
+let status = AudioDeviceCreateIOProcIDWithBlock(&ioProc, device, nil) { _, input, _, _, _ in
+    guard !sink.gone else { return }
+    let incoming = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+    guard let first = incoming.first, first.mDataByteSize > 0 else { return }
+    let frames = AVAudioFrameCount(first.mDataByteSize / (tapFormat.streamDescription.pointee.mBytesPerFrame))
+    guard frames > 0,
+          let source = AVAudioPCMBuffer(pcmFormat: tapFormat, bufferListNoCopy: input),
+          let out = AVAudioPCMBuffer(pcmFormat: outFormat,
+                                     frameCapacity: AVAudioFrameCount(Double(frames) * OUT_RATE
+                                                                      / tapFormat.sampleRate) + 16)
+    else { return }
+
+    var handed = false
+    var error: NSError?
+    converter.convert(to: out, error: &error) { _, outStatus in
+        if handed {
+            outStatus.pointee = .noDataNow
+            return nil
+        }
+        handed = true
+        outStatus.pointee = .haveData
+        return source
+    }
+    guard error == nil, out.frameLength > 0, let channel = out.int16ChannelData else { return }
+    sink.write(UnsafeBufferPointer(start: channel[0], count: Int(out.frameLength)))
+}
+if status != noErr || ioProc == nil {
+    tearDown(nil)
+    fail("macOS would not start reading the tap")
+}
+
+if AudioDeviceStart(device, ioProc) != noErr {
+    tearDown(ioProc)
+    fail("macOS would not start the audio device", DENIED)
+}
+
+// Stopping is the normal end of a recording, so it exits 0: whatever reached the
+// far end before the signal is the recording. Signal sources have to outlive the
+// scope that made them or they stop firing.
+let queue = DispatchQueue(label: "syscapture.signal")
+var sources: [DispatchSourceSignal] = []
+let stop = DispatchSemaphore(value: 0)
+for sig in [SIGINT, SIGTERM] {
+    signal(sig, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
+    source.setEventHandler { stop.signal() }
+    source.resume()
+    sources.append(source)
+}
+// The reader going away ends it too, and nothing else would notice. On its own
+// queue: this loop never returns until it is over, and parked on the same serial
+// queue as the signal sources it starved them — the helper then ignored SIGINT and
+// SIGTERM alike and had to be killed.
+DispatchQueue.global(qos: .utility).async {
+    while !sink.gone { Thread.sleep(forTimeInterval: 0.25) }
+    stop.signal()
+}
+stop.wait()
+
+tearDown(ioProc)
+close(fd)
+exit(0)

@@ -70,14 +70,12 @@ const STRINGS = {
       "Privacy & Security → Microphone.",
     "rec.quietVoice": "Nothing audible was recorded from your microphone. Check which " +
       "input is selected, and that it is not muted or asleep.",
-    "rec.quietComputer": "Nothing audible was recorded from your computer. Check that " +
-      "sound was actually playing, and that the output is not muted.",
+    "rec.quietComputer": "Nothing audible was recorded from your computer. The usual " +
+      "reason is permission: System Settings → Privacy & Security → System Audio " +
+      "Recording Only. A refusal there is silent — the recording runs perfectly and " +
+      "captures nothing. Otherwise check that sound was really playing, and that the " +
+      "output is not muted.",
     "rec.systemAudio": "System audio (no driver needed)",
-    "rec.needScreenRecordingTitle": "One permission away from recording your computer's audio",
-    "rec.needScreenRecordingWhat": "This app can capture what your speakers are playing " +
-      "without any driver, but macOS calls that screen recording and asks first. Starting a " +
-      "recording will request it; allow it there and you may need to start the app again. " +
-      "Your voice alone will record fine in the meantime.",
     "rec.howTo": "How to set that up",
     "rec.loopbackSteps":
       "1. Install a loopback driver:\n" +
@@ -277,13 +275,10 @@ const STRINGS = {
       "לאפליקציה הרשאה למיקרופון: הגדרות המערכת → פרטיות ואבטחה → מיקרופון.",
     "rec.quietVoice": "לא הוקלט שום דבר שנשמע מהמיקרופון. בדקו איזה קלט נבחר, ושהוא " +
       "לא מושתק או רדום.",
-    "rec.quietComputer": "לא הוקלט שום דבר שנשמע מהמחשב. בדקו שבאמת התנגן צליל, ושהפלט " +
-      "לא מושתק.",
+    "rec.quietComputer": "לא הוקלט שום דבר שנשמע מהמחשב. הסיבה הרגילה היא הרשאה: " +
+      "הגדרות המערכת ← פרטיות ואבטחה ← ‏System Audio Recording Only. סירוב שם הוא שקט — " +
+      "ההקלטה רצה מצוין ולא קולטת כלום. אחרת בדקו שבאמת התנגן צליל, ושהפלט לא מושתק.",
     "rec.systemAudio": "האודיו של המחשב (בלי דרייבר)",
-    "rec.needScreenRecordingTitle": "הרשאה אחת מפרידה בינינו לבין הקלטת האודיו של המחשב",
-    "rec.needScreenRecordingWhat": "האפליקציה יכולה להקליט את מה שהרמקולים מנגנים בלי שום " +
-      "דרייבר, אבל ‏macOS קורא לזה הקלטת מסך ומבקש רשות קודם. התחלת הקלטה תבקש אותה; אשרו " +
-      "שם, וייתכן שיהיה צריך להפעיל את האפליקציה מחדש. בינתיים הקול שלכם לבד יוקלט בסדר גמור.",
     "rec.howTo": "איך מגדירים את זה",
     "rec.loopbackSteps":
       "1. התקינו דרייבר loopback:\n" +

@@ -26,21 +26,45 @@ while [ -n "$pid" ] && [ "$pid" != "1" ]; do
 done
 echo "   The last line is the application macOS judges every permission against."
 
-say "screen recording, as this process sees it"
+# Not a preflight — there is no such thing for a Core Audio process tap, and there
+# never was one worth trusting. This plays a sound and captures it, which answers
+# the only question anybody has: does audio actually arrive here. A tap listens to
+# the output device rather than to applications on a display, so unlike the old
+# ScreenCaptureKit arrangement a command-line tone is captured perfectly well.
+say "the computer's audio, as this process hears it"
 H="$HOME/.local-whisper-transcriber/syscapture"
-if [ -x "$H" ]; then
-    printf '   preflight: %s\n' "$("$H" --probe)"
+if [ ! -x "$H" ]; then
+    echo "   no helper built yet — start a recording once and it gets compiled"
 else
-    echo "   no helper built yet"
+    RAW=$(mktemp /tmp/lwt-state-XXXX.pcm)
+    "$H" "$RAW" 2>/dev/null & HPID=$!
+    sleep 0.4
+    afplay /System/Library/Sounds/Submarine.aiff >/dev/null 2>&1
+    kill -INT "$HPID" 2>/dev/null
+    wait "$HPID" 2>/dev/null
+    python3 - "$RAW" <<'PY'
+import struct, sys, pathlib
+raw = pathlib.Path(sys.argv[1]).read_bytes()
+n = len(raw) // 2
+peak = max((abs(v) for v in struct.unpack("<%dh" % n, raw[:n * 2])), default=0)
+if not n:
+    print("   nothing captured at all — the helper did not run")
+elif peak == 0:
+    print(f"   {n / 48000:.1f}s captured, PEAK 0 — silence")
+    print("   Either this process is not in System Settings -> Privacy & Security ->")
+    print('   "System Audio Recording Only", or the output is muted (see below).')
+    print("   A refusal there is silent: every status code says fine and no audio comes.")
+else:
+    print(f"   {n / 48000:.1f}s captured, peak {peak}/32767 — the computer's audio arrives")
+PY
+    rm -f "$RAW"
 fi
 cat <<'NOTE'
-   macOS 26 has TWO lists and they are separate grants:
-     System Settings -> Privacy & Security ->
-       "Screen & System Audio Recording"  — lets the stream start
-       "System Audio Recording Only"      — lets audio actually arrive
-   A process in the first but not the second gets a stream that runs perfectly
-   and delivers silence, with no error anywhere. Check that the terminal you are
-   running from appears in BOTH before calling silent system audio a bug.
+   The grant that matters is "System Audio Recording Only". "Screen & System Audio
+   Recording" is a different list and this app no longer belongs in it — it stopped
+   using ScreenCaptureKit, which was a screen API charging a screen permission for
+   audio. An app missing NSAudioCaptureUsageDescription cannot be prompted at all,
+   so it never appears in either list and simply records silence forever.
 NOTE
 
 say "audio routing — what there is to capture, and from where"

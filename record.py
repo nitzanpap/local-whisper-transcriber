@@ -126,7 +126,9 @@ async def _build_helper() -> Path | None:
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         code, _ = await capture(
-            [swiftc, "-O", "-parse-as-library", "-o", str(staged), str(HELPER_SOURCE)],
+            # No -parse-as-library: the helper is top-level code, and under that
+            # flag it compiles cleanly into a binary that does nothing whatever.
+            [swiftc, "-O", "-o", str(staged), str(HELPER_SOURCE)],
             timeout=300)
     except (Failed, OSError):
         return None
@@ -140,29 +142,17 @@ async def _build_helper() -> Path | None:
     return HELPER_BIN
 
 
-async def _granted(helper: Path, prompt: bool) -> bool:
-    """Whether Screen Recording is allowed. `prompt` is the only thing that asks."""
-    try:
-        code, out = await capture([str(helper), "--request" if prompt else "--probe"],
-                                  timeout=120 if prompt else 20)
-    except (Failed, OSError):
-        return False
-    if code != 0:
-        return False
-    for line in reversed(out.splitlines()):
-        try:
-            return bool(json.loads(line).get("granted"))
-        except ValueError:
-            continue
-    return False
+async def system_audio() -> dict | None:
+    """The driverless computer-audio source, or None where there cannot be one.
 
-
-async def system_audio(prompt: bool = False) -> dict | None:
-    """The driverless computer-audio source, or None where there cannot be one."""
+    There is no permission to report. Core Audio offers no way to ask whether a
+    process tap is allowed without creating one, and creating one succeeds whether
+    or not the grant exists — an ungranted tap simply delivers silence. So macOS is
+    asked at the moment of use, the way any other application asks, and a side that
+    heard nothing is reported by the level check that already runs afterwards.
+    """
     helper = await helper_path()
-    if helper is None:
-        return None
-    return {"helper": helper, "granted": await _granted(helper, prompt)}
+    return None if helper is None else {"helper": helper}
 
 
 # --- what is available to record from ----------------------------------------
@@ -293,10 +283,6 @@ async def devices() -> dict:
     advice = []
     if not found:
         advice.append("noDevices")
-    elif sysaudio is not None and not sysaudio["granted"]:
-        # A permission that has not been given yet, which is one click rather than
-        # a driver to install — so it is worth saying instead of the older advice.
-        advice.append("needScreenRecording")
     elif not any(d["loopback"] for d in found):
         advice.append("needLoopback")
     return {
@@ -455,18 +441,15 @@ async def start(voice: str, computer: str) -> dict:
 
     helper = None
     if SYSTEM_AUDIO in chosen:
-        # Asked for by the click that starts the recording, not silently at startup:
-        # a permission prompt out of nowhere is worse than one with a reason.
-        sysaudio = await system_audio(prompt=True)
+        # macOS is asked by the click that starts the recording, not silently at
+        # startup: a permission prompt out of nowhere is worse than one with a
+        # reason. There is nothing to check beforehand — a process tap is created
+        # whether or not it is allowed, and an unallowed one just returns silence.
+        sysaudio = await system_audio()
         if sysaudio is None:
             raise Failed("dependency_not_found",
                          "The system-audio helper could not be built. Xcode's command line "
                          "tools provide the compiler it needs (xcode-select --install).")
-        if not sysaudio["granted"]:
-            raise Failed("insufficient_permissions",
-                         "macOS has not allowed this app to capture the computer's audio. Open "
-                         "System Settings → Privacy & Security → Screen Recording, allow it "
-                         "there, then start the app again and record.")
         helper = sysaudio["helper"]
 
     conf = recording_config()
@@ -793,8 +776,8 @@ def _why_nothing_arrived(rec: dict) -> tuple[str, str]:
     if rec.get("helper_code") == HELPER_DENIED:
         return ("insufficient_permissions",
                 "macOS did not let this app capture the computer's audio. Open System "
-                "Settings → Privacy & Security → Screen Recording, allow it there, then "
-                "start the app again and record.")
+                "Settings → Privacy & Security → System Audio Recording Only, allow it "
+                "there, then start the app again and record.")
     denied = ("not permitted", "input/output error", "permission denied",
               "cannot open", "no such device", "invalid device")
     if sys.platform == "darwin" and any(hint in text for hint in denied):

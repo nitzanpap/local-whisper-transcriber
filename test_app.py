@@ -563,13 +563,18 @@ async def main() -> None:
     print("the computer's audio without a driver")
     code, message = record._why_nothing_arrived({**rec, "helper_code": record.HELPER_DENIED})
     check("a refused permission is named, not guessed at",
-          code == "insufficient_permissions" and "Screen Recording" in message, message)
+          code == "insufficient_permissions" and "System Audio Recording Only" in message, message)
+    # The list it names has to be the list macOS actually puts this app in. It used
+    # to say Screen Recording, which was true of ScreenCaptureKit and is now the
+    # wrong pane entirely — being sent to the wrong pane is worse than being sent
+    # nowhere, because the row is not there and it reads as a lie.
+    check("and not the screen list it used to be in", "Screen" not in message, message)
     check("and is not blamed on two capture sessions", "Aggregate" not in message, message)
 
     async def with_helper(granted: bool) -> dict:
         """devices() as it looks on a machine where the helper exists."""
-        async def fake(prompt: bool = False) -> dict:
-            return {"helper": Path("/x/syscapture"), "granted": granted}
+        async def fake() -> dict:
+            return {"helper": Path("/x/syscapture")}
         was, record.system_audio = record.system_audio, fake
         try:
             return await record.devices()
@@ -581,10 +586,11 @@ async def main() -> None:
     check("system audio is offered as a source", entry is not None, str(got["devices"]))
     check("as a loopback, so it is the computer's side by default", bool(entry and entry["loopback"]))
     check("nobody is told to install a driver", "needLoopback" not in got["advice"], str(got["advice"]))
-    check("the permission is asked about instead",
-          got["advice"] == ["needScreenRecording"], str(got["advice"]))
-    check("nothing to advise once it is allowed",
-          (await with_helper(True))["advice"] == [], str(got["advice"]))
+    # Nothing is asked for in advance any more. A process tap cannot be asked about
+    # without being created, so macOS is asked at the moment of use like any other
+    # application asks, and the first screen stays quiet.
+    check("and nothing is asked for before anything has happened",
+          got["advice"] == [], str(got["advice"]))
 
     print("recording, then transcribing both speakers apart")
     recordings = TMP / "recordings"

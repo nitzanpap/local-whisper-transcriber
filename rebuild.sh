@@ -93,7 +93,11 @@ codesign --verify --deep --strict "$INSTALLED" 2>/dev/null \
 say "permissions"
 BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INSTALLED/Contents/Info.plist" 2>/dev/null)
 if [ -n "$BUNDLE" ]; then
-    for service in ScreenCapture Microphone; do
+    # AudioCapture is the computer's own audio, and the only one of the three this
+    # app still asks for besides the microphone. ScreenCapture stays in the list so
+    # that a machine carrying the old grant from the ScreenCaptureKit days has it
+    # taken away rather than left sitting there meaning nothing.
+    for service in AudioCapture ScreenCapture Microphone; do
         tccutil reset "$service" "$BUNDLE" >/dev/null 2>&1 \
             && ok "$service cleared, it will ask again" \
             || printf '  \033[33m—\033[0m could not clear %s; remove it by hand in System Settings\n' "$service"
@@ -129,8 +133,9 @@ esac
 cat <<DONE
 
   The permissions were cleared, so the app will ask for them again the first time
-  you record. Allow both, then quit and reopen it: macOS applies screen recording
-  only to a process that starts afterwards.
+  you record: the microphone for your voice, and system audio for the computer's
+  side. Allow both. The system-audio one appears under
+  Privacy & Security -> "System Audio Recording Only".
 
   bash mac/state.sh   what this machine is configured to do
 DONE

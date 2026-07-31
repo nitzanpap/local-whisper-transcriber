@@ -12,5 +12,13 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Local Whisper Transcriber records your voice so it can be transcribed on this machine. Nothing is uploaded.</string>
+	<!-- The same trap, one list further down. Capturing the computer's own audio
+	     with a Core Audio process tap is gated on System Audio Recording Only, and
+	     without this key macOS has no sentence to put in the prompt, so it never
+	     raises one: the tap is created, every status code says noErr, and the
+	     capture delivers digital silence forever. Measured exactly that way from a
+	     process that had no such key. -->
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Local Whisper Transcriber records what your speakers are playing — the other side of your meeting — so it can be transcribed on this machine. Nothing is uploaded.</string>
 </dict>
 </plist>

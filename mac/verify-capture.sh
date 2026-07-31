@@ -38,17 +38,10 @@ KEEP="${KEEP:-$HOME/Desktop/capture-check}"
 mkdir -p "$KEEP"
 trap 'rm -rf "$WORK"; [ -n "${TONE_PID:-}" ] && kill "$TONE_PID" 2>/dev/null' EXIT
 
-echo "== permission =="
-# --request rather than --probe: this is the one call allowed to raise the prompt,
-# and a first run has never been asked. Allow it, then run this again if macOS
-# only applies it to a process started afterwards, which it usually does.
-"$HELPER" --request >/dev/null 2>&1
-case "$("$HELPER" --probe)" in
-    *true*) echo "   granted" ;;
-    *) echo "   NOT granted — allow it in System Settings → Privacy & Security →"
-       echo "   Screen & System Audio Recording, for this Terminal, then run this again."
-       exit 2 ;;
-esac
+# No permission check any more, and no way to write one: a Core Audio process tap
+# is created whether or not it is allowed, and an unallowed one delivers silence
+# with every status code reporting success. So the capture below is the check —
+# a silent computer channel means the grant, and it says so when it finds one.
 
 # Something has to be playing or a correct capture is indistinguishable from a
 # broken one. A tone through the default output is the least intrusive way.
@@ -61,16 +54,17 @@ ffmpeg -hide_banner -loglevel error -f lavfi \
 afplay "$WORK/tone.wav" & TONE_PID=$!
 sleep 1
 
-# afplay has no window, and ScreenCaptureKit builds its filter from a display and
-# attributes audio to the applications on it. A process with no window may simply
-# not be part of what that filter captures — which would make this tone a bad test
-# of the computer's audio while being a perfectly good one for the microphone.
-# Anything playing in a real, windowed application settles it.
+# afplay used to be a bad witness here: ScreenCaptureKit built its filter from a
+# display and attributed audio to the applications on it, so a process with no
+# window was not part of what it captured at all. A process tap listens to the
+# output device instead, so anything reaching the speakers is captured, windowed
+# or not. The note that used to stand here — go and play something in a browser —
+# is no longer true and would send somebody chasing a fault that is not there.
 if [ -z "${QUIET:-}" ]; then
     echo
-    echo "   NOTE: the tone is played by afplay, which has no window. If the computer"
-    echo "   channel comes back silent, start something playing in a browser or a media"
-    echo "   player and run this again before treating that as a fault in the helper."
+    echo "   NOTE: if the computer channel comes back silent, the likeliest cause is"
+    echo "   System Settings → Privacy & Security → \"System Audio Recording Only\","
+    echo "   which refuses in silence rather than with an error."
     echo
 fi
 
