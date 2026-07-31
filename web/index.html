@@ -727,15 +727,9 @@
 
 </div>
 
-<script src="/i18n.js"></script>
-<script src="/app.js"></script>
-<script src="/record.js"></script>
-<script src="/library.js"></script>
-<script src="/settings.js"></script>
-
-<!-- Our own confirmation, because window.confirm does nothing in the webview the
-     desktop app runs in: it returns falsy, so every action guarded by it silently
-     did nothing at all. Six of them, including discarding a recording. -->
+<!-- Before the scripts, not after them. applyTranslations() runs as they load and
+     can only translate what has been parsed by then — left below, this dialog kept
+     its English buttons under a Hebrew question. -->
 <div id="confirm" class="confirm-sheet" hidden>
   <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirm-text">
     <p id="confirm-text"></p>
@@ -745,5 +739,15 @@
     </div>
   </div>
 </div>
+
+<script src="/i18n.js"></script>
+<script src="/app.js"></script>
+<script src="/record.js"></script>
+<script src="/library.js"></script>
+<script src="/settings.js"></script>
+
+<!-- Our own confirmation, because window.confirm does nothing in the webview the
+     desktop app runs in: it returns falsy, so every action guarded by it silently
+     did nothing at all. Six of them, including discarding a recording. -->
 </body>
 </html>

@@ -160,6 +160,12 @@ const STRINGS = {
     "job.waiting": "Waiting", "job.remove": "Remove",
     "job.unfinished": "Unfinished transcription",
     "job.reached": "{name} — reached {at}{of}, {was}.",
+    // How a run ended, in the backend's own words, so the sentence above can say
+    // it in the reader's.
+    "job.was.cancelled": "cancelled",
+    "job.was.failed": "it failed",
+    "job.was.running": "interrupted",
+    "job.was.queued": "never started",
     "job.resume": "Resume", "job.discard": "Discard",
     "job.discardConfirm": "Discard this run's progress? The part already transcribed is lost.",
     "job.recent": "Recent",
@@ -396,6 +402,10 @@ const STRINGS = {
     "job.waiting": "בתור", "job.remove": "הסרה",
     "job.unfinished": "תמלול שלא הסתיים",
     "job.reached": "{name} — הגיע ל‑{at}{of}, {was}.",
+    "job.was.cancelled": "בוטל",
+    "job.was.failed": "נכשל",
+    "job.was.running": "נקטע",
+    "job.was.queued": "לא התחיל",
     "job.resume": "המשך", "job.discard": "מחיקה",
     "job.discardConfirm": "למחוק את ההתקדמות של התמלול הזה? מה שכבר תומלל יאבד.",
     "job.recent": "אחרונים",

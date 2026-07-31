@@ -480,7 +480,11 @@ function renderResumable(rows) {
   $("resumable-list").innerHTML = rows.map(r => `
     <p>${t("job.reached", { name: r.source.split("/").pop().replace(/</g, "&lt;"),
                             at: clock(r.reached_ms / 1000),
-                            of: r.duration ? " / " + clock(r.duration) : "", was: r.was })}
+                            of: r.duration ? " / " + clock(r.duration) : "",
+                            // The backend's own word for how it ended. Dropped in
+                            // untranslated it left one English word sitting in the
+                            // middle of a Hebrew sentence.
+                            was: t("job.was." + r.was) })}
        <button class="link" data-resume="${r.id}">${t("job.resume")}</button>
        <button class="link" data-discard="${r.id}">${t("job.discard")}</button></p>`).join("");
 }

@@ -1275,6 +1275,37 @@ async def main() -> None:
     except record.Failed as exc:
         check("pausing nothing says so in a sentence", exc.message.endswith("."), exc.message)
 
+    print("the interface says everything in one language")
+    page = (config.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    strings = (config.WEB_DIR / "i18n.js").read_text(encoding="utf-8")
+
+    # Anything the page translates has to be parsed before the scripts that do the
+    # translating. applyTranslations() runs as they load, so markup written below
+    # them keeps whatever the HTML said — which is how a Hebrew question came with
+    # an English Yes and Cancel under it.
+    first_script = page.index('<script src="/')
+    late = [line.strip()[:60] for line in page[first_script:].splitlines()
+            if "data-i18n" in line]
+    check("nothing translatable is written after the scripts", late == [], str(late))
+
+    # Every key the page asks for, in both languages. A missing one falls through
+    # to English silently, which is the same bug wearing a different hat.
+    wanted = set(re.findall(r'data-i18n(?:-placeholder|-title)?="([^"]+)"', page))
+    for lang in ("en", "he"):
+        body = strings.split(f"  {lang}: {{", 1)[1]
+        have = set(re.findall(r'"([\w.]+)":', body))
+        missing = sorted(k for k in wanted if k not in have)
+        check(f"{lang} has every key the page uses", missing == [], str(missing[:6]))
+
+    # And the words the backend hands the page to print. `job.was.<status>` is one
+    # of these: the raw status went straight into a sentence, so a Hebrew reader
+    # got "cancelled" in the middle of it.
+    for status in ("cancelled", "failed", "running", "queued"):
+        for lang in ("en", "he"):
+            body = strings.split(f"  {lang}: {{", 1)[1]
+            check(f"{lang} can say a run was {status}",
+                  f'"job.was.{status}"' in body, f"job.was.{status} missing from {lang}")
+
     print("one line for the menu bar")
     record.RECORDING = None
     jobs.JOB = None

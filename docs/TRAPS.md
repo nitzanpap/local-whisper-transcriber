@@ -185,7 +185,26 @@ and is the one thing keeping the timeline honest.
 **Ban the dangerous use, not the word.** The check now allows `async=1`, fails on
 any stretching value, and says which use is which.
 
-## 12. This project's own tooling
+## 12. Translated markup must be parsed before the script that translates it
+
+A Hebrew confirmation came with an English **Yes** and **Cancel** under it. The
+keys existed in both dictionaries and `t("confirm.yes")` returned `כן` when asked —
+but `applyTranslations()` runs as the scripts load, and the dialog was written
+*below* the `<script>` tags, so it did not exist yet when the one pass over the
+document happened. Switching language in-session would have fixed it, because that
+calls `applyTranslations()` again; loading straight into Hebrew never did.
+
+Two checks now cover the class rather than the instance: nothing carrying
+`data-i18n` may appear after the first `<script src=`, and every key the page asks
+for must exist in **both** dictionaries. A missing key falls through to English
+silently, which is the same bug wearing a different hat.
+
+**And never interpolate a backend word into a translated sentence.** The status of
+an interrupted run went straight into `{was}`, so a Hebrew reader got
+"…, cancelled." in the middle of their own language. Those words are translated
+through `job.was.<status>` now, and the suite checks every status has both.
+
+## 13. This project's own tooling
 
 - **The suite runs against fake `ffmpeg` and `whisper-cli` stubs.** `ffprobe` echoes
   `123.5` for every duration. Any check that needs real audio must locate the real
@@ -202,7 +221,7 @@ any stretching value, and says which use is which.
   point. This orphaned an `afplay` that kept playing and a recording that kept
   running. `bash -n` passes before and after and cannot see it.
 
-## 13. Things an agent working here cannot do
+## 14. Things an agent working here cannot do
 
 - **Screen capture and assistive access are both blocked.** `screencapture` fails
   with "could not create image from display", and System Events refuses with
@@ -219,7 +238,7 @@ any stretching value, and says which use is which.
   the menu can then only be reached by right-click, which on a trackpad means two
   fingers, and control-click does not reach it either.
 
-## 14. How to measure this app
+## 15. How to measure this app
 
 The methods that produced every real answer, so they can be reused:
 
