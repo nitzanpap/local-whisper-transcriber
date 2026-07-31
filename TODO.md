@@ -4,6 +4,33 @@ Ordered within each section by what would hurt most to leave. Written after a lo
 building the recording feature and debugging it against real hardware, so several entries name the
 evidence rather than a hunch.
 
+## Next, in order
+
+Where things stand after 2026-07-31: recording is, as far as it has been measured,
+correct — no sample loss on either side, the two channels aligned to the sample,
+silence kept where it belongs and dropped where it was asked for, meters that show
+a voice, and a menu bar item. `docs/TRAPS.md` says what was learned getting there
+and what not to repeat.
+
+1. **Re-test the transcript ordering fault before touching anything.** A quiet
+   channel comes back as one segment spanning the whole recording — measured at
+   `00:00.000 --> 00:22.040` for a sentence spoken around 15–21 s. This is the
+   complaint that started the whole recording effort, and every input to it has
+   since changed: the timeline is honest now, the channels are aligned, and the
+   microphone is no longer missing an eighth of its samples. It may behave
+   differently. Measure it on a real two-sided recording first, because if it is
+   still there the fix touches `record.py` and would collide with item 3.
+2. **Measure the level gap between the two sides.** The tap takes the stream before
+   the hardware volume, so the computer's side is near full scale whatever the
+   speakers are set to, while the microphone gets whatever the room gives: -20.7 dB
+   against -31.2 dB in one recording. Each channel is transcribed on its own so it
+   may not matter at all — or a quiet voice channel is the one VAD gives up on,
+   which would make it the cause of item 1. Measurable, never measured.
+3. **Split `record.py`.** Around 1,600 lines against a project norm of 200-400.
+   Capture, mixing, devices, orphans and permissions are five separable things.
+   Deliberately held while recording behaviour was still moving; it has stopped
+   moving, so this is the moment — but after item 1, not before.
+
 ## Bugs
 
 - [x] **Remove does nothing on a running transcription.** The button called `DELETE /api/queue/{id}`,
