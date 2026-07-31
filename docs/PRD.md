@@ -28,6 +28,119 @@ There is a second, smaller audience: the person who wants the machinery, because
 quality or debugging a recording. They are real and worth serving — but serving them on the same
 screen as everybody else is what went wrong.
 
+## 2a. The two pains it was built to end
+
+Worth recording, because the app drifted from them and they are the test for every decision.
+
+**Pain one: having the models was not the same as being able to use them.** Every transcription
+meant a long command, which became a script, which became a script you hoped you would not close the
+terminal on. When something broke it was not obvious that it had. A simple idea — take a recording,
+get the text — was manual and tedious every single time.
+
+**Pain two: recording a Mac's own audio alongside a microphone is absurdly hard.** Not hard to want.
+Hard to do. This project spent an afternoon proving exactly how hard, and that afternoon is why the
+feature exists.
+
+**Both are experience pains, not technical ones.** The models already worked. ffmpeg already worked.
+What did not exist was a way to use them that did not cost an evening. That is the whole product:
+not transcription, which is solved — the *absence of ceremony* around it.
+
+Which gives the honest one-line purpose:
+
+> **A complete, friendly way to use local models on your own machine to transcribe recordings —
+> including ones it records for you.**
+
+"Complete" is load-bearing. A step that sends someone back to a terminal, a Finder window or a
+System Settings pane is the original pain returning in a new costume.
+
+## 2b. The two stories everything must serve
+
+**Story A — the meeting.** A call is starting on Zoom, Meet or Teams. Open the app, record, talk.
+Afterwards: the transcript, and something usable out of it — copied, exported, and eventually
+summarised. Three beats: *record, transcribe, take it away.*
+
+**Story B — the recording that already exists.** A voice memo, a phone recording, a file somebody
+sent. There is nothing to capture; it starts at beat two. *Import, transcribe, take it away.*
+
+They converge after the first beat, which is the strongest argument yet that Record and Transcribe
+should not be two destinations. They are one story with two openings.
+
+Beat three is currently the weakest. The app writes files and stops. Copying is a button on one
+screen; export is scattered; summarising does not exist. If beat three is where the value is
+actually collected, it deserves as much design as the other two.
+
+## 5a. Cost against benefit, for everything
+
+Your framing, and the most useful tool in this document: judge every setting by **what it costs in
+attention** against **what it returns**. Temperature is expensive to think about and worth nearly
+nothing at the default. Language is nearly free to think about and changes whether the transcript is
+usable at all. Those two are not peers and must never look like peers.
+
+**High return, low cost — make these loud.**
+Record. Import a file. Language (with *detect* as the default). Copy or export the result. Where the
+files went. Whether the microphone is actually hearing anything. Who said which line.
+
+**High return, high cost — invest here until the cost is gone.**
+Recording the computer's audio as well as the microphone: enormous value, and today it costs device
+choices, two permission prompts and a restart. It should cost one toggle that says *record the
+call too*, with everything underneath handled or explained in one sentence.
+Accuracy against speed: real value, expressed as *Best / Good / Fast* — never as model filenames.
+Which model is installed at all: valuable, and currently a manual download.
+
+**Low return, low cost — keep, but quiet.**
+Transcript reading size and face. What you and the other side are called. Which folder recordings go
+to. These are pleasant, cheap, and belong behind one disclosure.
+
+**Low return, high cost — remove, or bury and never mention.**
+Temperature, entropy threshold, max context, arbitrary extra arguments. VAD model paths. The
+locations of ffmpeg, ffprobe and whisper-cli. Maximum recording length. Every one of these is a
+question only somebody debugging would ask, and each costs everybody else attention on every visit.
+
+The rule this yields: **anything a person cannot evaluate should not be a question.** If the app
+cannot explain in one plain sentence what a setting changes and why they would want it, the app
+should decide it.
+
+## 5b. Files as a place, not a side effect
+
+Recordings, transcripts and logs should live in one obvious folder, arranged so that opening it in
+Finder makes sense on its own. Dropping a file in should be as good as importing it; taking one out
+should not need the app running. The app becomes the pleasant way to work with that folder, not the
+only way — and it can then never trap anything.
+
+## 5c. Models as a first-class surface
+
+This runs local models, and that is the reason it exists rather than an implementation detail. Today
+that means Whisper large; tomorrow it might mean Parakeet or something not yet released. So models
+need somewhere real to live: what is installed, what it is good at, how big, and a way to get another
+without a terminal. Presented as capability — *accurate*, *fast*, *this language* — not as files.
+
+## 6a. A few well-aimed animations
+
+Eighty per cent of the benefit comes from a handful, each earning its place:
+
+- The level meter — already real, already measuring, the single most reassuring thing on screen
+- Text appearing as it is transcribed, so the wait has a heartbeat
+- One considered transition entering and leaving recording mode, because it is a change of state
+- A new transcript arriving in the list
+
+That is the budget. Motion should confirm that something happened or that something is alive.
+Anything else is noise wearing a nicer coat.
+
+## 6b. Worth studying before inventing
+
+The pains here are ours; the solutions to the sub-problems mostly are not. Worth looking at how each
+of these handles the parts we keep rediscovering — permission flows, model management, progress
+during a long job, and getting text back out:
+
+- **MacWhisper** — the closest neighbour; how it presents models and quality as choices
+- **Handy** (already cloned locally) — how it takes the system default input rather than guessing
+- **Aiko** — how far the setting count can be cut before something breaks
+- **Descript** — how a transcript becomes something you act on rather than read
+- **Superwhisper** — how quality tiers get named for people rather than for files
+- **Zoom and Teams** — how a normal application asks for these same macOS permissions
+
+The design thinking should be ours. The implementation patterns should be borrowed on sight.
+
 ## 3. What actually happens, in order
 
 1. Something is about to be said — a call starts, or a file already exists.
