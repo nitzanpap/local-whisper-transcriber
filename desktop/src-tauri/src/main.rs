@@ -256,9 +256,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/menubar.png"))?)
         .icon_as_template(true)
         .menu(&menu)
-        // The icon opens the window; the menu is the right-hand button and the
-        // items below. Without this, clicking it only ever shows the menu.
-        .show_menu_on_left_click(false)
+        // The menu, on either button. This was set to open the window on a left
+        // click instead, which is not what a menu bar item does anywhere else on
+        // the system: clicking it did nothing visible, and the menu could only be
+        // reached with two fingers — control-click did not reach it either.
+        // Opening the window is an item in the menu, where it can be read.
+        .show_menu_on_left_click(true)
         .on_menu_event(|app: &AppHandle, event: MenuEvent| match event.id().as_ref() {
             // On its own thread: this waits for the backend, and the backend waits
             // for audio devices to start. Doing it here would freeze the menu bar

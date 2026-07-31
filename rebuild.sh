@@ -104,6 +104,13 @@ codesign --verify --deep --strict "$INSTALLED" 2>/dev/null \
     && ok "installed, and still verifies" \
     || bad "the installed copy does not verify"
 
+# And then there is only one of it. Spotlight indexes the build directory too, so
+# leaving the bundle there put a second "Local Whisper Transcriber" in every search
+# — a different binary, with its own identity as far as macOS permissions are
+# concerned, one keystroke away from being opened instead of the real one.
+rm -rf "$BUILT"
+ok "only the installed copy is left to find"
+
 # The stale entries, cleared the way Apple provides for it. Every build changes the
 # code hash, so macOS stops recognising the grants and the rows in System Settings go
 # on looking exactly like working ones — which is its own trap: the app is refused
