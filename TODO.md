@@ -56,8 +56,9 @@ evidence rather than a hunch.
       -20.7 dB against -31.2 dB in the same recording. Each channel is transcribed on its own
       so it may not matter, but a quiet voice channel is the one VAD gives up on.
 
-- [ ] **The computer's side has no live meter.** It is written by the helper rather than ffmpeg, so
-      nothing measures it in passing. The helper would have to report its own level.
+- [x] **The computer's side has no live meter.** It is written by the helper rather than ffmpeg, so
+      nothing measured it in passing. The helper reports its own level once a second now, which
+      also tells a refused tap (frames of digital zero) from a quiet machine (no frames at all).
 
 ## Product and design
 
