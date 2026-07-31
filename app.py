@@ -314,6 +314,12 @@ async def record_devices() -> dict:
         raise HTTPException(400, {"code": exc.code, "message": exc.message, "details": ""})
 
 
+@app.get("/api/record/meters")
+def record_meters() -> dict:
+    """The needles alone, cheap enough to ask for fifteen times a second."""
+    return record.meters()
+
+
 @app.post("/api/record/start")
 async def record_start(body: RecordIn) -> dict:
     if not environment()["ffmpeg"]["ok"]:

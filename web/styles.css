@@ -264,6 +264,22 @@ button.danger:hover { color: var(--accent); border-color: var(--accent); }
    a meter, and one that moves regardless of the audio is worse than none. */
 .tape.idle > i { animation: sweep 1.6s ease-in-out infinite; width: 22%; }
 .tape > i { transition: width .2s linear; }
+
+/* The recording needles. No transition on these: they are given a new width
+   fifteen times a second and the browser tweening between two of them would only
+   add lag to a thing whose whole purpose is to be immediate. The falling back is
+   done in the script instead, which is where a meter's decay belongs. */
+#rec-tapes { margin: 1.4rem 0 .4rem; display: grid; gap: .5rem; }
+.needle { display: grid; grid-template-columns: 5.5rem 1fr; align-items: center; gap: .8rem; }
+.needle > .who {
+  font: 500 .72rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--faint); text-align: right; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.needle .tape { margin: 0; height: 1.1rem; }
+.needle .tape > i { transition: none; }
+/* A side that was asked for and is delivering nothing reads as absent, not quiet. */
+.needle.gone { opacity: .38; }
 @keyframes sweep { 0%,100% { transform: translateX(0); } 50% { transform: translateX(355%); } }
 
 /* --- result --- */

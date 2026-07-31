@@ -370,7 +370,17 @@
     <p class="clock"><b id="rec-size">0 MB</b><span data-i18n="rec.recorded">recorded</span></p>
   </div>
 
-  <div class="tape" id="rec-tape"><i></i></div>
+  <!-- One needle per side, named. A single bar showed the louder of the two, so a
+       microphone that had died sat behind music and looked perfectly healthy —
+       which defeats the one thing a meter is for. -->
+  <div id="rec-tapes">
+    <div class="needle" id="rec-needle-voice">
+      <span class="who"></span><div class="tape"><i></i></div>
+    </div>
+    <div class="needle" id="rec-needle-computer">
+      <span class="who"></span><div class="tape"><i></i></div>
+    </div>
+  </div>
 
   <!-- Said while there is still time to do something about it, and taken away again
        the moment audio turns up. A recording with nothing to hear yet is ordinary;

@@ -75,6 +75,12 @@ HELPER_DENIED = 3
 # already being read. Measured on real speech at about -25 LUFS, and -120 for
 # digital silence.
 EBUR128_M = re.compile(r"lavfi\.r128\.M=(-?\d+(?:\.\d+)?)")
+
+# What the needle moves on. `-inf` is what astats calls a window of digital zero,
+# and it is read as the same -120 the helper has always used for that, so both
+# sides of a recording say "nothing at all" in the same words.
+PEAK = re.compile(r"lavfi\.astats\.Overall\.Peak_level=(-?\d+(?:\.\d+)?|-?inf)")
+DIGITAL_SILENCE = -120.0
 SILENT_LUFS = -70.0
 
 # The helper's own meter, once a second, so the computer's side has one too.
@@ -370,6 +376,26 @@ def pad_command(src: Path, dst: Path, gaps: list[tuple[float, float]]) -> list[s
 # devices inside one ffmpeg, which is a different job this no longer asks of it.
 KEEP_TIME = "aresample=async=1"
 
+# Two meters from one pass, because they answer different questions.
+#
+# ebur128 says how loud a thing is the way a broadcaster means it, and everything
+# that judges a recording is built on it. It cannot show a voice moving, though,
+# and that is not a matter of asking it more often: momentary loudness is defined
+# over a 400 ms window, and 400 ms is about two syllables. Measured on a tone
+# switching on and off every 200 ms — the rhythm of ordinary speech — it reported
+# a flat -24.5 dB throughout, never once dipping, because its window spans exactly
+# one on and one off and averages them away. A meter fed that number is not slow,
+# it is showing the wrong quantity.
+#
+# So the needle is driven by peak instead, over 50 ms windows, which on the same
+# tone alternated cleanly between -18.1 and silence. asetnsamples fixes the window
+# rather than inheriting whatever frame size the device hands over, so the meter
+# moves at the same rate on every machine. The tap needs none of this: the helper
+# has always reported peak, and only reported it too rarely.
+METERS = ("ebur128=metadata=1,ametadata=print:key=lavfi.r128.M,"
+          "asetnsamples=n=2400:p=0,astats=metadata=1:reset=1,"
+          "ametadata=print:key=lavfi.astats.Overall.Peak_level")
+
 
 def capture_command(rec: dict, device: str, out: Path) -> list[str] | None:
     """ffmpeg's part of a recording: the microphone, alone, to its own file.
@@ -402,8 +428,7 @@ def capture_command(rec: dict, device: str, out: Path) -> list[str] | None:
             # same way: the meter is what tells the app how much audio has arrived,
             # so a meter measuring one timeline and a file holding another is how
             # the app would come to put a gap back that ffmpeg had already filled.
-            + ["-t", str(rec["max_seconds"]),
-               "-af", f"{KEEP_TIME},ebur128=metadata=1,ametadata=print:key=lavfi.r128.M",
+            + ["-t", str(rec["max_seconds"]), "-af", f"{KEEP_TIME},{METERS}",
                "-f", "null", "-"]
             + ["-t", str(rec["max_seconds"]), "-af", KEEP_TIME,
                "-c:a", "pcm_s16le", str(out)])
@@ -725,6 +750,7 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
                 # The helper only speaks when frames actually arrived, so this is
                 # the one honest record that sound ever reached the tap — its file
                 # now fills itself with silence either way. See captured_sources.
+                rec.setdefault("peak", {})["computer"] = float(found.group(1))
                 if isinstance(rec.get("ever"), set):
                     rec["ever"].add("computer")
                 continue
@@ -735,6 +761,7 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
             HELPER = None
         rec["helper_code"] = proc.returncode
         rec.setdefault("live", {}).pop("computer", None)
+        rec.setdefault("peak", {}).pop("computer", None)
 
 
 async def _until_mic_ready(rec: dict, timeout: float = 4.0) -> None:
@@ -857,6 +884,12 @@ async def _drain(rec: dict, proc: asyncio.subprocess.Process, label: str = "voic
                 pass
             _heard(rec, label)
             continue
+        found = PEAK.search(line)
+        if found:
+            raw = found.group(1)
+            rec.setdefault("peak", {})[label] = (
+                DIGITAL_SILENCE if raw.endswith("inf") else float(raw))
+            continue
         if "Parsed_ametadata" in line:
             # The frame/pts line that comes with every measurement. It was going
             # into the log, ten lines a second, and the log holds 120 — so it held
@@ -866,6 +899,7 @@ async def _drain(rec: dict, proc: asyncio.subprocess.Process, label: str = "voic
         rec["log"].append(line)
     await proc.wait()
     rec.setdefault("live", {}).pop(label, None)
+    rec.setdefault("peak", {}).pop(label, None)
     rec.setdefault("moved", {}).pop(label, None)
 
 
@@ -1358,6 +1392,20 @@ def dismiss() -> None:
     global RECORDING
     if RECORDING is not None and RECORDING["status"] not in LIVE:
         RECORDING = None
+
+
+def meters() -> dict:
+    """Just the needles. Small on purpose: this is asked for many times a second.
+
+    Separate from `public` because that carries the log, the levels, the sizes and
+    everything else the page needs once a second — asking for all of it fifteen
+    times a second to move a bar would redraw the whole screen to animate one of
+    them.
+    """
+    rec = RECORDING
+    if rec is None or rec["status"] != "recording":
+        return {"recording": False, "peak": {}}
+    return {"recording": True, "peak": rec.get("peak") or {}}
 
 
 def public() -> dict | None:

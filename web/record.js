@@ -219,6 +219,9 @@ function renderRecording(rec, orphans, settings) {
   const live = !!rec && RECORDING_LIVE.includes(rec.status);
   recIsLive = live;
   show($("rec-live"), live);
+  // The needles run on their own faster clock while there is something to show,
+  // and not at all otherwise.
+  needlesFor(!!rec && rec.status === "recording");
   if (rec && rec.status === "saved") adopt(rec);
   renderWarning();
 
@@ -238,20 +241,18 @@ function renderRecording(rec, orphans, settings) {
                  : t("rec.oneChannel"),
       t("rec.stopsAfter", { n: Math.round(rec.max_seconds / 60) }),
     ].map(x => `<span>${x}</span>`).join("<i>·</i>");
-    // Driven by what the capture reports, never by a timer. The bar that used to
-    // sweep on a 1.6s loop looked exactly like a level meter and moved whether or
-    // not any audio existed, which is how a microphone recording digital zero went
-    // unnoticed. A meter with nothing to show now shows nothing.
-    const live = rec.live || {};
-    const heard = Object.keys(live).length > 0;
-    $("rec-tape").classList.toggle("idle", rec.status === "recording" && !heard);
-    if (heard) {
-      // LUFS runs from about -70 (silence) to 0 (as loud as it goes); speech sits
-      // around -25, so the useful part of the scale is the top half.
-      const width = (v) => Math.max(0, Math.min(100, ((v + 60) / 60) * 100));
-      const loudest = Math.max(...Object.values(live));
-      $("rec-tape").querySelector("i").style.width = width(loudest) + "%";
-    }
+    // Which needles exist, and what to call them. The widths are not set here —
+    // this runs once a second, and once a second is what made the meter look
+    // broken. See watchNeedles.
+    const asked = rec.labels || [];
+    ["voice", "computer"].forEach((side, n) => {
+      const row = $("rec-needle-" + side);
+      show(row, side === "voice" || !!rec.stereo);
+      row.querySelector(".who").textContent = asked[n] || "";
+      // Dimmed rather than hidden: a side that was asked for and is silent is
+      // information, and taking its row away would leave nothing to notice.
+      row.classList.toggle("gone", (rec.not_arriving || []).includes(side));
+    });
     // A side that is producing nothing, while it is still worth knowing. It goes
     // away by itself when audio starts arriving, because then it is no longer true.
     const dead = rec.not_arriving || [];
@@ -359,3 +360,70 @@ function redrawRecord() {
 // Recording is one of the two things the first screen offers, so the devices are
 // listed as the app opens rather than when a tab is chosen. There is no tab.
 loadDevices();
+
+// The needles, on their own clock.
+//
+// Everything else on this page is repainted once a second, which is right for a
+// clock and a size and wrong for a level: a bar that moves once a second does not
+// read as a slow meter, it reads as a broken one. So the levels come from an
+// endpoint that carries nothing else, fifteen times a second, and touch two style
+// properties rather than redrawing the screen.
+//
+// Fifteen because the sources cannot beat it: peak is measured over 50 ms windows
+// on the microphone and reported ten times a second by the helper. Asking faster
+// would return the same number twice.
+const NEEDLE_MS = 66;
+
+// Peak dB: about -60 when a room is quiet, -20 or so for a voice, 0 at the top of
+// the scale. Below -60 there is nothing worth showing a bar for.
+const needleWidth = (db) => Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+
+// Fast up, slow down — how every meter that has ever felt right behaves. Rising
+// instantly is what makes it feel connected to the sound; falling instantly makes
+// it flicker, because speech is full of tiny gaps that nobody hears as silence.
+const FALL = 6;
+const shown = { voice: 0, computer: 0 };
+
+let needleTimer = null;
+async function watchNeedles() {
+  let m;
+  try {
+    m = await api("/record/meters");
+  } catch {
+    return;  // the once-a-second poll is what reports a dead backend; not this
+  }
+  if (!m.recording) {
+    // Let them fall to nothing rather than snapping, so stopping looks like
+    // stopping rather than like the page breaking.
+    for (const side of ["voice", "computer"]) shown[side] = 0;
+    paintNeedles();
+    clearInterval(needleTimer);
+    needleTimer = null;
+    return;
+  }
+  for (const side of ["voice", "computer"]) {
+    const target = needleWidth(m.peak?.[side] ?? -120);
+    shown[side] = target > shown[side] ? target : Math.max(target, shown[side] - FALL);
+  }
+  paintNeedles();
+}
+
+function paintNeedles() {
+  for (const side of ["voice", "computer"]) {
+    const bar = $("rec-needle-" + side)?.querySelector("i");
+    if (bar) bar.style.width = shown[side] + "%";
+  }
+}
+
+// Started when a recording starts and stopped when it ends, so nothing polls
+// while there is nothing to show.
+function needlesFor(recording) {
+  if (recording && needleTimer === null) {
+    needleTimer = setInterval(watchNeedles, NEEDLE_MS);
+  } else if (!recording && needleTimer !== null) {
+    clearInterval(needleTimer);
+    needleTimer = null;
+    for (const side of ["voice", "computer"]) shown[side] = 0;
+    paintNeedles();
+  }
+}

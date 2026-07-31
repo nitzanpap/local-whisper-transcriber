@@ -1187,6 +1187,40 @@ async def main() -> None:
         except app.HTTPException as exc:
             check(f"refuses {why}", exc.status_code == 400)
 
+    print("a meter that can show a voice")
+    meter_cmd = " ".join(record.capture_commands(rec)[0])
+    check("loudness is still measured, since the checks are built on it",
+          "ebur128" in meter_cmd, meter_cmd)
+    check("and a peak alongside it, which is what the needle moves on",
+          "astats" in meter_cmd and "Peak_level" in meter_cmd, meter_cmd)
+    check("over a window this app fixes rather than the device",
+          "asetnsamples=n=2400" in meter_cmd, meter_cmd)
+    # The output that writes the WAV gets the timeline fix and nothing else. Metering
+    # filters on the file being kept would be work done on the one path that cannot
+    # afford to fall behind.
+    argv = record.capture_commands(rec)[0]
+    kept = argv[argv.index("-c:a") - 1]
+    check("none of the metering reaches the file being kept",
+          kept == record.KEEP_TIME, kept)
+
+    live = {"log": deque(maxlen=8)}
+    for line in ("[Parsed_ametadata_3 @ 0x0] lavfi.astats.Overall.Peak_level=-18.06",
+                 "[Parsed_ametadata_1 @ 0x0] lavfi.r128.M=-24.5"):
+        found = record.PEAK.search(line)
+        if found:
+            live.setdefault("peak", {})["voice"] = float(found.group(1))
+    check("a peak is read off the meter", live["peak"]["voice"] == -18.06)
+    # astats calls a window of digital zero -inf, which float() will not take and
+    # which would otherwise throw inside the drain loop and end the capture's log.
+    quiet = record.PEAK.search("[Parsed_ametadata_3 @ 0x0] lavfi.astats.Overall.Peak_level=-inf")
+    check("and digital silence does not come back as a crash", quiet is not None, "no match")
+    check("it is read as the -120 the helper already uses for it",
+          record.DIGITAL_SILENCE == -120.0)
+
+    record.RECORDING = None
+    check("with nothing recording the needles say so and carry nothing",
+          record.meters() == {"recording": False, "peak": {}})
+
     print("a stalled capture keeps its place in time")
     # The measurement this exists for: a Mac put to sleep mid-recording came back
     # with 31 of 70 seconds missing, both captures alive throughout, and the hole

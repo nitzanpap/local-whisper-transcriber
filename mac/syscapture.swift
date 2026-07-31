@@ -346,8 +346,12 @@ sink.begin()
 // Once a second, whatever it is hearing, and whatever it did not. Its own queue:
 // this must keep reporting while the main thread is parked waiting to be stopped.
 let reporting = DispatchQueue(label: "syscapture.meter")
+// Ten times a second rather than once. A needle fed one number a second does not
+// look like a slow needle, it looks like a broken one — and the level this reports
+// has always been a peak over the window, so a shorter window is simply a truer
+// picture of a voice rather than an average of one.
 let ticker = DispatchSource.makeTimerSource(queue: reporting)
-ticker.schedule(deadline: .now() + 1, repeating: 1)
+ticker.schedule(deadline: .now() + 0.1, repeating: 0.1)
 ticker.setEventHandler {
     meter.report()
     sink.idle()
