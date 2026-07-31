@@ -1029,6 +1029,103 @@ def ask_to_stop(rec: dict, keep: bool, grace: float = 10.0) -> None:
     asyncio.create_task(_insist(rec, grace))
 
 
+# --- checking it works, before it matters --------------------------------------
+
+
+CHECK_SECONDS = 6.0
+# Loud enough to be unmistakable, short enough not to be annoying, and a tone rather
+# than speech so nothing in it can be mistaken for somebody talking.
+CHECK_TONE = "sine=frequency=440:duration=3"
+
+
+def check_verdict(asked: list[str], loudest: dict[str, float], tone_played: bool = True) -> dict:
+    """What each side heard while a sound of ours was playing, and what it means.
+
+    The whole reason for playing that sound: nothing can tell a refused tap from a
+    machine that happens to be quiet, because both deliver nothing. So the machine
+    is made not quiet. If the tap cannot hear audio this app is playing through the
+    output the tap is attached to, the silence is not the room's.
+    """
+    out = {}
+    for side in asked:
+        level = loudest.get(side)
+        if level is None and side == "voice":
+            out[side] = {"heard": False, "level": None, "why": "nothing"}
+        elif level is None:
+            # Nothing arrived at all. If our own tone played, the output device was
+            # running and the tap was handed none of it, which is a refusal — a
+            # process holding no audio grant gets no callbacks rather than silent
+            # ones, so this is the second face of the same thing. If the tone never
+            # played there is nothing to conclude but that.
+            out[side] = {"heard": False, "level": None,
+                         "why": "refused" if tone_played else "output"}
+        elif side == "computer" and level <= DEAD_TAP:
+            # Frames, and every one of them digital zero, while we were playing into
+            # them. There is only one thing that does that.
+            out[side] = {"heard": False, "level": level, "why": "refused"}
+        elif level <= SILENT_LUFS:
+            out[side] = {"heard": False, "level": level, "why": "quiet"}
+        else:
+            out[side] = {"heard": True, "level": level, "why": None}
+    return out
+
+
+async def _play_test_tone(rec: dict) -> bool:
+    """A sound of our own, through whatever the machine is playing out of.
+
+    Whether it actually played is half the verdict: a tap that heard nothing while
+    this was playing was refused, and a tap that heard nothing because nothing
+    played has told us only that nothing played.
+    """
+    tone = rec["work"] / "tone.wav"
+    make = [binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", CHECK_TONE, str(tone)]
+    try:
+        code, _ = await capture(make, timeout=30)
+        if code != 0 or not tone.is_file():
+            rec["log"].append("# the test tone could not be made")
+            return False
+        played, out = await capture(["/usr/bin/afplay", str(tone)], timeout=30)
+        if played != 0:
+            rec["log"].append(f"# the test tone would not play: {out.strip()[:120]}")
+        return played == 0
+    except (Failed, OSError) as exc:
+        rec["log"].append(f"# the test tone could not be played: {exc}")
+        return False
+
+
+async def check(voice: str, computer: str) -> dict:
+    """Record for a few seconds, playing a sound of our own, and report what arrived.
+
+    Everything a real recording does — the same captures, the same permissions, the
+    same prompts — except that it is thrown away and it happens when nothing is at
+    stake. Which is the point: a permission that was never granted should cost six
+    seconds on a quiet afternoon, not the first ten minutes of a meeting.
+    """
+    await start(voice, computer)
+    rec = RECORDING
+    if rec is None:
+        raise Failed("not_recording", "The check could not start a recording.")
+    tone = asyncio.create_task(_play_test_tone(rec))
+    loudest: dict[str, float] = {}
+    deadline = time.monotonic() + CHECK_SECONDS
+    while time.monotonic() < deadline and rec["status"] == "recording":
+        for side, level in (rec.get("live") or {}).items():
+            loudest[side] = max(loudest.get(side, -1000.0), level)
+        await asyncio.sleep(0.1)
+    asked = _asked_for(rec)
+    try:
+        played = await asyncio.wait_for(tone, timeout=5.0)
+    except (TimeoutError, asyncio.CancelledError):
+        played = False
+    log = list(rec["log"])
+    try:
+        await stop(keep=False)
+    except Failed:
+        pass  # already over, which is fine: nothing was going to be kept
+    return {"sides": check_verdict(asked, loudest, played), "log": log[-12:]}
+
+
 async def stop(keep: bool = True) -> dict:
     """Ask ffmpeg to finish. The rest happens in the task that owns the recording."""
     rec = RECORDING

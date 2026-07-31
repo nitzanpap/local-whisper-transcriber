@@ -336,6 +336,17 @@ def privacy_pane(which: str) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/record/check")
+async def record_check(body: RecordIn) -> dict:
+    """Six seconds that cost nothing, so a refused permission is not discovered
+    with a meeting already running."""
+    try:
+        return await record.check(body.voice, body.computer)
+    except Failed as exc:
+        raise HTTPException(400, {"code": exc.code, "message": exc.message, "pane": exc.pane,
+                                  "details": "\n".join((record.public() or {}).get("log", [])[-12:])})
+
+
 @app.post("/api/record/stop")
 async def record_stop(keep: bool = True) -> dict:
     """Finish the recording. Saving and queueing carry on in the background."""

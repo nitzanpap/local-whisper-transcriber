@@ -714,6 +714,34 @@ async def main() -> None:
     check("the captures were already running when the tap was asked for",
           seen.get("captures_up", 0) > 0, str(seen))
 
+    # A check that costs six seconds on a quiet afternoon rather than the first ten
+    # minutes of a meeting. It plays a tone of its own, which is the only way to tell
+    # a refused tap from a quiet machine: both deliver nothing, so the machine is
+    # made not quiet and the silence stops being ambiguous.
+    print("checking it works before it matters")
+    both_sides = ["voice", "computer"]
+    good = record.check_verdict(both_sides, {"voice": -24.0, "computer": -18.0})
+    check("both heard is both working", all(r["heard"] for r in good.values()), str(good))
+    refused = record.check_verdict(both_sides, {"voice": -24.0, "computer": -120.0})
+    check("digital silence while our own tone played is a refusal",
+          refused["computer"]["why"] == "refused", str(refused["computer"]))
+    absent = record.check_verdict(both_sides, {"computer": -18.0})
+    check("a microphone that sent nothing at all is named as such",
+          absent["voice"]["why"] == "nothing", str(absent["voice"]))
+    # Two faces of the same refusal, and the tone tells them apart. A process with no
+    # audio grant at all gets no callbacks rather than silent ones, so "nothing
+    # arrived while our own tone was playing" is a refusal too — blaming the speakers
+    # for it is what the first run of this check did.
+    silent_tap = record.check_verdict(both_sides, {"voice": -24.0}, tone_played=True)
+    check("nothing at all, while our tone played, is also a refusal",
+          silent_tap["computer"]["why"] == "refused", str(silent_tap["computer"]))
+    no_tone = record.check_verdict(both_sides, {"voice": -24.0}, tone_played=False)
+    check("but if the tone never played, the speakers are what is in doubt",
+          no_tone["computer"]["why"] == "output", str(no_tone["computer"]))
+    murmur = record.check_verdict(["voice"], {"voice": -95.0})
+    check("a microphone that heard almost nothing is quiet, not refused",
+          murmur["voice"]["why"] == "quiet", str(murmur["voice"]))
+
     print("recording, then transcribing both speakers apart")
     recordings = TMP / "recordings"
     config.save_settings({"recording_folder": str(recordings), "default_model_path": model,

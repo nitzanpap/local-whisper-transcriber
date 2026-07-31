@@ -45,6 +45,21 @@ const STRINGS = {
     "rec.start": "Record",
     "rec.startHint": "A meeting, a call, anything playing on this Mac.",
     "rec.refresh": "Look again",
+    "rec.check": "Check it works",
+    "rec.checking": "Listening…",
+    "rec.checkGood": "Both sides are working",
+    "rec.checkBad": "Something is not being heard",
+    "rec.checkHeard": "heard, clearly",
+    "rec.side.voice": "Your voice",
+    "rec.side.computer": "Your computer's audio",
+    "rec.why.nothing": "nothing arrived at all. macOS has most likely not allowed the " +
+      "microphone; the button below opens the switch.",
+    "rec.why.refused": "the test tone was playing and this heard digital silence. That is " +
+      "macOS refusing, not a quiet room — the button below opens the switch.",
+    "rec.why.output": "the test tone never reached your speakers. Check the output is not " +
+      "muted, and that the right one is selected in Sound.",
+    "rec.why.quiet": "almost nothing came through. Say something while the check runs, and " +
+      "make sure the right input is chosen.",
     "rec.openSettings": "Open the setting",
     "rec.nothingTitle": "Nothing is arriving",
     "rec.notArriving.voice": "Your microphone is not producing any audio. It is still " +
@@ -260,6 +275,20 @@ const STRINGS = {
     "rec.start": "להקליט",
     "rec.startHint": "פגישה, שיחה, כל דבר שמתנגן במחשב הזה.",
     "rec.refresh": "לבדוק שוב",
+    "rec.check": "לבדוק שזה עובד",
+    "rec.checking": "מקשיב…",
+    "rec.checkGood": "שני הצדדים עובדים",
+    "rec.checkBad": "משהו לא נשמע",
+    "rec.checkHeard": "נשמע היטב",
+    "rec.side.voice": "הקול שלכם",
+    "rec.side.computer": "האודיו של המחשב",
+    "rec.why.nothing": "לא הגיע כלום בכלל. ‏macOS כנראה לא אישר את המיקרופון; הכפתור למטה " +
+      "פותח את המתג.",
+    "rec.why.refused": "צליל הבדיקה התנגן וכאן נשמע שקט דיגיטלי. זה ‏macOS שמסרב, לא חדר " +
+      "שקט — הכפתור למטה פותח את המתג.",
+    "rec.why.output": "צליל הבדיקה לא הגיע לרמקולים. בדקו שהפלט לא מושתק, ושנבחר הפלט הנכון " +
+      "בהגדרות הסאונד.",
+    "rec.why.quiet": "כמעט כלום לא נקלט. אמרו משהו בזמן הבדיקה, וודאו שנבחר הקלט הנכון.",
     "rec.openSettings": "לפתוח את ההגדרה",
     "rec.nothingTitle": "לא מגיע כלום",
     "rec.notArriving.voice": "המיקרופון לא מפיק שום אודיו. ההקלטה עדיין רצה, אז אם זה רק " +

@@ -138,9 +138,23 @@
               </div>
             </div>
             <div class="actions" style="margin-top:1.1rem">
+              <button id="rec-check" data-i18n="rec.check">Check it works</button>
               <button class="glyph" id="rec-refresh" data-i18n-title="rec.refresh">
                 <svg class="icon"><use href="#i-again"></use></svg>
               </button>
+            </div>
+            <!-- What the check found, side by side, in the words of what to do about
+                 it. Six seconds on a quiet afternoon instead of the first ten minutes
+                 of a meeting. -->
+            <div class="note" id="rec-check-result" hidden>
+              <h2 id="rec-check-title"></h2>
+              <div id="rec-check-sides"></div>
+              <div class="actions">
+                <button id="rec-check-fix" hidden data-i18n="rec.openSettings">Open the setting</button>
+                <button class="glyph" id="rec-check-close" data-i18n-title="rec.clear">
+                  <svg class="icon"><use href="#i-close"></use></svg>
+                </button>
+              </div>
             </div>
           </details>
         </div>

@@ -99,6 +99,48 @@ function recPlan() {
 for (const id of ["rec-voice", "rec-computer"]) $(id).addEventListener("change", recPlan);
 $("rec-refresh").onclick = (e) => loadDevices(e.currentTarget);
 
+// --- checking it works, before it matters ------------------------------------
+
+const SIDE_ICON = { true: "✓", false: "✕" };
+
+$("rec-check").onclick = async (e) => {
+  const button = e.currentTarget;
+  const said = button.textContent;
+  button.disabled = true;
+  button.textContent = t("rec.checking");
+  show($("rec-check-result"), false);
+  recError(null);
+  try {
+    const found = await api("/record/check",
+      { voice: $("rec-voice").value, computer: $("rec-computer").value });
+    renderCheck(found.sides);
+  } catch (err) {
+    recError(err.detail);
+  } finally {
+    button.disabled = false;
+    button.textContent = said;
+  }
+};
+
+function renderCheck(sides) {
+  const rows = Object.entries(sides);
+  const bad = rows.filter(([, r]) => !r.heard);
+  $("rec-check-title").textContent = bad.length ? t("rec.checkBad") : t("rec.checkGood");
+  $("rec-check-sides").innerHTML = rows.map(([side, r]) =>
+    `<p><b>${SIDE_ICON[r.heard]}</b> ${t("rec.side." + side)} — ${
+      r.heard ? t("rec.checkHeard") : t("rec.why." + r.why)}</p>`).join("");
+  // One pane, for the first thing that is actually a permission.
+  const permission = bad.find(([side, r]) => r.why === "refused" || r.why === "nothing");
+  show($("rec-check-fix"), !!permission);
+  if (permission) {
+    const pane = permission[0] === "voice" ? "microphone" : "audio";
+    $("rec-check-fix").onclick = () => api("/privacy/" + pane, {}).catch(() => {});
+  }
+  show($("rec-check-result"), true);
+}
+
+$("rec-check-close").onclick = () => show($("rec-check-result"), false);
+
 function recError(detail) {
   show($("rec-error"), !!detail);
   show($("rec-allow"), !!(detail && detail.pane));
