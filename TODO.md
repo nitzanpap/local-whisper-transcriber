@@ -44,8 +44,11 @@ evidence rather than a hunch.
       of `web/` so edits appeared to do nothing. `rebuild.sh` now checks the mechanics of a build;
       nothing checks its behaviour.
 
-- [ ] **Sleep and lid-close are untested.** The likeliest real interruption of a long recording, and
-      nobody knows what happens to either capture.
+- [ ] **A recording loses the time it was interrupted for.** Measured: 70 seconds open, 39.2
+      seconds saved, 31 seconds gone. Neither capture dies — both pause and resume on their own —
+      and the hole is closed up rather than filled, so every timestamp after it is 31 seconds
+      early. Nothing on screen says a thing, because the warning asks whether a side is arriving
+      and the last level it saw is still there. See docs/RECORDING.md §3.
 - [ ] **Nothing tests the app bundle.** Both packaging faults — a missing `record.py`, and a
       signature invalidated by running the app — shipped because CI never builds or opens a bundle.
 - [ ] **No automated end-to-end run.** The suite fakes both binaries. Driving `jobs.run_job` over a
