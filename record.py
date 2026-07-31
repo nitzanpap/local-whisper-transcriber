@@ -484,16 +484,26 @@ def capture_commands(rec: dict) -> list[list[str]]:
         # produced; Core Audio hands over all of them. What is left for ffmpeg
         # here is a real loopback device chosen as the computer's side, and
         # everywhere that is not macOS.
-        if side == "voice" and helper_takes_the_microphone(rec):
+        if helper_takes(rec, side):
             continue
         out.append(capture_command(rec, device, path))
     return out
 
 
+def helper_takes(rec: dict, side: str) -> bool:
+    """Whether this side is the helper's job rather than ffmpeg's.
+
+    Any real input device, either side. A loopback driver picked as the computer's
+    side — Teams, Zoom — is an input device like any other, and it was going
+    through ffmpeg and losing an eighth of its samples long after the microphone
+    stopped doing so.
+    """
+    chosen = rec.get(side)
+    return bool(rec.get("helper")) and bool(chosen) and chosen != SYSTEM_AUDIO
+
+
 def helper_takes_the_microphone(rec: dict) -> bool:
-    """Whether the microphone is the helper's job rather than ffmpeg's."""
-    return bool(rec.get("helper")) and bool(rec.get("voice")) \
-        and rec.get("voice") != SYSTEM_AUDIO
+    return helper_takes(rec, "voice")
 
 
 def _captured_bytes(rec: dict) -> int:
@@ -605,7 +615,7 @@ async def start(voice: str, computer: str) -> dict:
     helper = None
     # The microphone goes through the helper too now, so it is wanted on macOS
     # whenever anything at all is being recorded — not only for the tap.
-    if sys.platform == "darwin" and voice.strip() and SYSTEM_AUDIO not in chosen:
+    if sys.platform == "darwin" and SYSTEM_AUDIO not in chosen:
         sysaudio = await system_audio()
         helper = sysaudio["helper"] if sysaudio is not None else None
     if SYSTEM_AUDIO in chosen:
@@ -808,10 +818,14 @@ async def _start_helper(rec: dict) -> bool:
     cmd = [str(rec["helper"])]
     if rec.get("computer") == SYSTEM_AUDIO:
         cmd += ["--tap", str(rec["sys_pcm"])]
-    if helper_takes_the_microphone(rec):
+    if helper_takes(rec, "voice"):
         # By UID. Positions move when anything is plugged in; a stored index has
         # already meant two different microphones on this machine.
         cmd += ["--mic", str(rec["voice_pcm"]), "--mic-device", rec["voice"]]
+    if helper_takes(rec, "computer"):
+        # Into the same file the tap would have used: to everything downstream this
+        # is the computer's side, however it was captured.
+        cmd += ["--other", str(rec["sys_pcm"]), "--other-device", rec["computer"]]
     rec["log"].append("$ " + shlex.join(cmd))
     try:
         proc = await asyncio.create_subprocess_exec(

@@ -32,10 +32,10 @@ evidence rather than a hunch.
       than corrected: the helper captures both sides in one process and gives them second zero at
       the same instant. Measured again through the app afterwards, the same speech lands at 2.75,
       4.75 … 22.75 in *both* channels.
-- [ ] **A loopback device chosen as the computer's side is still captured by ffmpeg**, so it still
-      loses about an eighth of its samples and `aresample` still fills the holes with audible
-      silence. The helper lists those devices as inputs already — Teams and Zoom both appear — so it
-      could take them the same way it takes the microphone.
+- [x] **A loopback device chosen as the computer's side was still captured by ffmpeg**, so it lost
+      about an eighth of its samples and `aresample` filled the holes with audible silence. It is an
+      input device like any other, so the helper takes it: measured over a real recording, that
+      channel came back with no gaps at all.
 - [ ] **Orphan durations assume 48 kHz.** The microphone is recorded at whatever rate it offers now,
       so the length shown for a recovered recording is wrong.
 - [ ] **A source that dies is survived but never reopened.** A Bluetooth microphone that drops and

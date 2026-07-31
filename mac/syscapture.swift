@@ -318,6 +318,8 @@ func inputDevice(uid: String?) -> AudioDeviceID? {
 var tapPath = ""
 var micPath = ""
 var micUID = ""
+var otherPath = ""
+var otherUID = ""
 var listing = false
 
 var pending = Array(CommandLine.arguments.dropFirst())
@@ -328,6 +330,11 @@ while let flag = pending.first {
     case "--tap": tapPath = pending.isEmpty ? "" : pending.removeFirst()
     case "--mic": micPath = pending.isEmpty ? "" : pending.removeFirst()
     case "--mic-device": micUID = pending.isEmpty ? "" : pending.removeFirst()
+    // The computer's side when it is a real input device — a loopback driver such
+    // as Teams or Zoom — rather than the system-audio tap. The same capture as the
+    // microphone, pointed somewhere else.
+    case "--other": otherPath = pending.isEmpty ? "" : pending.removeFirst()
+    case "--other-device": otherUID = pending.isEmpty ? "" : pending.removeFirst()
     // The old shape, still meaningful: one bare path is where to put the tap.
     default: if tapPath.isEmpty && !flag.hasPrefix("--") { tapPath = flag }
     }
@@ -339,8 +346,8 @@ if listing {
     }
     exit(0)
 }
-if tapPath.isEmpty && micPath.isEmpty {
-    fail("nothing to record: give --tap and/or --mic a path", 2)
+if tapPath.isEmpty && micPath.isEmpty && otherPath.isEmpty {
+    fail("nothing to record: give --tap, --mic or --other a path", 2)
 }
 
 // EPIPE would otherwise kill the process before the write can be ignored.
@@ -359,8 +366,12 @@ func openSink(_ path: String) -> Sink {
 
 let tapSink = tapPath.isEmpty ? nil : openSink(tapPath)
 let micSink = micPath.isEmpty ? nil : openSink(micPath)
+let otherSink = otherPath.isEmpty ? nil : openSink(otherPath)
 let meter = Meter("computer")
 let micMeter = Meter("voice")
+// Named for the side it stands for, not for how it is captured: to everything
+// downstream a loopback device and the tap are both "the computer".
+let otherMeter = Meter("computer")
 
 // --- the microphone ----------------------------------------------------------
 //
@@ -377,15 +388,27 @@ let micMeter = Meter("voice")
 // recording starts, so the two files line up by construction instead of being
 // two programs started in sequence and hoping.
 
-var micProc: AudioDeviceIOProcID?
-var micDevice = AudioDeviceID(kAudioObjectUnknown)
+/// One running input capture, so it can be stopped again.
+struct Running {
+    var device = AudioDeviceID(kAudioObjectUnknown)
+    var proc: AudioDeviceIOProcID?
+}
 
-func startMicrophone() -> Bool {
-    guard let sink = micSink else { return true }
-    guard let device = inputDevice(uid: micUID.isEmpty ? nil : micUID) else {
-        fail("no microphone called \(micUID.isEmpty ? "the default input" : micUID)", 2)
+var micRunning = Running()
+var otherRunning = Running()
+
+/// Capture one input device into one sink.
+///
+/// Written once and used twice. The microphone is one input device; so is a
+/// loopback driver like Teams or Zoom when somebody picks it as the computer's
+/// side, and that side was still going through ffmpeg and losing an eighth of
+/// its samples for exactly as long as this was called startMicrophone.
+func startInput(sink: Sink?, meter: Meter, uid: String, what: String) -> Running {
+    guard let sink else { return Running() }
+    guard let device = inputDevice(uid: uid.isEmpty ? nil : uid) else {
+        fail("no \(what) called \(uid.isEmpty ? "the default input" : uid)", 2)
     }
-    micDevice = device
+    var running = Running(device: device, proc: nil)
     var formatAddr = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyStreamFormat,
         mScope: kAudioObjectPropertyScopeInput,
@@ -397,10 +420,10 @@ func startMicrophone() -> Bool {
           let out = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: OUT_RATE,
                                   channels: 1, interleaved: true),
           let converter = AVAudioConverter(from: deviceFormat, to: out) else {
-        fail("the microphone would not say what format it produces", 2)
+        fail("the \(what) would not say what format it produces", 2)
     }
 
-    let status = AudioDeviceCreateIOProcIDWithBlock(&micProc, device, nil) { _, input, _, _, _ in
+    let status = AudioDeviceCreateIOProcIDWithBlock(&running.proc, device, nil) { _, input, _, _, _ in
         guard !sink.gone else { return }
         let incoming = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
         guard let first = incoming.first, first.mDataByteSize > 0 else { return }
@@ -425,23 +448,22 @@ func startMicrophone() -> Bool {
         guard error == nil, converted.frameLength > 0,
               let channel = converted.int16ChannelData else { return }
         let samples = UnsafeBufferPointer(start: channel[0], count: Int(converted.frameLength))
-        micMeter.add(samples)
+        meter.add(samples)
         sink.write(samples)
     }
-    if status != noErr || micProc == nil {
-        fail("macOS would not start reading the microphone", DENIED)
+    if status != noErr || running.proc == nil {
+        fail("macOS would not start reading the \(what)", DENIED)
     }
-    if AudioDeviceStart(device, micProc) != noErr {
-        fail("macOS would not start the microphone", DENIED)
+    if AudioDeviceStart(device, running.proc) != noErr {
+        fail("macOS would not start the \(what)", DENIED)
     }
-    return true
+    return running
 }
 
-func stopMicrophone() {
-    if let proc = micProc, micDevice != kAudioObjectUnknown {
-        AudioDeviceStop(micDevice, proc)
-        AudioDeviceDestroyIOProcID(micDevice, proc)
-        micProc = nil
+func stopInput(_ running: Running) {
+    if let proc = running.proc, running.device != kAudioObjectUnknown {
+        AudioDeviceStop(running.device, proc)
+        AudioDeviceDestroyIOProcID(running.device, proc)
     }
 }
 
@@ -449,21 +471,27 @@ func stopMicrophone() {
 // carries a tap reconfigures the audio HAL, and a capture opened after that never
 // delivers a sample — measured both ways round, twice, with permissions
 // uninvolved. The order is the whole reason this is not two independent programs.
-_ = startMicrophone()
+micRunning = startInput(sink: micSink, meter: micMeter, uid: micUID, what: "microphone")
+otherRunning = startInput(sink: otherSink, meter: otherMeter, uid: otherUID,
+                          what: "computer's audio device")
 
 if tapSink == nil {
-    // A microphone on its own: no tap, no aggregate device, nothing else to build.
+    // No tap: no aggregate device and nothing else to build. Whatever inputs were
+    // asked for are already running.
     let alone = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "syscapture.mic"))
     alone.schedule(deadline: .now() + 0.1, repeating: 0.1)
     alone.setEventHandler {
         micMeter.report()
         micSink?.idle()
+        otherMeter.report()
+        otherSink?.idle()
     }
     alone.resume()
-    micSink?.begin()
-    waitForStop(micSink, pausing: [micSink].compactMap { $0 })
-    stopMicrophone()
-    micSink?.idle()
+    for sink in [micSink, otherSink].compactMap({ $0 }) { sink.begin() }
+    waitForStop(micSink ?? otherSink, pausing: [micSink, otherSink].compactMap { $0 })
+    stopInput(micRunning)
+    stopInput(otherRunning)
+    for sink in [micSink, otherSink].compactMap({ $0 }) { sink.idle() }
     exit(0)
 }
 let sink = tapSink!
@@ -654,7 +682,8 @@ micSink?.begin()
 waitForStop(sink, pausing: [sink, micSink].compactMap { $0 })
 
 tearDown(ioProc)
-stopMicrophone()
+stopInput(micRunning)
+stopInput(otherRunning)
 // The last stretch of quiet counts as much as the first. Without this a meeting
 // that ends on a pause comes out shorter than it was, and the other channel — which
 // kept running until the same signal — is left hanging past the end of this one.

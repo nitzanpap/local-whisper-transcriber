@@ -871,12 +871,15 @@ async def main() -> None:
           str(record.capture_commands(both_at_once)))
     check("and the helper is the one that takes it",
           record.helper_takes_the_microphone(both_at_once))
-    # A loopback device chosen as the computer's side is still ffmpeg's job: there
-    # is no tap involved, so there is no aggregate device and no hazard.
-    loopback = {**both_at_once, "computer": "3"}
-    only = record.capture_commands(loopback)
-    check("a real device on the computer's side still gets an ffmpeg",
-          len(only) == 1 and str(loopback["computer_wav"]) in only[0], str(only))
+    # A loopback driver picked as the computer's side is an input device like any
+    # other, so the helper takes that too. It was ffmpeg's job until it was
+    # measured losing an eighth of its samples the same way the microphone did.
+    loopback = {**both_at_once, "computer": "MSLoopbackDriverDevice_UID"}
+    check("a loopback device on the computer's side is the helper's too",
+          record.capture_commands(loopback) == [], str(record.capture_commands(loopback)))
+    check("and it is named as such", record.helper_takes(loopback, "computer"))
+    check("while the tap is not an input device to be opened",
+          not record.helper_takes(both_at_once, "computer"))
     # Without a helper — anything that is not macOS — nothing changes.
     check("and with no helper the microphone goes back to ffmpeg",
           len(record.capture_commands({**both_at_once, "helper": None,
