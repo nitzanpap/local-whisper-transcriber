@@ -615,6 +615,18 @@ async def main() -> None:
           await record._until_audio_arrives(tapping, timeout=0.3) == [], "blamed a quiet machine")
     check("but a helper that has exited is a broken tap",
           await record._until_audio_arrives({**tapping, "helper_code": 3}, timeout=0.3) == ["computer"])
+    # The one case that can be told apart: frames arriving with nothing in them.
+    # A refused tap still gets callbacks once something plays, and they are digital
+    # zero. That is a refusal; no callbacks at all is only a quiet machine.
+    hearing_zeros = {**tapping, "live": {"voice": -30.0, "computer": -120.0}}
+    check("frames of pure silence are a refused tap, not a quiet one",
+          await record._until_audio_arrives(hearing_zeros, timeout=0.3) == ["computer"])
+    check("and a quiet but real signal is not",
+          await record._until_audio_arrives(
+              {**tapping, "live": {"voice": -30.0, "computer": -55.0}}, timeout=0.3) == [])
+    # The helper's meter line, which is also what gives that side a level bar at last.
+    heard = record.HELPER_LEVEL.search("syscapture: level -23.4 frames 48000")
+    check("the helper's own meter is read", heard is not None and float(heard.group(1)) == -23.4)
     for leftover in ("voice.wav", "computer.wav", "computer.pcm"):
         (TMP / leftover).unlink(missing_ok=True)
 

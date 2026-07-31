@@ -69,6 +69,42 @@ func defaultOutputUID() -> String? {
     return status == noErr ? uid as String : nil
 }
 
+/// What the tap is actually hearing, said out loud once a second.
+///
+/// Two questions look identical from outside this process and are not the same at
+/// all: a machine playing nothing, and a tap that has not been allowed. A tap on an
+/// idle output device delivers no callbacks whatever, so silence there is simply a
+/// quiet room. A tap that is refused still receives callbacks once something plays
+/// — full of digital zeros. So frames arriving with nothing in them is the shape of
+/// a refusal, and frames not arriving at all is the shape of an ordinary silence.
+/// Nobody outside can tell those apart, which is why this reports both.
+final class Meter {
+    private let lock = NSLock()
+    private var frames = 0
+    private var peak: Float = 0
+
+    func add(_ samples: UnsafeBufferPointer<Int16>) {
+        lock.lock()
+        defer { lock.unlock() }
+        frames += samples.count
+        for v in samples { peak = max(peak, abs(Float(v) / 32767)) }
+    }
+
+    /// Prints and resets. Digital silence is reported as -120, which no real signal
+    /// reaches, so the far end can tell "nothing at all" from "quiet".
+    func report() {
+        lock.lock()
+        let (n, loudest) = (frames, peak)
+        frames = 0
+        peak = 0
+        lock.unlock()
+        guard n > 0 else { return }   // no callbacks: the machine is playing nothing
+        let db = loudest > 0 ? 20 * log10(loudest) : -120
+        FileHandle.standardError.write(Data(String(format: "syscapture: level %.1f frames %d\n",
+                                                   db, n).utf8))
+    }
+}
+
 /// Writes mono 16-bit samples to the far end, and knows when the far end has gone.
 final class Sink {
     private let fd: Int32
@@ -120,6 +156,7 @@ signal(SIGPIPE, SIG_IGN)
 let fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
 if fd < 0 { fail("cannot write to \(target)", 2) }
 let sink = Sink(fd: fd)
+let meter = Meter()
 
 guard let outputUID = defaultOutputUID() else {
     fail("no default output device to tap", 2)
@@ -219,7 +256,9 @@ let status = AudioDeviceCreateIOProcIDWithBlock(&ioProc, device, nil) { _, input
         return source
     }
     guard error == nil, out.frameLength > 0, let channel = out.int16ChannelData else { return }
-    sink.write(UnsafeBufferPointer(start: channel[0], count: Int(out.frameLength)))
+    let samples = UnsafeBufferPointer(start: channel[0], count: Int(out.frameLength))
+    meter.add(samples)
+    sink.write(samples)
 }
 if status != noErr || ioProc == nil {
     tearDown(nil)
@@ -230,6 +269,14 @@ if AudioDeviceStart(device, ioProc) != noErr {
     tearDown(ioProc)
     fail("macOS would not start the audio device", DENIED)
 }
+
+// Once a second, whatever it is hearing. Its own queue: this must keep reporting
+// while the main thread is parked waiting to be stopped.
+let reporting = DispatchQueue(label: "syscapture.meter")
+let ticker = DispatchSource.makeTimerSource(queue: reporting)
+ticker.schedule(deadline: .now() + 1, repeating: 1)
+ticker.setEventHandler { meter.report() }
+ticker.resume()
 
 // Stopping is the normal end of a recording, so it exits 0: whatever reached the
 // far end before the signal is the recording. Signal sources have to outlive the

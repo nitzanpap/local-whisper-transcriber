@@ -77,6 +77,13 @@ HELPER_DENIED = 3
 EBUR128_M = re.compile(r"lavfi\.r128\.M=(-?\d+(?:\.\d+)?)")
 SILENT_LUFS = -70.0
 
+# The helper's own meter, once a second, so the computer's side has one too.
+HELPER_LEVEL = re.compile(r"syscapture: level (-?\d+(?:\.\d+)?) frames (\d+)")
+# Digital zero, which the helper reports as -120 and no real signal ever reaches.
+# Frames arriving with nothing in them at all is what a refused tap looks like;
+# frames not arriving is only a quiet machine.
+DEAD_TAP = -100.0
+
 # What a device is called when it exists to carry audio back into the machine.
 # Used to preselect the right one and to notice when there is none.
 LOOPBACK_HINTS = ("blackhole", "loopback", "soundflower", "vb-cable", "vb cable",
@@ -564,7 +571,13 @@ def _side_arriving(rec: dict, side: str) -> bool:
     capture. All that can honestly be asked of it is whether the helper is running.
     """
     if side == "computer" and rec.get("computer") == SYSTEM_AUDIO:
-        return rec.get("helper_code") is None
+        if rec.get("helper_code") is not None:
+            return False                     # the helper is gone; nothing is coming
+        heard = rec.get("live", {}).get("computer")
+        # No frames at all is a machine playing nothing, which is not a fault.
+        # Frames that are digital zero mean the tap is running and being handed
+        # nothing, which is what a refusal looks like from in here.
+        return heard is None or heard > DEAD_TAP
     if rec.get("live", {}).get(side) is not None:
         return True
     return _side_bytes(rec, side) > EMPTY_WAV
@@ -627,13 +640,21 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
         assert proc.stderr is not None
         async for raw in proc.stderr:
             line = raw.decode("utf-8", "replace").rstrip()
-            if line:
-                rec["log"].append(line)
+            if not line:
+                continue
+            found = HELPER_LEVEL.search(line)
+            if found:
+                # Kept out of the log, like ffmpeg's: a line a second would bury
+                # everything worth reading.
+                rec.setdefault("live", {})["computer"] = float(found.group(1))
+                continue
+            rec["log"].append(line)
         await proc.wait()
     finally:
         if HELPER is proc:
             HELPER = None
         rec["helper_code"] = proc.returncode
+        rec.setdefault("live", {}).pop("computer", None)
 
 
 async def _until_mic_ready(rec: dict, timeout: float = 4.0) -> None:
