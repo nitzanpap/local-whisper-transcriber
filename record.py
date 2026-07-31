@@ -551,6 +551,25 @@ def _side_bytes(rec: dict, side: str) -> int:
     return total
 
 
+def _side_arriving(rec: dict, side: str) -> bool:
+    """Whether a side is actually producing audio, by the soonest honest signal.
+
+    The meter first, because it is immediate: ffmpeg reports loudness for every
+    frame that arrives and reports nothing at all when none do, so it separates a
+    working capture from a refused one within a fraction of a second.
+
+    The file size cannot do that job. ffmpeg buffers its output, and a microphone
+    working perfectly well leaves its WAV at zero bytes on disk for tens of seconds
+    before the first flush — which is exactly how a recording that was working was
+    refused for not working, with the meter sitting there the whole time reading
+    -43 dB. The size still answers for the system-audio helper, which has no meter
+    and writes straight through with write(2).
+    """
+    if rec.get("live", {}).get(side) is not None:
+        return True
+    return _side_bytes(rec, side) > EMPTY_WAV
+
+
 def _asked_for(rec: dict) -> list[str]:
     return [side for side, chosen in (("voice", rec.get("voice")),
                                       ("computer", rec.get("computer"))) if chosen]
@@ -573,11 +592,11 @@ async def _until_audio_arrives(rec: dict, timeout: float = 6.0) -> list[str]:
     while time.monotonic() < deadline:
         if rec["status"] != "recording":
             return []
-        missing = [side for side in wanted if _side_bytes(rec, side) <= EMPTY_WAV]
+        missing = [side for side in wanted if not _side_arriving(rec, side)]
         if not missing:
             return []
         await asyncio.sleep(0.1)
-    return [side for side in wanted if _side_bytes(rec, side) <= EMPTY_WAV]
+    return [side for side in wanted if not _side_arriving(rec, side)]
 
 
 # What to say, and which pane to offer, for a side that never produced a byte.
