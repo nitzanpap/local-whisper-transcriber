@@ -165,8 +165,11 @@ any stretching value, and says which use is which.
 
 ## 11. Things an agent working here cannot do
 
-- **Screen capture is blocked.** `screencapture` fails with "could not create image
-  from display", so nothing visual can be self-verified. A menu bar icon shipped as
+- **Screen capture and assistive access are both blocked.** `screencapture` fails
+  with "could not create image from display", and System Events refuses with
+  "osascript is not allowed assistive access", so nothing visual can be
+  self-verified and no window control can be clicked. `tell application "…" to
+  quit` does work, and so does reading the backend over HTTP — reach for those. A menu bar icon shipped as
   a black square because of this and the owner had to report it. **If a change is
   visual and cannot be rendered in the browser pane, say plainly that it is
   unverified rather than implying it was checked.**

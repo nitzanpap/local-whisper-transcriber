@@ -1,7 +1,10 @@
-// A window around the local backend, and nothing more.
+// A window and a menu bar item around the local backend.
 //
-// The app owns the backend's lifetime: it starts it on launch and kills it on
-// quit, so "is this running?" has the same answer as "is the window open?".
+// The app owns the backend's lifetime: it starts it on launch and kills it when it
+// quits. Closing the window is not quitting — it hides it, and the app goes on
+// recording with only the menu bar to show for it, which is the point of a thing
+// that runs through a meeting. Quitting is a deliberate act: Quit in the menu,
+// Cmd-Q, or the system asking.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::io::{ErrorKind, Read, Write};
@@ -195,7 +198,20 @@ fn main() {
                 .min_inner_size(420.0, 480.0)
                 .build()
             {
-                Ok(_) => {
+                Ok(window) => {
+                    // The X closes the window, it does not end the app. A meeting
+                    // recorder whose window has to stay open is not a background
+                    // app at all — and quitting took the menu bar item with it, so
+                    // the one thing left to control the recording went too.
+                    window.on_window_event({
+                        let window = window.clone();
+                        move |event| {
+                            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                                api.prevent_close();
+                                let _ = window.hide();
+                            }
+                        }
+                    });
                     *app.state::<Backend>().0.lock().unwrap() = child;
                     if let Err(e) = build_tray(app.handle()) {
                         // A missing menu bar is not worth refusing to open over.
@@ -215,15 +231,25 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("failed to start")
-        .run(|app, event| {
-            if let RunEvent::Exit = event {
-                // Quitting the app stops the transcriber. Nothing of ours keeps
-                // running once the window is closed.
+        .run(|app, event| match event {
+            // No guard against exiting here, on purpose. The window is hidden
+            // rather than closed, so it still exists and macOS has no
+            // last-window-closed moment to act on — and a guard would have to turn
+            // away Cmd-Q and the AppleScript quit rebuild.sh uses along with it,
+            // since all three arrive as the same request with the same empty code.
+            //
+            // Clicking the dock icon of an app with nothing on screen. Without
+            // this it would appear to do nothing at all.
+            RunEvent::Reopen { .. } => show_window(app),
+            RunEvent::Exit => {
+                // Quitting stops the transcriber. Nothing of ours outlives the
+                // app, however it was ended.
                 if let Some(mut child) = app.state::<Backend>().0.lock().unwrap().take() {
                     let _ = child.kill();
                     let _ = child.wait();
                 }
             }
+            _ => {}
         });
 }
 
@@ -244,7 +270,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &open,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, Some("Quit"))?,
+            // Ours rather than the predefined one, which asks the system to
+            // terminate and would be turned away by the exit guard above along
+            // with everything else.
+            &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
         ],
     )?;
 
@@ -289,6 +318,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 });
             }
             "open" => show_window(app),
+            "quit" => app.exit(0),
             _ => {}
         })
         .build(app)?;
