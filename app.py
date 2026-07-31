@@ -326,6 +326,43 @@ def glance() -> str:
     return record.glance()
 
 
+@app.post("/api/transcribe/pick")
+async def transcribe_pick() -> dict:
+    """Choose a file and start transcribing it, with nothing else to answer.
+
+    For the menu bar, which has no room to ask about models or folders. It uses
+    what the window would have used: the remembered model, language and output
+    folder. In a thread, because a native picker sits there until somebody answers
+    it — a dialog on the event loop is how the whole app once froze mid-run.
+    """
+    picked = await asyncio.to_thread(run_picker, "file", "Choose audio or video to transcribe")
+    if not picked.get("path"):
+        return {"started": False, "reason": picked.get("reason", "")}
+    conf = settings()
+    model = conf.get("default_model_path", "")
+    if not model or not Path(model).is_file():
+        raise HTTPException(400, {
+            "code": "model_not_found",
+            "message": "No model has been chosen yet, so there is nothing to transcribe with. "
+                       "Open the app and pick one in settings first."})
+    found = await inspect(PathIn(path=picked["path"]))
+    started = await start(StartIn(
+        source=found["path"], model=model,
+        language=conf.get("default_language") or "auto",
+        out_dir=found["out_dir"], basename=found["basename"],
+        extra_args=conf.get("default_extra_args") or DEFAULT_EXTRA))
+    return {"started": True, **started}
+
+
+@app.post("/api/record/pause")
+async def record_pause() -> dict:
+    """Stop counting, or start again. One call, because the menu bar has one item."""
+    try:
+        return await record.pause()
+    except Failed as exc:
+        raise HTTPException(400, {"code": exc.code, "message": exc.message, "details": ""})
+
+
 @app.post("/api/record/toggle")
 async def record_toggle() -> dict:
     """Start or stop, with nothing to say. The menu bar has nowhere to ask."""

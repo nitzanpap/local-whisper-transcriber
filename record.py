@@ -50,7 +50,7 @@ PROCS: list[asyncio.subprocess.Process] = []
 # separately, because it is a sibling of the recording rather than a child of it.
 HELPER: asyncio.subprocess.Process | None = None
 
-LIVE = ("recording", "stopping", "saving")
+LIVE = ("recording", "paused", "stopping", "saving")
 MAX_LOG = 120
 
 # A WAV shorter than this is a header and nothing else.
@@ -681,6 +681,9 @@ async def start(voice: str, computer: str) -> dict:
         # Sides that real audio ever reached, as against sides whose file merely
         # exists. Present from the start so that empty means no rather than unknown.
         "ever": set(),
+        # Time deliberately not recorded, so the clock can agree with the file.
+        "paused_at": None,
+        "paused_total": 0.0,
     }
     RECORDING = rec
     _checkpoint(rec)
@@ -695,14 +698,26 @@ async def start(voice: str, computer: str) -> dict:
     # being told. The warning clears itself the moment audio turns up.
     # Remember the choice by name, so the next recording is one decision lighter and
     # still points at the same device after something is plugged in or unplugged.
-    try:
-        _, listing = await capture(_list_command(), timeout=30)
-        known = _parse_avfoundation(listing) if sys.platform == "darwin" \
-            else _parse_pulse(listing)
-    except (Failed, OSError):
-        known = []
-    save_settings({"record_voice_device": name_for(rec["voice"], known),
-                   "record_computer_device": name_for(rec["computer"], known)})
+    known = await _core_audio_inputs() if sys.platform == "darwin" else []
+    if not known:
+        try:
+            _, listing = await capture(_list_command(), timeout=30)
+            known = _parse_avfoundation(listing) if sys.platform == "darwin" \
+                else _parse_pulse(listing)
+        except (Failed, OSError):
+            known = []
+    # Only what was actually chosen. A device that could not be seen at this moment
+    # must not erase the one that was remembered — clearing the microphone grant
+    # emptied the device listing, which wrote an empty choice over a good one, and
+    # every recording afterwards was the computer's side alone with no word said.
+    remember = {}
+    for key, side in (("record_voice_device", "voice"),
+                      ("record_computer_device", "computer")):
+        name = name_for(rec[side], known)
+        if name:
+            remember[key] = name
+    if remember:
+        save_settings(remember)
     return public()
 
 
@@ -935,7 +950,7 @@ async def _watch_disk(rec: dict, poll: float = 20.0) -> None:
     leaves the machine with nothing free either; stopping while there is still room
     keeps everything up to that point and says why in the log.
     """
-    while rec["status"] == "recording":
+    while rec["status"] in ("recording", "paused"):
         try:
             free = shutil.disk_usage(WORK_DIR).free
         except OSError:
@@ -1049,7 +1064,7 @@ async def _await_helper(rec: dict, poll: float = 0.2) -> None:
     while time.time() < deadline:
         if HELPER is None or HELPER.returncode is not None:
             return
-        if rec["status"] not in ("recording", "stopping"):
+        if rec["status"] not in ("recording", "paused", "stopping"):
             break
         await asyncio.sleep(poll)
     # Forgotten about, or asked to stop: either way the capture ends here.
@@ -1214,6 +1229,10 @@ def _why_nothing_arrived(rec: dict) -> tuple[str, str]:
                 "ffmpeg recorded no audio from the two devices together. Try one of them on "
                 "its own; or combine both into one Aggregate Device in Audio MIDI Setup and "
                 "record that as a single source, which works but cannot label speakers.")
+    if rec.get("helper") is not None:
+        return ("recording_failed",
+                "Nothing was captured. If the computer was playing nothing and no microphone "
+                "was chosen, there was nothing to record — pick a microphone and try again.")
     return ("recording_failed", "ffmpeg stopped without recording any audio. "
                                 "The process log below says what it reported.")
 
@@ -1495,8 +1514,7 @@ def glance() -> str:
     """
     rec = RECORDING
     if rec is not None and rec["status"] in LIVE:
-        seconds = int((rec["ended_at"] or time.time()) - rec["started_at"])
-        return f"{rec['status']} {seconds}"
+        return f"{rec['status']} {int(recorded_seconds(rec))}"
     import jobs  # here rather than at the top: jobs imports this module back
     job = jobs.JOB
     if job is not None and job["status"] in ("queued", "running", "cancelling"):
@@ -1511,10 +1529,60 @@ async def toggle() -> dict:
     devices come from the same place the interface fills its dropdowns from, so
     the tray records exactly what the window would have recorded.
     """
-    if RECORDING is not None and RECORDING["status"] == "recording":
+    if RECORDING is not None and RECORDING["status"] in ("recording", "paused"):
         return await stop(keep=True)
     chosen = await devices()
-    return await start(chosen["voice"], chosen["computer"])
+    voice = chosen["voice"]
+    if not voice:
+        # The same guess the window makes when nothing has been chosen yet: the
+        # machine's own default input, never a loopback. Without it the menu bar
+        # would quietly record one side of a conversation, which is the failure
+        # this app exists to stop rather than commit.
+        voice = next((d["id"] for d in chosen["devices"]
+                      if d.get("default") and not d.get("loopback")), "")
+    return await start(voice, chosen["computer"])
+
+
+def recorded_seconds(rec: dict) -> float:
+    """How much recording there is, which is not how long ago it started.
+
+    Time spent paused was deliberately not recorded, so counting it would show a
+    clock that disagrees with the file it is describing.
+    """
+    end = rec["ended_at"] or time.time()
+    away = rec.get("paused_total", 0.0)
+    if rec.get("paused_at"):
+        away += end - rec["paused_at"]
+    return max(0.0, end - rec["started_at"] - away)
+
+
+async def pause(resume: bool | None = None) -> dict:
+    """Stop counting, or start again. Told to the helper with a signal.
+
+    A pause is not an interruption and is not treated like one. An interruption is
+    kept as the silence it was, because the meeting carried on in the room and
+    every timestamp after it has to survive. A pause is somebody saying this time
+    does not belong to the recording, so it is closed up — nobody wants twenty
+    minutes of silence in the middle because they stepped out of the room.
+    """
+    rec = RECORDING
+    if rec is None or rec["status"] not in ("recording", "paused"):
+        raise Failed("not_recording", "There is no recording to pause.")
+    if HELPER is None or HELPER.returncode is not None:
+        raise Failed("recording_failed",
+                     "This recording cannot be paused, because it is not being captured by the "
+                     "part of the app that knows how. Stop it and start again to get a pause.")
+    wanted = (rec["status"] == "recording") if resume is None else (not resume)
+    if wanted:
+        _signal_helper(signal.SIGUSR1)
+        rec["paused_at"] = time.time()
+        rec["status"] = "paused"
+    else:
+        _signal_helper(signal.SIGUSR2)
+        rec["paused_total"] = rec.get("paused_total", 0.0) + (time.time() - rec["paused_at"])
+        rec["paused_at"] = None
+        rec["status"] = "recording"
+    return public()
 
 
 def meters() -> dict:
@@ -1547,7 +1615,7 @@ def public() -> dict | None:
         "started_at": rec["started_at"], "ended_at": rec["ended_at"],
         "path": rec["path"], "job_id": rec["job_id"],
         "labels": rec["labels"], "stereo": len(rec.get("sources") or rec["devices"]) == 2,
-        "seconds": round((rec["ended_at"] or time.time()) - rec["started_at"], 1),
+        "seconds": round(recorded_seconds(rec), 1),
         "bytes": recorded, "max_seconds": rec["max_seconds"],
         # Named by side rather than by channel number, so the interface can say
         # which of the two it was without knowing how they were arranged.

@@ -1231,6 +1231,34 @@ async def main() -> None:
     check("each side's level lands under its own name",
           both["peak"] == {"voice": -31.2, "computer": -20.7}, str(both["peak"]))
 
+    # Clearing the microphone grant emptied the device listing, and the empty
+    # listing was written back over the remembered choice — after which every
+    # recording was the computer's side alone, silently.
+    check("a device that cannot be seen keeps its name", record.name_for("uid-1", []) == "uid-1")
+    check("and nothing chosen names nothing", record.name_for("", []) == "")
+
+    print("pausing takes the time out rather than filling it")
+    # A pause is not an interruption and must not be treated as one. An
+    # interruption is kept as the silence it was, because the meeting carried on in
+    # the room; a pause is somebody saying this time does not belong to the
+    # recording, so it is closed up. The clock has to agree with the file, or the
+    # window shows a length the recording does not have.
+    held = {"started_at": time.time() - 60, "ended_at": None,
+            "paused_at": None, "paused_total": 20.0}
+    check("time spent paused is not counted", 39.5 < record.recorded_seconds(held) < 40.5,
+          str(record.recorded_seconds(held)))
+    still = {**held, "paused_at": time.time() - 5}
+    check("nor is a pause still going on", 34.5 < record.recorded_seconds(still) < 35.5,
+          str(record.recorded_seconds(still)))
+    check("and it never goes backwards",
+          record.recorded_seconds({**held, "paused_total": 1e9}) == 0.0)
+    record.RECORDING = None
+    try:
+        await record.pause()
+        raise AssertionError("FAIL: paused something that was not recording")
+    except record.Failed as exc:
+        check("pausing nothing says so in a sentence", exc.message.endswith("."), exc.message)
+
     print("one line for the menu bar")
     record.RECORDING = None
     jobs.JOB = None

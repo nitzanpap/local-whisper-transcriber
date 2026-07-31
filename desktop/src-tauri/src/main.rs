@@ -108,26 +108,59 @@ fn ask(method: &str, path: &str) -> Option<String> {
     reply.split_once("\r\n\r\n").map(|(_, body)| body.trim().to_string())
 }
 
-/// What to put in the menu bar, from the line the backend hands back.
+/// What the menu bar shows, and what its items offer to do next.
 ///
-/// Returned as (what the menu bar shows, what the first menu item offers). An
-/// empty title is deliberate for the resting state: an icon sitting there quietly
-/// is the whole point, and a word next to it every minute of the day is clutter.
-fn read_glance(line: &str) -> (String, String) {
+/// An empty title is deliberate for the resting state: an icon sitting there
+/// quietly is the whole point, and a word beside it every minute of the day is
+/// clutter.
+struct Glance {
+    title: String,
+    record: String,
+    pause: String,
+    can_pause: bool,
+}
+
+fn read_glance(line: &str) -> Glance {
     let mut parts = line.split_whitespace();
     let state = parts.next().unwrap_or("idle");
     let number: u64 = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+    let clock = format!("{}:{:02}", number / 60, number % 60);
     match state {
-        "recording" => (
-            format!("{}:{:02}", number / 60, number % 60),
-            "Stop recording".into(),
-        ),
+        "recording" => Glance {
+            title: clock,
+            record: "Stop recording".into(),
+            pause: "Pause".into(),
+            can_pause: true,
+        },
+        // The clock stops with the recording, so the number here is what is in the
+        // file rather than how long ago it began.
+        "paused" => Glance {
+            title: format!("{clock} paused"),
+            record: "Stop recording".into(),
+            pause: "Resume".into(),
+            can_pause: true,
+        },
         // Stopping and saving are brief and not worth a clock, but they must not
         // read as "not recording" either, or the button would offer to start a
         // second one on top of the first.
-        "stopping" | "saving" => ("saving".into(), "Saving…".into()),
-        "working" => (format!("{number}%"), "Start recording".into()),
-        _ => (String::new(), "Start recording".into()),
+        "stopping" | "saving" => Glance {
+            title: "saving".into(),
+            record: "Saving…".into(),
+            pause: "Pause".into(),
+            can_pause: false,
+        },
+        "working" => Glance {
+            title: format!("{number}%"),
+            record: "Start recording".into(),
+            pause: "Pause".into(),
+            can_pause: false,
+        },
+        _ => Glance {
+            title: String::new(),
+            record: "Start recording".into(),
+            pause: "Pause".into(),
+            can_pause: false,
+        },
     }
 }
 
@@ -198,11 +231,16 @@ fn main() {
 /// without going and finding the window.
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "Start recording", true, None::<&str>)?;
+    let hold = MenuItem::with_id(app, "pause", "Pause", false, None::<&str>)?;
+    let pick = MenuItem::with_id(app, "pick", "Transcribe a file…", true, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "Open Local Whisper Transcriber", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
             &toggle,
+            &hold,
+            &PredefinedMenuItem::separator(app)?,
+            &pick,
             &PredefinedMenuItem::separator(app)?,
             &open,
             &PredefinedMenuItem::separator(app)?,
@@ -230,6 +268,23 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                     ask("POST", "/api/record/toggle");
                 });
             }
+            "pause" => {
+                std::thread::spawn(|| {
+                    ask("POST", "/api/record/pause");
+                });
+            }
+            // The picker sits there until somebody answers it, and the window is
+            // where anything that goes wrong gets said.
+            "pick" => {
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    if let Some(body) = ask("POST", "/api/transcribe/pick") {
+                        if body.contains("\"started\":true") {
+                            show_window(&app);
+                        }
+                    }
+                });
+            }
             "open" => show_window(app),
             _ => {}
         })
@@ -244,11 +299,15 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(1));
         let line = ask("GET", "/api/glance").unwrap_or_default();
-        let (title, verb) = read_glance(&line);
+        let now = read_glance(&line);
         if let Some(tray) = handle.tray_by_id("menubar") {
-            let _ = tray.set_title(Some(title));
+            let _ = tray.set_title(Some(now.title));
         }
-        let _ = toggle.set_text(verb);
+        let _ = toggle.set_text(now.record);
+        let _ = hold.set_text(now.pause);
+        // Greyed rather than hidden when there is nothing to pause: a menu whose
+        // items move about is harder to use than one whose items stay put.
+        let _ = hold.set_enabled(now.can_pause);
     });
     Ok(())
 }
@@ -273,34 +332,58 @@ mod tests {
     // asking the backend, which the Python suite covers.
     #[test]
     fn a_recording_reads_as_a_clock() {
-        assert_eq!(read_glance("recording 42").0, "0:42");
-        assert_eq!(read_glance("recording 605").0, "10:05");
-        assert_eq!(read_glance("recording 42").1, "Stop recording");
+        assert_eq!(read_glance("recording 42").title, "0:42");
+        assert_eq!(read_glance("recording 605").title, "10:05");
+        assert_eq!(read_glance("recording 42").record, "Stop recording");
     }
 
     #[test]
     fn nothing_happening_shows_nothing_beside_the_icon() {
-        assert_eq!(read_glance("idle"), (String::new(), "Start recording".into()));
+        let idle = read_glance("idle");
+        assert_eq!(idle.title, "");
+        assert_eq!(idle.record, "Start recording");
     }
 
     #[test]
     fn saving_never_offers_to_start_a_second_recording() {
         for line in ["stopping 12", "saving 12"] {
-            assert_ne!(read_glance(line).1, "Start recording", "{line}");
+            assert_ne!(read_glance(line).record, "Start recording", "{line}");
         }
     }
 
     #[test]
     fn a_transcription_shows_its_progress() {
-        assert_eq!(read_glance("working 63").0, "63%");
+        assert_eq!(read_glance("working 63").title, "63%");
+    }
+
+    // Pause is offered only while there is something to pause, and says which way
+    // it would go — a menu item reading "Pause" on an already paused recording is
+    // a button that lies about what it does.
+    #[test]
+    fn pause_is_offered_only_when_it_means_something() {
+        let running = read_glance("recording 42");
+        assert!(running.can_pause && running.pause == "Pause");
+        let held = read_glance("paused 42");
+        assert!(held.can_pause && held.pause == "Resume");
+        assert!(held.title.contains("paused"), "{}", held.title);
+        for line in ["idle", "working 10", "saving 3"] {
+            assert!(!read_glance(line).can_pause, "{line}");
+        }
+    }
+
+    // A paused recording can still be stopped. Offering only "Resume" would leave
+    // somebody who paused and changed their mind with no way to end it.
+    #[test]
+    fn a_paused_recording_can_still_be_stopped() {
+        assert_eq!(read_glance("paused 42").record, "Stop recording");
     }
 
     // A backend that is not answering yet hands back an empty string, and a menu
     // bar that panicked on it would take the whole app down on launch.
     #[test]
     fn an_unanswered_backend_is_not_a_crash() {
-        assert_eq!(read_glance("").0, "");
-        assert_eq!(read_glance("recording").0, "0:00");
-        assert_eq!(read_glance("recording not-a-number").0, "0:00");
+        assert_eq!(read_glance("").title, "");
+        assert_eq!(read_glance("recording").title, "0:00");
+        assert_eq!(read_glance("recording not-a-number").title, "0:00");
     }
 }

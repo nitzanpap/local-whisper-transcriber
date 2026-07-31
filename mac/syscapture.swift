@@ -132,6 +132,14 @@ final class Sink {
     private var started: UInt64 = 0
     private var written = 0                                    // frames, padding included
     private var padded = 0.0                                   // seconds since sound last arrived
+    // A pause is time the recording is told not to count. An interruption — a
+    // sleep, a device going quiet — is kept as the silence it was, because the
+    // meeting carried on in the room and the timestamps after it have to survive.
+    // A pause is the opposite: somebody said this time does not belong to the
+    // recording, so it is closed up and nobody comes back to twenty minutes of
+    // silence because they stepped out.
+    private var pausedAt: UInt64 = 0                           // 0 when running
+    private var pausedTotal: UInt64 = 0                        // nanoseconds not counted
     private let silence = [Int16](repeating: 0, count: 4800)   // a tenth of a second
 
     init(fd: Int32) { self.fd = fd }
@@ -143,6 +151,25 @@ final class Sink {
         started = rightNow()
     }
 
+    /// Stop counting. Samples still arrive and are thrown away — the devices are
+    /// deliberately left running, because tearing down and rebuilding a capture is
+    /// how the ordering fault that cost this project a day gets back in.
+    func pause() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard started != 0, pausedAt == 0 else { return }
+        catchUp()                 // everything up to this instant belongs in the file
+        pausedAt = rightNow()
+    }
+
+    func resume() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard pausedAt != 0 else { return }
+        pausedTotal += rightNow() - pausedAt
+        pausedAt = 0
+    }
+
     /// The samples the tap just handed over, after whatever silence it did not.
     func write(_ samples: UnsafeBufferPointer<Int16>) {
         // Serialised because Core Audio may deliver on more than one thread, and
@@ -151,8 +178,8 @@ final class Sink {
         // Whatever arrives before the clock starts is thrown away rather than
         // written without a place in time. Both sides are started together and
         // given second zero together, so both discard the same moment and neither
-        // ends up ahead of the other.
-        guard started != 0 else { lock.unlock(); return }
+        // ends up ahead of the other. The same goes for a pause.
+        guard started != 0, pausedAt == 0 else { lock.unlock(); return }
         catchUp()
         put(samples)
         written += samples.count
@@ -181,8 +208,8 @@ final class Sink {
     /// Silence for the time between what has been written and what has elapsed.
     /// Caller holds the lock.
     private func catchUp() {
-        guard started != 0 else { return }
-        let elapsed = Double(rightNow() - started) / 1e9
+        guard started != 0, pausedAt == 0 else { return }
+        let elapsed = Double(rightNow() - started - pausedTotal) / 1e9
         let short = Int((elapsed * OUT_RATE).rounded()) - written
         guard short > 0 else { return }
         var left = short
@@ -434,7 +461,7 @@ if tapSink == nil {
     }
     alone.resume()
     micSink?.begin()
-    waitForStop(micSink)
+    waitForStop(micSink, pausing: [micSink].compactMap { $0 })
     stopMicrophone()
     micSink?.idle()
     exit(0)
@@ -558,7 +585,7 @@ sink.begin()
 ///
 /// Stopping is the normal end of a recording, so it exits 0: whatever reached the
 /// far end before the signal is the recording.
-func waitForStop(_ watching: Sink?) {
+func waitForStop(_ watching: Sink?, pausing: [Sink] = []) {
     // Signal sources have to outlive the scope that made them or they stop firing.
     let queue = DispatchQueue(label: "syscapture.signal")
     var sources: [DispatchSourceSignal] = []
@@ -567,6 +594,20 @@ func waitForStop(_ watching: Sink?) {
         signal(sig, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
         source.setEventHandler { stop.signal() }
+        source.resume()
+        sources.append(source)
+    }
+    // Pausing and resuming, said with signals for the same reason everything else
+    // here is: the caller already has the pid and needs no channel of its own.
+    // Both sides at once, or they would come back at different lengths.
+    for (sig, paused) in [(SIGUSR1, true), (SIGUSR2, false)] {
+        signal(sig, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
+        source.setEventHandler {
+            for sink in pausing { if paused { sink.pause() } else { sink.resume() } }
+            FileHandle.standardError.write(
+                Data("syscapture: \(paused ? "paused" : "recording again")\n".utf8))
+        }
         source.resume()
         sources.append(source)
     }
@@ -610,7 +651,7 @@ ticker.resume()
 sink.begin()
 micSink?.begin()
 
-waitForStop(sink)
+waitForStop(sink, pausing: [sink, micSink].compactMap { $0 })
 
 tearDown(ioProc)
 stopMicrophone()
