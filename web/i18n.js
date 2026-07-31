@@ -71,6 +71,13 @@ const STRINGS = {
       "check that macOS has allowed the microphone and that the right input is selected.",
     "rec.notArriving.computer": "The capture of your computer's audio has stopped. " +
       "Whatever it plays from now on will not be in the recording.",
+    "rec.stalledTitle": "This has gone quiet",
+    "rec.stalled.voice": "Your microphone was working and has stopped handing anything " +
+      "over. The recording is still running and will pick it up again by itself — the " +
+      "silence in between is kept, so nothing said afterwards will be misplaced.",
+    "rec.stalled.computer": "Your computer's audio was arriving and has stopped. The " +
+      "recording is still running and will pick it up again by itself — the silence in " +
+      "between is kept, so nothing said afterwards will be misplaced.",
     "rec.stop": "Stop",
     "rec.throw": "Stop and throw it away",
     "rec.throwConfirm": "Stop recording and delete what was recorded? This cannot be undone.",
@@ -310,6 +317,11 @@ const STRINGS = {
       "רגע שקט זה יסתדר — אבל אם זה נשאר, בדקו שיש הרשאת מיקרופון ושנבחר הקלט הנכון.",
     "rec.notArriving.computer": "הקליטה של האודיו מהמחשב נעצרה. כל מה שיתנגן מכאן " +
       "והלאה לא ייכנס להקלטה.",
+    "rec.stalledTitle": "השתררה כאן דממה",
+    "rec.stalled.voice": "המיקרופון עבד והפסיק להעביר משהו. ההקלטה עדיין רצה והיא תרים " +
+      "אותו מחדש מעצמה — השקט שבאמצע נשמר, כך ששום דבר שייאמר אחריו לא יזוז ממקומו.",
+    "rec.stalled.computer": "האודיו מהמחשב הגיע והפסיק להגיע. ההקלטה עדיין רצה והיא תרים " +
+      "אותו מחדש מעצמה — השקט שבאמצע נשמר, כך ששום דבר שייאמר אחריו לא יזוז ממקומו.",
     "rec.stop": "עצירה",
     "rec.throw": "עצירה ומחיקה",
     "rec.throwConfirm": "לעצור את ההקלטה ולמחוק את מה שהוקלט? אין דרך לשחזר.",

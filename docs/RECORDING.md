@@ -68,20 +68,15 @@ better transcript. It would also silently miss anything played through an app no
 > applications? Everything is honest and occasionally noisy; only-the-call is cleaner and can be
 > wrong in a way nobody notices until afterwards.
 
-## 3. What happens when a source dies
+## 3. What happens when a source stops
 
-Today: it is survived and never reopened. A capture that exits before it was asked to leaves the
-other one running — deliberately, because a Bluetooth microphone dropping out used to take the
-computer's audio down with it — and the log says so. But nothing tries again, so a headset that
-drops at minute four and returns at minute five leaves a hole for the remaining thirty-five.
+Sources turned out not to die. They go quiet and come back, and until this was fixed the recording
+quietly lost the difference.
 
-This is the largest real gap in recording and it has a clear shape:
-
-- A capture that exits while the recording is still going is a fault, not an ending.
-- If the device it was using is still listed, start it again, and note the gap in the log.
-- Say it on screen while it is happening. The warning already exists for a side that is not
-  arriving; a side that *stopped* arriving is the same sentence with a different tense.
-- The gap must be filled with silence rather than closed up, or every timestamp after it is wrong.
+A capture that really does exit before it was asked to leaves the other one running — deliberately,
+because a Bluetooth microphone dropping out used to take the computer's audio down with it — and
+the log says so. That part was already right. What was wrong was everything about the far more
+common case below.
 
 **Sleep does something worse than killing a capture, and it has now been measured.**
 
@@ -126,6 +121,66 @@ the collapsed timeline, the silence about it — is the same, and is what the tw
 So the fix does not wait on measuring a full suspend, and chasing one further would be work spent
 on the least uncertain part of the problem.
 
+**And then a much larger version of the same fault turned up, in every recording ever made.**
+
+Looking for a way to detect a stalled tap, the tap was run against a machine playing nothing:
+**six seconds of quiet produced zero bytes.** Not a fault, and not a sleep — that is simply what a
+Core Audio tap does. The output device idles when nothing is playing, no callbacks arrive, and
+nothing is written.
+
+Which means the computer's side of every recording had its silences cut out of it. A meeting where
+the other person spoke for three minutes, paused for one, then spoke for two, was saved as five
+minutes of speech with no pause in it. Sleep was never the bug. Sleep was the largest and most
+visible instance of a bug that was firing at every pause in every conversation, and it only came
+to light because a nap made it big enough to notice.
+
+### What was done about it
+
+**Each capture now keeps its own honest clock, and fills in what it missed.**
+
+The helper holding the tap measures against `CLOCK_MONOTONIC`, which on Darwin keeps counting
+while the machine sleeps, and writes silence for the difference between what it has written and
+how long it has been running. It does this on a timer as well as on each callback, so the size of
+the file stays a truthful clock rather than becoming one at the end. The same six seconds of quiet
+now produce six seconds of file.
+
+The microphone is captured by ffmpeg, which cannot be asked to do that, so it is measured from
+outside: `ebur128` reports loudness once for every 100 ms of audio it receives, whether or not
+anybody is speaking, so those lines stopping means the capture stopped and nothing else. When they
+resume, the gap is the wall-clock time that passed minus the audio that came with it, and it is
+recorded along with the position it happened at. Before mixing, one ffmpeg pass puts the silence
+back where the hole is.
+
+Both are measured against the wall clock rather than against the device's own timestamps, because
+a device whose clock stopped along with it would report that no time had passed at all.
+
+Measured end to end in the packaged app, with the exact pattern the design has to survive — quiet,
+then a four-second tone, then quiet:
+
+| | |
+|---|---|
+| wall clock the recording was open | 11.4 s |
+| the saved recording | 11.47 s |
+| the tone, in the computer's channel | 3.65 s → 7.65 s, exactly 4.000 s long |
+
+Before the change that channel would have held the four seconds of tone and nothing else, starting
+at zero. `pad_command` has a check that fails if the silence is put on the end instead of at the
+hole, which is the mistake that would give a file of exactly the right length and every word after
+the stall still in the wrong place.
+
+Two consequences worth writing down. The tap now writes about 345 MB an hour whatever the room is
+doing, where before a quiet room cost nothing; the existing disk guard covers it. And a channel is
+no longer counted as a channel just because its file is large — a tap that never heard anything now
+produces a full-length file of silence, and keeping that would mean a stereo master with a dead
+side and an hour of digital zero handed to whisper.
+
+**What this leaves, and it is new.** The two captures no longer start at the same instant: the
+microphone opens first and the tap is deliberately held back until it is delivering, because
+creating the tap's aggregate device kills an AVFoundation capture opened afterwards (§1). Each side
+is now internally honest and the two are offset from each other by that wait. Before this change
+that offset was lost in a far larger error; now it is the largest one left. It is the next thing to
+measure.
+
 ## 4. What a long meeting needs
 
 Measured: the master WAV costs 0.69 GB an hour. The cap is three hours, which is 2.07 GB. The disk
@@ -160,18 +215,18 @@ recording of a quiet room is a correct recording.
 
 ## 6. What this leaves as work, in order
 
-1. **Pad an interrupted capture.** Measured, not theorised: a sleep costs 31 seconds of a
-   70-second recording and moves every timestamp after it. A capture that has produced nothing
-   for longer than a pause in speech is stalled, and the silence it missed has to go into the
-   file or the transcript lies about when things were said. This is now the first job.
-2. **Say so while it is happening.** The live warning cannot fire on a stall, because it asks
-   whether a side is arriving and reads the last level it was given. It should ask when that
-   level last moved.
-3. **Two meters instead of one.** Small, and it closes the last part of §7's promise.
-4. **Fix the orphan duration** to use the rate actually recorded.
-5. **Normalise the two channels before transcribing**, or decide not to — see below.
-6. **Split `record.py`.** It is 1,309 lines against a project norm of 200–400. Capture, mixing,
-   devices, orphans and permissions are five separable things.
+1. ~~**Pad an interrupted capture.**~~ Done, and it turned out to be far more than sleep — see §3.
+2. ~~**Say so while it is happening.**~~ Done. `stalled_sides` asks when a level last *moved*
+   rather than what it last said, which is the question the old warning could not ask.
+3. **Line the two captures up with each other.** New, and now the largest remaining error in a
+   recording: the microphone starts before the tap by design, and nothing accounts for the
+   difference. Each side is honest about its own length; neither knows where the other began.
+   Measure the offset first — it may be under a second, in which case say so and stop.
+4. **Two meters instead of one.** Small, and it closes the last part of §5's promise.
+5. **Fix the orphan duration** to use the rate actually recorded.
+6. **Normalise the two channels before transcribing**, or decide not to — see below.
+7. **Split `record.py`.** It is over 1,400 lines against a project norm of 200–400. Capture,
+   mixing, devices, orphans and permissions are five separable things.
 
 ## 7. The open questions
 
@@ -185,6 +240,11 @@ voice channel may be the one VAD gives up on, which would mean losing half a con
 This is measurable and has not been measured.
 
 **Is a recording a file, or a session?** Everything above assumes a recording is one continuous
-file with a start and a stop. A meeting that is paused, or interrupted by sleep, or joined late,
-suggests something else. This is the question that would change the shape of the code rather than
-its details, and it is the one worth answering deliberately before any of the work in §6.
+file with a start and a stop. A meeting that is paused, or joined late, suggests something else.
+This is the question that would change the shape of the code rather than its details.
+
+Sleep no longer argues for it the way it did — an interruption is now kept as the silence it was,
+which is the honest answer for a meeting that carried on in the room while the Mac was not
+listening. But a *pause*, asked for on purpose, is a different thing: nobody wants twenty minutes
+of silence in the middle of their recording because they stepped out. That is the case still worth
+deciding on.

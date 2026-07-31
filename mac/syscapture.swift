@@ -105,19 +105,90 @@ final class Meter {
     }
 }
 
+/// A clock that keeps counting while the machine is asleep.
+///
+/// On Darwin CLOCK_MONOTONIC does that and CLOCK_UPTIME_RAW does not, and a sleep
+/// is precisely the gap this file exists to fill: a clock that stops when the Mac
+/// does would measure a 31-second nap as no time passing at all.
+func rightNow() -> UInt64 { clock_gettime_nsec_np(CLOCK_MONOTONIC) }
+
 /// Writes mono 16-bit samples to the far end, and knows when the far end has gone.
+///
+/// It also keeps the file as long as the recording has been running, which is not
+/// the same thing as writing down what arrived. A Core Audio tap on an output
+/// device that is playing nothing delivers no callbacks whatever — measured, six
+/// seconds of a quiet machine produce zero bytes — so a file made only of what
+/// arrived is a file with every silence cut out of it. That is not a smaller
+/// recording, it is a wrong one: every word after a pause carries a timestamp
+/// earlier than the moment it was said, and the two channels drift apart from each
+/// other. Measured once at 31 seconds missing from a 70-second recording.
 final class Sink {
     private let fd: Int32
     private let lock = NSLock()
     private(set) var gone = false
+    private var started: UInt64 = 0
+    private var written = 0                                    // frames, padding included
+    private var padded = 0.0                                   // seconds since sound last arrived
+    private let silence = [Int16](repeating: 0, count: 4800)   // a tenth of a second
 
     init(fd: Int32) { self.fd = fd }
 
+    /// Second zero of the recording. Everything written is measured from here.
+    func begin() {
+        lock.lock()
+        defer { lock.unlock() }
+        started = rightNow()
+    }
+
+    /// The samples the tap just handed over, after whatever silence it did not.
     func write(_ samples: UnsafeBufferPointer<Int16>) {
         // Serialised because Core Audio may deliver on more than one thread, and
         // two half-written frames interleaved would be audible as noise.
         lock.lock()
+        catchUp()
+        put(samples)
+        written += samples.count
+        // Said once, when sound comes back, rather than once a second while it is
+        // away: the app keeps the last 120 lines of this, and a meeting full of
+        // ordinary pauses would otherwise push every other message out of it.
+        let quiet = padded
+        padded = 0
+        lock.unlock()
+        if quiet >= 2 {
+            FileHandle.standardError.write(
+                Data(String(format: "syscapture: nothing played for %.1fs; that silence is in "
+                            + "the recording rather than cut out of it\n", quiet).utf8))
+        }
+    }
+
+    /// Called on a timer too, so a long silence is written down as it passes rather
+    /// than all at once when sound returns. That keeps the size of the file an
+    /// honest clock, which is what the app reads to say how long a recording has run.
+    func idle() {
+        lock.lock()
         defer { lock.unlock() }
+        catchUp()
+    }
+
+    /// Silence for the time between what has been written and what has elapsed.
+    /// Caller holds the lock.
+    private func catchUp() {
+        guard started != 0 else { return }
+        let elapsed = Double(rightNow() - started) / 1e9
+        let short = Int((elapsed * OUT_RATE).rounded()) - written
+        guard short > 0 else { return }
+        var left = short
+        while left > 0 && !gone {
+            let n = min(left, silence.count)
+            silence.withUnsafeBufferPointer { put(UnsafeBufferPointer(rebasing: $0[0..<n])) }
+            left -= n
+        }
+        written += short - left
+        padded += Double(short - left) / OUT_RATE
+    }
+
+    /// Caller holds the lock.
+    private func put(_ samples: UnsafeBufferPointer<Int16>) {
         guard var p = UnsafeRawPointer(samples.baseAddress) else { return }
         var left = samples.count * MemoryLayout<Int16>.size
         while left > 0 {
@@ -269,13 +340,18 @@ if AudioDeviceStart(device, ioProc) != noErr {
     tearDown(ioProc)
     fail("macOS would not start the audio device", DENIED)
 }
+// Second zero, from the moment the device is actually running.
+sink.begin()
 
-// Once a second, whatever it is hearing. Its own queue: this must keep reporting
-// while the main thread is parked waiting to be stopped.
+// Once a second, whatever it is hearing, and whatever it did not. Its own queue:
+// this must keep reporting while the main thread is parked waiting to be stopped.
 let reporting = DispatchQueue(label: "syscapture.meter")
 let ticker = DispatchSource.makeTimerSource(queue: reporting)
 ticker.schedule(deadline: .now() + 1, repeating: 1)
-ticker.setEventHandler { meter.report() }
+ticker.setEventHandler {
+    meter.report()
+    sink.idle()
+}
 ticker.resume()
 
 // Stopping is the normal end of a recording, so it exits 0: whatever reached the
@@ -302,5 +378,9 @@ DispatchQueue.global(qos: .utility).async {
 stop.wait()
 
 tearDown(ioProc)
+// The last stretch of quiet counts as much as the first. Without this a meeting
+// that ends on a pause comes out shorter than it was, and the other channel — which
+// kept running until the same signal — is left hanging past the end of this one.
+sink.idle()
 close(fd)
 exit(0)

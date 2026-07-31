@@ -261,6 +261,15 @@ function renderRecording(rec, orphans, settings) {
       const pane = dead[0] === "voice" ? "microphone" : "audio";
       $("rec-nothing-fix").onclick = () => api("/privacy/" + pane, {}).catch(() => {});
     }
+    // A side that was arriving and stopped. Only worth saying about a side that is
+    // not already being reported as producing nothing at all, or the same silence
+    // gets two notices with two different explanations for it.
+    const stalled = (rec.stalled || []).filter(side => !dead.includes(side));
+    show($("rec-stalled"), stalled.length > 0);
+    if (stalled.length) {
+      $("rec-stalled-what").textContent =
+        stalled.map(side => t("rec.stalled." + side)).join("\n\n");
+    }
     $("rec-stop").disabled = rec.status !== "recording";
     $("rec-throw").disabled = rec.status !== "recording";
   }

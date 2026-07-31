@@ -317,8 +317,37 @@ async def devices() -> dict:
 # Applied to finished files, never to a live capture: given a live input it is free
 # to insert silence to make the timestamps agree, and that is what shredded the
 # microphone when both sources were mixed as they arrived.
-ONE_STREAM = ("aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono"
-              ",aresample=async=1000:first_pts=0")
+FLAT = "aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono"
+ONE_STREAM = FLAT + ",aresample=async=1000:first_pts=0"
+
+
+def pad_command(src: Path, dst: Path, gaps: list[tuple[float, float]]) -> list[str]:
+    """Rewrite one capture with the silence it missed put back where it missed it.
+
+    Each gap is (how much audio the capture had produced when it stalled, how long
+    it stalled for). Appending the total at the end would give the right length and
+    the wrong recording: the point is that a word said forty minutes in is forty
+    minutes in, so the silence goes where the hole is.
+
+    The file is opened once per segment rather than split inside the graph. asplit
+    would make the other branches wait, buffered in memory, while concat reads the
+    first one to the end — which on a three-hour recording is gigabytes of it.
+    Reading a local WAV a second time costs nothing worth counting.
+    """
+    parts, labels, at = [], [], 0.0
+    for n, (start, length) in enumerate(gaps):
+        start = max(start, at)
+        parts.append(f"[{n}:a]atrim=start={at}:end={start},{FLAT},asetpts=N/SR/TB[k{n}]")
+        parts.append(f"anullsrc=r=48000:cl=mono,atrim=duration={length},{FLAT}[g{n}]")
+        labels += [f"[k{n}]", f"[g{n}]"]
+        at = start
+    parts.append(f"[{len(gaps)}:a]atrim=start={at},{FLAT},asetpts=N/SR/TB[tail]")
+    labels.append("[tail]")
+    graph = ";".join(parts) + ";" + "".join(labels) + f"concat=n={len(labels)}:v=0:a=1[out]"
+    cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "warning", "-y"]
+    for _ in range(len(gaps) + 1):
+        cmd += ["-i", str(src)]
+    return cmd + ["-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_s16le", str(dst)]
 
 
 def capture_command(rec: dict, device: str, out: Path) -> list[str] | None:
@@ -381,9 +410,21 @@ def _captured_bytes(rec: dict) -> int:
 
 
 def captured_sources(rec: dict) -> list[str]:
-    """Which sides actually recorded something, in channel order: voice, then computer."""
+    """Which sides actually recorded something, in channel order: voice, then computer.
+
+    Size alone stopped being the answer when the tap started writing down its own
+    silences. It now produces a full-length file on a machine that played nothing
+    at all, and keeping that would mean a stereo master with a dead right channel
+    and a transcription run over an hour of digital zero. So the tap is asked the
+    other question as well: did any sound ever reach it. `ever` is missing entirely
+    on a recording rescued from a crash, and unknown is not the same as no.
+    """
     out = []
     for keys, label in ((("voice_wav",), "voice"), (("computer_wav", "sys_pcm"), "computer")):
+        heard = rec.get("ever")
+        if label == "computer" and rec.get("computer") == SYSTEM_AUDIO \
+                and heard is not None and label not in heard:
+            continue
         for key in keys:
             path = rec.get(key)
             try:
@@ -513,6 +554,9 @@ async def start(voice: str, computer: str) -> dict:
         "computer_wav": work / "computer.wav",
         "sys_pcm": work / "computer.pcm",
         "log": deque(maxlen=MAX_LOG),
+        # Sides that real audio ever reached, as against sides whose file merely
+        # exists. Present from the start so that empty means no rather than unknown.
+        "ever": set(),
     }
     RECORDING = rec
     _checkpoint(rec)
@@ -651,6 +695,11 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
                 # Kept out of the log, like ffmpeg's: a line a second would bury
                 # everything worth reading.
                 rec.setdefault("live", {})["computer"] = float(found.group(1))
+                # The helper only speaks when frames actually arrived, so this is
+                # the one honest record that sound ever reached the tap — its file
+                # now fills itself with silence either way. See captured_sources.
+                if isinstance(rec.get("ever"), set):
+                    rec["ever"].add("computer")
                 continue
             rec["log"].append(line)
         await proc.wait()
@@ -779,10 +828,72 @@ async def _drain(rec: dict, proc: asyncio.subprocess.Process, label: str = "voic
                 rec.setdefault("live", {})[label] = float(found.group(1))
             except ValueError:
                 pass
+            _heard(rec, label)
+            continue
+        if "Parsed_ametadata" in line:
+            # The frame/pts line that comes with every measurement. It was going
+            # into the log, ten lines a second, and the log holds 120 — so it held
+            # twelve seconds of nothing and every message ffmpeg had for us was
+            # pushed out of it long before anybody looked.
             continue
         rec["log"].append(line)
     await proc.wait()
     rec.setdefault("live", {}).pop(label, None)
+    rec.setdefault("moved", {}).pop(label, None)
+
+
+# ebur128 reports momentary loudness once for every 100 ms of audio, so each of
+# those lines is a tenth of a second the capture genuinely received.
+HEARD_PER_LINE = 0.1
+
+# How long a capture may hand over nothing before that is a stall rather than the
+# ordinary jitter of a pipe. Loudness is reported whether or not anybody is
+# speaking, so a pause in a conversation does not stop these lines — only the
+# capture stopping does.
+STALL = 2.0
+
+
+def _heard(rec: dict, side: str) -> None:
+    """A tenth of a second more audio, and a note if the wall clock ran on without it.
+
+    This is how a stall is caught. A recording left open across a sleep came back
+    31 seconds short of the 70 seconds it was open for: both captures kept their
+    process ids, both stopped producing and then started again unasked, and the
+    status never left `recording`. The audio simply stopped arriving, and the hole
+    closed up rather than staying open — which does not make a shorter recording,
+    it makes a wrong one, because everything said afterwards then carries a
+    timestamp 31 seconds earlier than the moment it was said.
+
+    The gap is measured against the wall clock rather than against ffmpeg's own
+    timestamps, because a device whose clock stopped along with it would report no
+    time having passed at all.
+    """
+    now = time.monotonic()
+    heard = rec.setdefault("heard", {}).get(side, 0.0)
+    last = rec.setdefault("moved", {}).get(side)
+    if last is not None:
+        missed = (now - last) - HEARD_PER_LINE
+        if missed >= STALL:
+            rec.setdefault("gaps", {}).setdefault(side, []).append(
+                (round(heard, 3), round(missed, 3)))
+            rec["log"].append(
+                f"# the {side} capture handed over nothing for {missed:.1f}s; that "
+                "silence goes back in before the recording is saved")
+    rec["moved"][side] = now
+    rec["heard"][side] = heard + HEARD_PER_LINE
+
+
+def stalled_sides(rec: dict) -> list[str]:
+    """Sides that were arriving and have stopped.
+
+    A different question from `not_arriving`, which asks whether a side ever
+    started. The live warning could only ever ask the first one, and it read the
+    last level it was handed — a level that stopped being updated sits there
+    looking perfectly healthy. So a recording that had gone deaf half a minute ago
+    showed a moving meter and said nothing at all.
+    """
+    now = time.monotonic()
+    return [side for side, when in (rec.get("moved") or {}).items() if now - when >= STALL]
 
 
 async def _await_helper(rec: dict, poll: float = 0.2) -> None:
@@ -814,6 +925,7 @@ async def _finish(rec: dict) -> None:
     rec["sources"] = sources
     if not sources:
         return _failed(rec, *_why_nothing_arrived(rec))
+    await _pad_gaps(rec)
     if not await _mix(rec, sources):
         return
     # Reached even when a capture died of its own accord: whatever arrived before
@@ -883,6 +995,37 @@ def silent_sides(rec: dict, sources: list[str], levels: dict[str, float | None])
         if chosen and side not in sources and side not in quiet:
             quiet.append(side)
     return quiet
+
+
+async def _pad_gaps(rec: dict) -> None:
+    """Put the missed silence back into every capture that stalled.
+
+    Never fatal. A track with a hole in it is worse than one without and far better
+    than no recording at all — the audio is all there either way, and only the
+    times it is laid out against are wrong.
+    """
+    for side, gaps in (rec.get("gaps") or {}).items():
+        key = f"{side}_wav"
+        src = rec.get(key)
+        if not gaps or src is None or not src.is_file():
+            continue
+        dst = src.with_name(f"{side}-whole.wav")
+        cmd = pad_command(src, dst, gaps)
+        rec["log"].append("$ " + shlex.join(cmd))
+        try:
+            code, out = await capture(cmd, timeout=1800)
+        except (Failed, OSError) as exc:
+            rec["log"].append(f"# the {side} track kept its gaps: {exc}")
+            continue
+        if code != 0 or not dst.is_file():
+            rec["log"] += out.splitlines()[-5:]
+            rec["log"].append(f"# the {side} track could not have its silence put back, "
+                              "so it is kept exactly as it was recorded")
+            continue
+        rec[key] = dst
+        rec["log"].append(
+            f"# put {sum(length for _, length in gaps):.1f}s of missed silence back into "
+            f"the {side} track, so the times in the transcript still line up")
 
 
 async def _mix(rec: dict, sources: list[str]) -> bool:
@@ -1223,6 +1366,11 @@ def public() -> dict | None:
                          if not _side_arriving(rec, side)]
         if rec["status"] == "recording" and not rec.get("checking")
         and time.time() - rec["started_at"] > SETTLING else [],
+        # Sides that were arriving and have stopped, which the warning above cannot
+        # see: it asks whether a side ever started, and a level that stopped being
+        # updated still reads as a healthy one.
+        "stalled": stalled_sides(rec) if rec["status"] == "recording"
+        and not rec.get("checking") else [],
         "log": list(rec["log"]),
     }
 

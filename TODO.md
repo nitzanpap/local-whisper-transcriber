@@ -30,11 +30,16 @@ evidence rather than a hunch.
 - [ ] **The two captures lose their relative start offset.** `aresample=first_pts=0` is applied to
       each independently, so if they begin 200 ms apart every cross-channel time is out by that.
       Tolerable for labelling, wrong for overlapping speech. Stamp each start, apply the delta when
-      mixing.
+      mixing. Now the largest remaining timing error in a recording, and it is not 200 ms by
+      accident: the tap is deliberately held back until the microphone is delivering, because
+      creating its aggregate device kills an AVFoundation capture opened afterwards. Measure the
+      offset before building anything — it may be small enough to say so and stop.
 - [ ] **Orphan durations assume 48 kHz.** The microphone is recorded at whatever rate it offers now,
       so the length shown for a recovered recording is wrong.
 - [ ] **A source that dies is survived but never reopened.** A Bluetooth microphone that drops and
-      comes back leaves a hole for the rest of the meeting.
+      comes back leaves a hole for the rest of the meeting. Narrower than it was: a source that
+      merely goes quiet — a sleep, or nothing playing — now keeps its place in time, so this is
+      only about a capture process that genuinely exits. See `docs/RECORDING.md` §3.
 
 ## QA and debugging
 

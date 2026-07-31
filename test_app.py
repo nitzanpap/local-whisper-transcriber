@@ -1144,6 +1144,92 @@ async def main() -> None:
         except app.HTTPException as exc:
             check(f"refuses {why}", exc.status_code == 400)
 
+    print("a stalled capture keeps its place in time")
+    # The measurement this exists for: a Mac put to sleep mid-recording came back
+    # with 31 of 70 seconds missing, both captures alive throughout, and the hole
+    # closed up rather than left open — which moves every timestamp after it.
+    rec = {"log": deque(maxlen=8)}
+    record._heard(rec, "voice")
+    rec["moved"]["voice"] -= 5.0          # five seconds in which nothing arrived
+    record._heard(rec, "voice")
+    gaps = rec["gaps"]["voice"]
+    check("a stall is noticed at all", len(gaps) == 1)
+    check("and measured against the wall clock", 4.8 < gaps[0][1] < 5.0)
+    check("and placed where the audio stopped", gaps[0][0] == 0.1)
+    check("a side that has just spoken is not called stalled", record.stalled_sides(rec) == [])
+    rec["moved"]["voice"] -= record.STALL + 1
+    check("one that has gone quiet is named", record.stalled_sides(rec) == ["voice"])
+
+    steady = {"log": deque(maxlen=8)}
+    for _ in range(5):
+        record._heard(steady, "voice")
+    check("a capture keeping up is left alone", not steady.get("gaps"))
+
+    # Everything above is arithmetic. Whether the silence lands in the right place is
+    # a question about a filtergraph, and the fake ffmpeg in this file cannot answer
+    # it — so the real one is asked directly when the machine has it. Skipped rather
+    # than failed without it: the rest of this suite is meant to run anywhere.
+    real_ffmpeg, real_ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if not (real_ffmpeg and real_ffprobe):
+        check("filling the gap needs a real ffmpeg, which is not here", True)
+    else:
+        async def run(cmd: list[str]) -> str:
+            done = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            out, _ = await done.communicate()
+            return out.decode("utf-8", "replace")
+
+        async def seconds(path: Path) -> float:
+            return float((await run([real_ffprobe, "-v", "error", "-show_entries",
+                                     "format=duration", "-of", "csv=p=0", str(path)])).strip())
+
+        async def hole(path: Path) -> tuple[float, float]:
+            """Where the quiet stretch in a file starts and ends."""
+            text = await run([real_ffmpeg, "-v", "error", "-i", str(path), "-af",
+                              "silencedetect=n=-50dB:d=0.3,ametadata=print:file=-",
+                              "-f", "null", "-"])
+            starts = re.search(r"silence_start=([\d.]+)", text)
+            ends = re.search(r"silence_end=([\d.]+)", text)
+            return (float(starts.group(1)) if starts else -1.0,
+                    float(ends.group(1)) if ends else -1.0)
+
+        # What a capture that stalled leaves behind: a second of one tone followed
+        # straight by the tone that was playing two seconds later. Nothing in the
+        # file says the time in between ever happened.
+        stalled, padded = TMP / "stalled.wav", TMP / "padded.wav"
+        await run([real_ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                   "-f", "lavfi", "-i", "sine=frequency=440:duration=1:sample_rate=48000",
+                   "-f", "lavfi", "-i", "sine=frequency=880:duration=1:sample_rate=48000",
+                   "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[o]",
+                   "-map", "[o]", "-c:a", "pcm_s16le", str(stalled)])
+        check("the stall left a two-second file", abs(await seconds(stalled) - 2.0) < 0.1)
+        check("with no quiet in it at all", await hole(stalled) == (-1.0, -1.0))
+
+        cmd = record.pad_command(stalled, padded, [(1.0, 2.0)])
+        cmd[0] = real_ffmpeg
+        text = await run(cmd)
+        check("the silence goes back in", padded.is_file(), text[-200:])
+        check("the recording is as long as it was open",
+              abs(await seconds(padded) - 4.0) < 0.1)
+        starts, ends = await hole(padded)
+        # The whole point. Length alone would be satisfied by tacking the silence on
+        # the end, which gives a file of the right size in which everything said
+        # after the stall is still two seconds early.
+        check("the silence is where the capture stopped", abs(starts - 1.0) < 0.15, starts)
+        check("and what came after it is back where it was said",
+              abs(ends - 3.0) < 0.15, ends)
+
+    print("a tap that heard nothing is not a channel")
+    silent = {"computer": record.SYSTEM_AUDIO, "ever": set(),
+              "sys_pcm": TMP / "quiet.pcm", "voice_wav": TMP / "nothing.wav"}
+    silent["sys_pcm"].write_bytes(b"\0" * 480_000)   # five seconds of written-down silence
+    check("silence the tap filled in is not a speaker", record.captured_sources(silent) == [])
+    silent["ever"] = {"computer"}
+    check("and sound that reached it is", record.captured_sources(silent) == ["computer"])
+    del silent["ever"]
+    check("a recording rescued from a crash is not second-guessed",
+          record.captured_sources(silent) == ["computer"])
+
     print("work dir sweep")
     config.WORK_DIR.mkdir(parents=True, exist_ok=True)
     stale, fresh = config.WORK_DIR / "stale", config.WORK_DIR / "fresh"
