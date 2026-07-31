@@ -345,6 +345,14 @@ pre.tech.steps { max-height: none; }
 .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* --- library --------------------------------------------------------------- */
+/* The day, once, above the things that happened on it. */
+.day {
+  font: 500 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-soft); margin: 1.5rem 0 .5rem;
+}
+.day:first-child { margin-top: 0; }
+#entries-more { margin-top: 1rem; }
+
 .entry {
   display: block; width: 100%; text-align: start; padding: .8rem 0; cursor: pointer;
   border: 0; border-bottom: 1px solid var(--rule-soft); border-radius: 0;

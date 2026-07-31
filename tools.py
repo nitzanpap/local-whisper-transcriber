@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -113,6 +114,12 @@ async def capture(cmd: list[str], timeout: float = 60) -> tuple[int, str]:
     return p.returncode, out.decode("utf-8", "replace").strip()
 
 
+# What the model decided the language actually is, which is only ever printed when
+# it was allowed to decide — "auto-detected language: he (p = 0.98)". The confidence
+# comes with it because a low one is the answer to "why is my transcript nonsense".
+DETECTED = re.compile(r"auto-detected language:\s*([a-z]{2,3})\s*\(p\s*=\s*([\d.]+)\)")
+
+
 async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | None = None) -> None:
     """Run cmd, feed stderr into the job log, parse whisper progress, honour cancel.
 
@@ -139,6 +146,13 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
         line = raw.decode("utf-8", "replace").rstrip()
         if not line or any(noise in line for noise in LOG_NOISE):
             continue
+        found = DETECTED.search(line)
+        if found:
+            # The first track to say so speaks for the recording: both sides of one
+            # conversation are the same language, and a second guess on a quieter
+            # channel is a worse guess rather than a second opinion.
+            job.setdefault("detected_language", found.group(1))
+            job.setdefault("language_confidence", round(float(found.group(2)), 3))
         if "progress =" in line:
             try:
                 reported = float(line.split("progress =")[1].strip().rstrip("%"))

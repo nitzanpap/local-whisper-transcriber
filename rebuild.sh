@@ -47,7 +47,19 @@ working "running the checks" run_checks \
 for f in web/*.js; do
     node --check "$f" >/dev/null 2>&1 || bad "$f does not parse"
 done
-ok "the frontend parses"
+# And again as one file, in the order the page loads them. Separate script tags share
+# one global scope, so a `const` declared in two of them is a redeclaration error that
+# kills every file after it — and checking them one at a time cannot see it. That is
+# how a second LANGUAGE_NAMES took app.js down with it while every check passed.
+python3 - <<'ORDER' > /tmp/lwt-all.js
+import re, pathlib
+html = pathlib.Path("web/index.html").read_text()
+for name in re.findall(r'<script src="/([\w.]+)"', html):
+    print(pathlib.Path("web", name).read_text())
+ORDER
+node --check /tmp/lwt-all.js >/dev/null 2>&1 \
+    || bad "the frontend files clash when loaded together — run: node --check /tmp/lwt-all.js"
+ok "the frontend parses, together and apart"
 
 say "building"
 build_it() { (cd desktop && npm run build) >/tmp/lwt-build.log 2>&1; }

@@ -25,15 +25,53 @@ function esc(t) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+// How many are shown before the list stops being the resting state and starts being
+// the page. Enough to recognise last week's meeting, few enough that the question at
+// the top of the screen is still on the screen.
+const RECENT = 6;
+let showingAll = false;
+
+// The day something happened, said the way somebody would say it. These files are
+// named after their timestamp, so the date belongs in a heading rather than repeated
+// down every row — which leaves the row free to say the time and nothing else.
+function dayOf(seconds) {
+  const then = new Date(seconds * 1000);
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const daysAgo = Math.floor((midnight - then) / 86400000) + 1;
+  if (daysAgo <= 0) return t("lib.today");
+  if (daysAgo === 1) return t("lib.yesterday");
+  if (daysAgo < 7) return then.toLocaleDateString([], { weekday: "long" });
+  return then.toLocaleDateString([], { day: "numeric", month: "long" });
+}
+
+const timeOf = (seconds) => seconds
+  ? new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  : "—";
+
 function renderEntries() {
-  $("entries").innerHTML = entries.length ? entries.map(e => `
+  const shown = showingAll ? entries : entries.slice(0, RECENT);
+  let day = null;
+  const rows = shown.map(e => {
+    const heading = dayOf(e.ended_at);
+    const label = heading === day ? "" : `<p class="day">${esc(heading)}</p>`;
+    day = heading;
+    return label + `
     <button class="entry" data-entry="${esc(e.id)}">
       <span class="entry-name">${esc(e.name)}</span>
-      <span class="meta">${esc(clock(e.duration))}<i>·</i>${esc(e.language)}<i>·</i>${esc(when(e.ended_at))}${
+      <span class="meta">${esc(timeOf(e.ended_at))}<i>·</i>${esc(clock(e.duration))}<i>·</i>${
+        esc(languageName(e.detected_language || e.language))}${
         e.has_media ? "" : `<i>·</i>${t("lib.moved")}`}</span>
-    </button>`).join("")
-    : `<p class="hint">${t("lib.empty")}</p>`;
+    </button>`;
+  });
+  $("entries").innerHTML = rows.join("") || `<p class="hint">${t("lib.empty")}</p>`;
+  const rest = entries.length - shown.length;
+  show($("entries-more"), rest > 0 || showingAll);
+  $("entries-more").textContent = rest > 0
+    ? t("lib.showAll", { n: entries.length }) : t("lib.showFewer");
 }
+
+$("entries-more").onclick = () => { showingAll = !showingAll; renderEntries(); };
 
 // --- one transcript ----------------------------------------------------------
 
@@ -104,7 +142,7 @@ function renderFacts(d) {
     ["fact.cpu", d.cpu_seconds == null ? unknown : clock(d.cpu_seconds)],
     ["fact.memory", d.peak_memory_mb == null ? unknown : `${d.peak_memory_mb} MB`],
     ["fact.model", (d.model || "").split("/").pop() || unknown],
-    ["fact.language", d.language || unknown],
+    ["fact.language", spokenIn(d)],
     ["fact.silence", d.vad_model == null ? unknown : (d.vad_model ? t("fact.yes") : t("fact.no"))],
     // A word list grows without limit and nobody reads it here; the first few say
     // whether one was in force, which is the only question this panel answers.
@@ -114,6 +152,20 @@ function renderFacts(d) {
   ];
   $("reader-facts").innerHTML = rows
     .map(([key, value]) => `<dt>${esc(t(key))}</dt><dd>${esc(value)}</dd>`).join("");
+}
+
+// What language it came out in, and whether that was decided or obeyed. A transcript
+// that reads like nonsense is nearly always this: the model was told a language it
+// was not hearing, and whisper does not fail at that, it invents.
+function spokenIn(d) {
+  if (d.detected_language) {
+    const unsure = d.language_confidence != null && d.language_confidence < 0.5;
+    return t(unsure ? "fact.heardUnsure" : "fact.heard",
+             { name: languageName(d.detected_language) });
+  }
+  return d.language && d.language !== "auto"
+    ? t("fact.told", { name: languageName(d.language) })
+    : t("fact.unknown");
 }
 
 // Enough to recognise, never enough to fill the panel.

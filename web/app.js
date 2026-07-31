@@ -82,6 +82,22 @@ let pinned = false;      // user asked for the surface while a finished job exis
 let pinnedPast = null;   // the job that was on screen when they asked
 let bootstrapped = false; // defaults from the server applied once
 
+// The codes whisper answers with, in words. Anything unrecognised keeps its code,
+// which is still more use than nothing. Named for what it is: i18n.js already has a
+// LANGUAGE_NAMES, for the language of the buttons, and these two lists are different
+// questions — one is the interface, this one is what was spoken into the microphone.
+const SPOKEN_NAMES = {
+  en: "English", he: "Hebrew", ar: "Arabic", ru: "Russian", es: "Spanish", fr: "French",
+  de: "German", it: "Italian", pt: "Portuguese", nl: "Dutch", pl: "Polish", tr: "Turkish",
+  uk: "Ukrainian", ro: "Romanian", sv: "Swedish", no: "Norwegian", da: "Danish",
+  fi: "Finnish", cs: "Czech", el: "Greek", hu: "Hungarian", ja: "Japanese",
+  ko: "Korean", zh: "Chinese", hi: "Hindi", fa: "Persian", ur: "Urdu", id: "Indonesian",
+};
+function languageName(code) {
+  const key = String(code || "").toLowerCase();
+  return SPOKEN_NAMES[key] || (key ? key.toUpperCase() : "");
+}
+
 // Quality as a grade rather than a file name, the same words Settings uses. §5a:
 // what a model is called is a question nobody outside this repository can evaluate.
 function qualityOf(path) {

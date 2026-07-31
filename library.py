@@ -50,6 +50,10 @@ def entries() -> list[dict]:
             "name": Path(row["source"]).name,
             "source": row["source"],
             "language": row.get("language", ""),
+            # What was asked for and what was heard are different questions, and a
+            # transcript that came out wrong is explained by the second one.
+            "detected_language": row.get("detected_language", ""),
+            "language_confidence": row.get("language_confidence"),
             "duration": row.get("duration"),
             "ended_at": row.get("ended_at"),
             "txt": txt,

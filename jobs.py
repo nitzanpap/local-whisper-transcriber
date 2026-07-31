@@ -261,7 +261,9 @@ def append_history(job: dict) -> None:
     row = {k: job.get(k) for k in ("id", "source", "model", "language", "status",
                                    "started_at", "ended_at", "outputs", "duration",
                                    "peak_memory_mb", "cpu_seconds", "work_seconds",
-                                   "vad_model", "vocabulary", "extra_args", "tracks")}
+                                   "vad_model", "vocabulary", "extra_args", "tracks",
+                                   # What the model heard, as against what it was told
+                                   "detected_language", "language_confidence")}
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         with HISTORY.open("a", encoding="utf-8") as fh:

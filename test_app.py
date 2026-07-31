@@ -15,6 +15,7 @@ import re
 import shutil
 import sys
 import tempfile
+from collections import deque
 import time
 from pathlib import Path
 
@@ -361,6 +362,25 @@ async def main() -> None:
     # expression, and every message written across two source lines came back cut in
     # half and was reported as a fragment: eight of its fourteen findings were its
     # own doing. The syntax tree joins those the way Python does.
+    # What the model heard, as against what it was told. A Hebrew recording
+    # transcribed under a default of "en" said English in "how this was made", which
+    # is the app repeating the instruction back rather than reporting the result —
+    # and whisper does not fail at a wrong language, it invents, so this is the one
+    # line that explains a transcript full of nonsense.
+    print("the language it heard, not the one it was given")
+    heard = tools.DETECTED.search("whisper_full_with_state: auto-detected language: he (p = 0.976300)")
+    check("the detection line is read", heard is not None and heard.group(1) == "he", str(heard))
+    check("and so is how sure it was", heard and round(float(heard.group(2)), 3) == 0.976)
+    check("a line that is not a detection is left alone",
+          tools.DETECTED.search("whisper_print_progress_callback: progress = 50%") is None)
+    told = {"log": deque(maxlen=8)}
+    for line in ["whisper_full_with_state: auto-detected language: he (p = 0.98)",
+                 "whisper_full_with_state: auto-detected language: en (p = 0.31)"]:
+        found = tools.DETECTED.search(line)
+        told.setdefault("detected_language", found.group(1))
+    check("the first track speaks for the recording", told["detected_language"] == "he",
+          told["detected_language"])
+
     print("every error is a sentence")
 
     def said(node: ast.AST) -> str | None:
