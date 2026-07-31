@@ -571,13 +571,16 @@ def _side_arriving(rec: dict, side: str) -> bool:
     capture. All that can honestly be asked of it is whether the helper is running.
     """
     if side == "computer" and rec.get("computer") == SYSTEM_AUDIO:
-        if rec.get("helper_code") is not None:
-            return False                     # the helper is gone; nothing is coming
-        heard = rec.get("live", {}).get("computer")
-        # No frames at all is a machine playing nothing, which is not a fault.
-        # Frames that are digital zero mean the tap is running and being handed
-        # nothing, which is what a refusal looks like from in here.
-        return heard is None or heard > DEAD_TAP
+        # Only whether the helper is still there. Frames of digital zero are not
+        # proof of a refusal after all: when a sound stops, the output device keeps
+        # running for a moment and hands over exactly that — so the tail of every
+        # piece of audio looks like being refused. It was measured doing it, at the
+        # end of this check's own tone.
+        #
+        # Digital zero only means something when something is known to be playing,
+        # and the one place that is known is the check, which plays the sound
+        # itself. See check_verdict. Here, the honest question is the smaller one.
+        return rec.get("helper_code") is None
     if rec.get("live", {}).get(side) is not None:
         return True
     return _side_bytes(rec, side) > EMPTY_WAV
@@ -1106,6 +1109,7 @@ async def check(voice: str, computer: str) -> dict:
     rec = RECORDING
     if rec is None:
         raise Failed("not_recording", "The check could not start a recording.")
+    rec["checking"] = True
     tone = asyncio.create_task(_play_test_tone(rec))
     loudest: dict[str, float] = {}
     deadline = time.monotonic() + CHECK_SECONDS
@@ -1198,10 +1202,13 @@ def public() -> dict | None:
         # Sides that were asked for and are producing nothing at all. Given a few
         # seconds' grace first, so that the ordinary lag of a capture starting is
         # not announced as a fault to somebody who has only just pressed record.
+        # Not while the check is running: it plays its own sound, waits, and gives
+        # one verdict at the end. A warning racing that verdict is two answers to
+        # one question, and the louder one was wrong.
         "not_arriving": [side for side in _asked_for(rec)
                          if not _side_arriving(rec, side)]
-        if rec["status"] == "recording" and time.time() - rec["started_at"] > SETTLING
-        else [],
+        if rec["status"] == "recording" and not rec.get("checking")
+        and time.time() - rec["started_at"] > SETTLING else [],
         "log": list(rec["log"]),
     }
 

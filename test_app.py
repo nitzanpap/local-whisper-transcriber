@@ -615,15 +615,16 @@ async def main() -> None:
           await record._until_audio_arrives(tapping, timeout=0.3) == [], "blamed a quiet machine")
     check("but a helper that has exited is a broken tap",
           await record._until_audio_arrives({**tapping, "helper_code": 3}, timeout=0.3) == ["computer"])
-    # The one case that can be told apart: frames arriving with nothing in them.
-    # A refused tap still gets callbacks once something plays, and they are digital
-    # zero. That is a refusal; no callbacks at all is only a quiet machine.
+    # Digital zero is not proof of anything on its own. When a sound stops the output
+    # device keeps running for a moment and hands the tap exactly that, so the tail
+    # of every piece of audio would otherwise be reported as a refusal — measured
+    # doing it, at the end of the check's own tone, on a machine where both sides
+    # were working. It means something only where something is known to be playing,
+    # which is the check and nowhere else.
     hearing_zeros = {**tapping, "live": {"voice": -30.0, "computer": -120.0}}
-    check("frames of pure silence are a refused tap, not a quiet one",
-          await record._until_audio_arrives(hearing_zeros, timeout=0.3) == ["computer"])
-    check("and a quiet but real signal is not",
-          await record._until_audio_arrives(
-              {**tapping, "live": {"voice": -30.0, "computer": -55.0}}, timeout=0.3) == [])
+    check("the tail of a sound is not a refusal",
+          await record._until_audio_arrives(hearing_zeros, timeout=0.3) == [],
+          "warned about a working tap")
     # The helper's meter line, which is also what gives that side a level bar at last.
     heard = record.HELPER_LEVEL.search("syscapture: level -23.4 frames 48000")
     check("the helper's own meter is read", heard is not None and float(heard.group(1)) == -23.4)
