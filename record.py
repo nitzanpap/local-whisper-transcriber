@@ -753,6 +753,26 @@ def quiet_sides(levels: dict[str, float | None]) -> list[str]:
             if peak is not None and peak <= SILENT_DB]
 
 
+def silent_sides(rec: dict, sources: list[str], levels: dict[str, float | None]) -> list[str]:
+    """Every side worth saying something about: captured but silent, or never there.
+
+    A side that was asked for and produced nothing at all is not merely quiet, it is
+    absent — and it drops out of `sources` before anything measures it, so the levels
+    never see it and nothing anywhere mentions it. What came back was a mono
+    recording where two channels were asked for, with no word said. Which is exactly
+    how a cleared permission looked from the outside: a meeting recorded, half of it
+    missing, and the first sign of trouble a transcript with half a conversation in it.
+    """
+    quiet = quiet_sides(levels)
+    # .get, because a recording rescued from a crash is rebuilt from its checkpoint
+    # and never knew which sources were asked for. Nothing extra is claimed about
+    # one of those, which is right: nobody can say what it was supposed to contain.
+    for side, chosen in (("voice", rec.get("voice")), ("computer", rec.get("computer"))):
+        if chosen and side not in sources and side not in quiet:
+            quiet.append(side)
+    return quiet
+
+
 async def _mix(rec: dict, sources: list[str]) -> bool:
     cmd = mix_command(rec, sources)
     rec["log"].append("$ " + shlex.join(cmd))
@@ -808,7 +828,7 @@ async def _save(rec: dict) -> None:
     # conversation.
     sources = rec.get("sources") or ["voice", "computer"][:len(rec["devices"])]
     rec["levels"] = await channel_levels(rec["wav"], sources)
-    rec["quiet"] = quiet_sides(rec["levels"])
+    rec["quiet"] = silent_sides(rec, sources, rec["levels"])
     if rec["quiet"]:
         rec["log"].append("# nothing audible on: " + ", ".join(rec["quiet"]))
     stereo = len(rec.get("sources") or rec["devices"]) == 2

@@ -560,6 +560,20 @@ async def main() -> None:
           record.captured_sources(rec) == ["computer"])
     (TMP / "computer.pcm").unlink()
 
+    # Dropping it from the channel list is right; dropping it from the conversation
+    # is not. A side asked for that produced nothing never reaches the level check,
+    # so nothing measured it and nothing mentioned it — the recording just came back
+    # mono and the first sign of trouble was a transcript with half a meeting in it.
+    both = {**rec, "voice": "1", "computer": record.SYSTEM_AUDIO}
+    said = record.silent_sides(both, ["voice"], {"voice": -12.0})
+    check("a side that was asked for and never arrived is still said out loud",
+          said == ["computer"], str(said))
+    check("and a side that arrived silent is still said once, not twice",
+          record.silent_sides(both, ["voice", "computer"],
+                              {"voice": -12.0, "computer": -91.0}) == ["computer"])
+    check("while a side nobody asked for is not mentioned at all",
+          record.silent_sides({**both, "computer": ""}, ["voice"], {"voice": -12.0}) == [])
+
     print("the computer's audio without a driver")
     code, message = record._why_nothing_arrived({**rec, "helper_code": record.HELPER_DENIED})
     check("a refused permission is named, not guessed at",

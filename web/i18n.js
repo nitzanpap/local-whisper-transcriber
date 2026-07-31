@@ -68,8 +68,9 @@ const STRINGS = {
     "rec.noDevicesWhat": "ffmpeg listed no recording devices at all. On macOS this usually " +
       "means the app has not been allowed to use the microphone yet: System Settings → " +
       "Privacy & Security → Microphone.",
-    "rec.quietVoice": "Nothing audible was recorded from your microphone. Check which " +
-      "input is selected, and that it is not muted or asleep.",
+    "rec.quietVoice": "Nothing audible was recorded from your microphone. Check that " +
+      "it is allowed under System Settings → Privacy & Security → Microphone, that the " +
+      "right input is selected, and that it is not muted or asleep.",
     "rec.quietComputer": "Nothing audible was recorded from your computer. The usual " +
       "reason is permission: System Settings → Privacy & Security → System Audio " +
       "Recording Only. A refusal there is silent — the recording runs perfectly and " +
@@ -273,8 +274,8 @@ const STRINGS = {
     "rec.noDevicesTitle": "לא נמצאו התקני קלט",
     "rec.noDevicesWhat": "‏ffmpeg לא מצא שום התקן הקלטה. ב‑macOS זה בדרך כלל אומר שלא ניתנה " +
       "לאפליקציה הרשאה למיקרופון: הגדרות המערכת → פרטיות ואבטחה → מיקרופון.",
-    "rec.quietVoice": "לא הוקלט שום דבר שנשמע מהמיקרופון. בדקו איזה קלט נבחר, ושהוא " +
-      "לא מושתק או רדום.",
+    "rec.quietVoice": "לא הוקלט שום דבר שנשמע מהמיקרופון. בדקו שיש לו הרשאה תחת " +
+      "הגדרות המערכת ← פרטיות ואבטחה ← מיקרופון, שנבחר הקלט הנכון, ושהוא לא מושתק או רדום.",
     "rec.quietComputer": "לא הוקלט שום דבר שנשמע מהמחשב. הסיבה הרגילה היא הרשאה: " +
       "הגדרות המערכת ← פרטיות ואבטחה ← ‏System Audio Recording Only. סירוב שם הוא שקט — " +
       "ההקלטה רצה מצוין ולא קולטת כלום. אחרת בדקו שבאמת התנגן צליל, ושהפלט לא מושתק.",
