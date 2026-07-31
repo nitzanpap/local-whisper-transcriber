@@ -288,7 +288,13 @@ async def main() -> None:
     real_path = os.environ["PATH"]
     real_dirs = tools.BIN_DIRS
     try:
-        os.environ["PATH"] = "/usr/bin:/bin"  # what launchd hands us
+        # An empty directory rather than the literal "/usr/bin:/bin" launchd hands
+        # us. The point is a PATH with none of our tools on it, and on Linux
+        # /usr/bin is exactly where a real ffmpeg lives — so on any machine that
+        # had one, this found it there and never tested the fallback at all.
+        empty = TMP / "no-tools-here"
+        empty.mkdir(exist_ok=True)
+        os.environ["PATH"] = str(empty)
         tools.BIN_DIRS = (str(TMP / "bin"),)    # stand in for /opt/homebrew/bin
         config.SETTINGS.unlink()                 # no overrides to fall back on
         check("found off PATH", tools.locate("ffmpeg") == str(TMP / "bin" / "ffmpeg"))
@@ -432,16 +438,43 @@ async def main() -> None:
     check("while what was sent did change", kept["default_language"] == "en")
 
     print("taking the transcript away")
+
+    def picker_on(platform: str, zenity: bool, *args) -> tuple[list[str] | None, str]:
+        """Ask for a picker as a given machine would answer, whatever this one is.
+
+        Every branch then gets exercised on every runner, which is the point. This
+        used to ask the machine it was running on, so the macOS branch was checked
+        only on macOS, the zenity branch was checked nowhere at all, and a Linux
+        runner without zenity got None and took `" ".join` down with it — killing
+        the suite at this line and leaving the 600 checks after it unrun on the
+        very platform they were meant to cover.
+        """
+        was = (tools.sys.platform, tools.shutil.which)
+        tools.sys.platform = platform
+        tools.shutil.which = lambda name: "/usr/bin/zenity" if zenity else None
+        try:
+            return tools.picker_command(*args)
+        finally:
+            tools.sys.platform, tools.shutil.which = was
+
     # The save panel is shared with the settings backup now, so it has to be told
     # what it is saving. Names come from files somebody else chose the name of, and
     # they land inside an AppleScript string literal.
-    cmd, _ = tools.picker_command("save", "Save the transcript as", 'a "quoted" name.txt')
+    cmd, _ = picker_on("darwin", False, "save", "Save the transcript as", 'a "quoted" name.txt')
     script = " ".join(cmd)
     check("the save panel is told what it is saving", "Save the transcript as" in script, script)
     check("and a quote in a file name cannot break out of the script",
           script.count('"') % 2 == 0 and 'quoted' in script, script)
     check("the settings backup still gets its own default",
-          tools.BACKUP_NAME in " ".join(tools.picker_command("save")[0]))
+          tools.BACKUP_NAME in " ".join(picker_on("darwin", False, "save")[0]))
+
+    zen, _ = picker_on("linux", True, "save", "", "notes.txt")
+    check("zenity is asked to save, under the name it was given",
+          "--save" in zen and "--filename=notes.txt" in zen, str(zen))
+    none, why = picker_on("linux", False, "save")
+    check("a machine with no picker offers none", none is None)
+    check("and says so in a sentence rather than failing",
+          why.endswith(".") and "paste" in why.lower(), why)
 
     print("library")
     entries = library.entries()

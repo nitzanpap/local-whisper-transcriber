@@ -251,7 +251,10 @@ def picker_command(kind: str, prompt: str = "", name: str = "") -> tuple[list[st
     if shutil.which("zenity"):
         cmd = ["zenity", "--file-selection", f"--title={prompt}", "--separator=\n"]
         if saving:
-            cmd += ["--save", "--confirm-overwrite", f"--filename={BACKUP_NAME}"]
+            # The name that was asked for, like the macOS branch above. This said
+            # BACKUP_NAME whatever it was saving, so somebody keeping a copy of a
+            # transcript was offered it under the name of the settings file.
+            cmd += ["--save", "--confirm-overwrite", f"--filename={clean(name) or BACKUP_NAME}"]
         else:
             cmd += ["--directory"] if folder else (["--multiple"] if many else [])
         return cmd, ""
