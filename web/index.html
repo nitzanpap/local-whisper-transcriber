@@ -493,102 +493,58 @@
 </div><!-- /view-home -->
 
 <!-- ============ settings ============ -->
+<!-- ============ settings ============ -->
+<!-- Three questions, and then a door. §5: which language, how accurate, where the
+     files go — everything else belongs behind Advanced, and most of it should be
+     inferred rather than asked. Two controls left the screen entirely rather than
+     moving: skipping silence, whose answer was always yes and which the app decides
+     by whether the model is there, and the maximum recording length, which §5a
+     names as costing attention and returning nothing. Both still exist in the
+     settings file, and the first has its real control under Expert. -->
 <div id="view-settings" hidden>
 
   <section class="step">
     <span class="label" data-i18n="set.basics">The basics</span>
 
-    <div class="grid two">
-      <div class="field">
-        <label class="label" for="set-language" data-i18n="set.spokenLanguage">Language spoken in your recordings</label>
-        <div class="line">
-          <select id="set-language">
-            <option value="auto" data-i18n="set.detect">Work it out automatically</option>
-            <option value="he">עברית · Hebrew</option>
-            <option value="en">English</option>
-            <option value="ar">العربية · Arabic</option>
-            <option value="ru">Русский · Russian</option>
-            <option value="es">Español · Spanish</option>
-            <option value="fr">Français · French</option>
-            <option value="de">Deutsch · German</option>
-          </select>
-        </div>
-        <p class="hint" data-i18n="set.languageHint">Get this wrong and the transcript is
-          nonsense — Hebrew read as English does not fail, it invents. Whatever you used
-          last time is remembered here.</p>
+    <div class="field">
+      <label class="label" for="set-language" data-i18n="set.spokenLanguage">Language spoken in your recordings</label>
+      <div class="line">
+        <select id="set-language">
+          <option value="auto" data-i18n="set.detect">Work it out automatically</option>
+          <option value="he">עברית · Hebrew</option>
+          <option value="en">English</option>
+          <option value="ar">العربية · Arabic</option>
+          <option value="ru">Русский · Russian</option>
+          <option value="es">Español · Spanish</option>
+          <option value="fr">Français · French</option>
+          <option value="de">Deutsch · German</option>
+        </select>
       </div>
-
-      <div class="field">
-        <label class="label" for="set-quality" data-i18n="set.quality">Quality</label>
-        <div class="line"><select id="set-quality"></select></div>
-        <p class="hint" data-i18n="set.qualityHint">Bigger is more accurate and slower.</p>
-      </div>
+      <p class="hint" data-i18n="set.languageHint">Get this wrong and the transcript is
+        nonsense — Hebrew read as English does not fail, it invents.</p>
     </div>
 
-    <!-- Everything above changes the result for everybody; everything in here is a
-         refinement most people set once or never. Closed by default so the basics
-         are two decisions rather than five, and open at a click rather than behind
-         a different screen. -->
-    <details class="more">
-      <summary data-i18n="set.refine">Refinements</summary>
-    <div class="field" style="margin-top:1.4rem">
-      <label class="label" for="set-vocab" data-i18n="set.vocabulary">Words it keeps getting wrong</label>
-      <textarea id="set-vocab" rows="2" spellcheck="false"
-                placeholder="Kubernetes, Grafana, onboarding, שיווק"></textarea>
-      <p class="hint" data-i18n="set.vocabularyHint">Names, jargon, product names. Telling it
-        which words to expect makes it reach for them instead of guessing. A couple of lines
-        is plenty; unrelated words make things worse.</p>
+    <div class="field">
+      <label class="label" for="set-quality" data-i18n="set.quality">Quality</label>
+      <div class="line"><select id="set-quality"></select></div>
+      <p class="hint" data-i18n="set.qualityHint">Bigger is more accurate and slower.</p>
+      <p class="hint" id="model-help"></p>
     </div>
-
-    <div class="grid two" style="margin-top:1.4rem">
-      <div class="field">
-        <label class="label" for="set-silence" data-i18n="set.silence">Skip silence</label>
-        <div class="line">
-          <select id="set-silence">
-            <option value="on" data-i18n="set.silenceOn">Yes — recommended</option>
-            <option value="off" data-i18n="set.silenceOff">No</option>
-          </select>
-        </div>
-        <p class="hint" id="silence-hint"></p>
-      </div>
-      <div class="field">
-        <label class="label" for="set-reading-size" data-i18n="set.reading">Transcript text</label>
-        <div class="line">
-          <select id="set-reading-size">
-            <option value="0.92rem" data-i18n="set.small">Small</option>
-            <option value="1.02rem" data-i18n="set.normal">Normal</option>
-            <option value="1.18rem" data-i18n="set.large">Large</option>
-            <option value="1.35rem" data-i18n="set.larger">Larger</option>
-          </select>
-        </div>
-        <div class="line" style="margin-top:.5rem">
-          <select id="set-reading-face">
-            <option value="var(--display)">Serif</option>
-            <option value="var(--sans)">Sans serif</option>
-          </select>
-        </div>
-      </div>
-    </div>
-    </details>
   </section>
 
   <section class="step">
-    <span class="label" data-i18n="set.sources">Where your recordings are</span>
-    <p class="hint" data-i18n="set.sourcesHint"></p>
-    <div class="field" style="margin-top:.8rem">
-      <label class="label sr" for="set-watch">Source folders</label>
-      <textarea id="set-watch" rows="2" spellcheck="false"
-                placeholder="/Users/you/Documents/Zoom"></textarea>
-    </div>
-    <div class="actions" style="margin-top:.8rem">
-      <button id="add-watch" data-i18n="set.addFolder">Add a folder…</button>
-      <button id="check-now" data-i18n="set.checkNow">Check for new recordings now</button>
-      <button id="queue-folder" data-i18n="set.queueFolder">Transcribe a folder now…</button>
-    </div>
-    <p class="hint" id="folder-result" hidden></p>
+    <span class="label" data-i18n="set.places">Where things go</span>
 
-    <div class="field" style="margin-top:1.4rem">
-      <label class="label" for="set-output-mode" data-i18n="set.output">Where transcripts go</label>
+    <div class="field">
+      <label class="label" for="set-rec-folder" data-i18n="set.recFolder">Recordings</label>
+      <div class="line">
+        <input type="text" id="set-rec-folder" spellcheck="false">
+        <button class="link" data-browse="folder" data-into="set-rec-folder" data-i18n="browse">Browse</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="label" for="set-output-mode" data-i18n="set.output">Transcripts</label>
       <div class="line">
         <select id="set-output-mode">
           <option value="beside" data-i18n="set.outputBeside">Next to each recording</option>
@@ -602,24 +558,21 @@
     </div>
   </section>
 
-  <section class="step">
-    <span class="label" data-i18n="set.recording">Recording</span>
-    <p class="hint" data-i18n="set.recordingHint"></p>
+  <!-- One door, not three. Everything past here is set once or never, and most of
+       it is a preference rather than a decision about the result. -->
+  <details class="more" id="set-advanced">
+    <summary data-i18n="set.advanced">Advanced</summary>
 
-    <div class="field" style="margin-top:.8rem">
-      <label class="label" for="set-rec-folder" data-i18n="set.recFolder">Where recordings go</label>
-      <div class="line">
-        <input type="text" id="set-rec-folder" spellcheck="false">
-        <button class="link" data-browse="folder" data-into="set-rec-folder" data-i18n="browse">Browse</button>
-      </div>
+    <div class="field">
+      <label class="label" for="set-vocab" data-i18n="set.vocabulary">Words it keeps getting wrong</label>
+      <textarea id="set-vocab" rows="2" spellcheck="false"
+                placeholder="Kubernetes, Grafana, onboarding, שיווק"></textarea>
+      <p class="hint" data-i18n="set.vocabularyHint">Names, jargon, product names. Telling it
+        which words to expect makes it reach for them instead of guessing. A couple of lines
+        is plenty; unrelated words make things worse.</p>
     </div>
 
-      <!-- What you are called, when it stops, how long it may run: chosen once and
-           then never thought about again. The folder stays out because it is the one
-           anybody checks before a meeting. -->
-      <details class="more">
-        <summary data-i18n="set.refine">Refinements</summary>
-    <div class="grid even" style="margin-top:1.4rem">
+    <div class="grid even" style="margin-top:1.6rem">
       <div class="field">
         <label class="label" for="set-rec-label-voice" data-i18n="set.recLabelVoice">What to call you in the transcript</label>
         <div class="line"><input type="text" id="set-rec-label-voice" spellcheck="false" placeholder="Me"></div>
@@ -632,76 +585,97 @@
     <p class="hint" data-i18n="set.recLabelsHint">Used only when both sources are recorded, because only then is it
       known who said which line.</p>
 
-    <div class="grid two" style="margin-top:1.4rem">
-      <div class="field">
-        <label class="label" for="set-rec-auto" data-i18n="set.recAuto">When a recording stops</label>
-        <div class="line">
-          <select id="set-rec-auto">
-            <option value="on" data-i18n="set.recAutoOn">Transcribe it straight away</option>
-            <option value="off" data-i18n="set.recAutoOff">Just keep the file</option>
-          </select>
-        </div>
-      </div>
-      <div class="field">
-        <label class="label" for="set-rec-minutes" data-i18n="set.recMax">Stop by itself after</label>
-        <div class="line"><input type="text" id="set-rec-minutes" spellcheck="false" inputmode="numeric"></div>
-        <p class="hint" data-i18n="set.recMaxHint">Minutes. A recording nobody stopped would fill the disk.</p>
+    <div class="field" style="margin-top:1.6rem">
+      <label class="label" for="set-rec-auto" data-i18n="set.recAuto">When a recording stops</label>
+      <div class="line">
+        <select id="set-rec-auto">
+          <option value="on" data-i18n="set.recAutoOn">Transcribe it straight away</option>
+          <option value="off" data-i18n="set.recAutoOff">Just keep the file</option>
+        </select>
       </div>
     </div>
-      </details>
-  </section>
 
-  <details class="tight">
-    <summary data-i18n="set.expert">Expert</summary>
-    <div>
-      <div class="field">
-        <label class="label" for="set-model" data-i18n="set.modelFile">Model file</label>
-        <div class="line">
-          <input type="text" id="set-model" spellcheck="false">
-          <button class="link" data-browse="file" data-into="set-model" data-i18n="browse">Browse</button>
+    <div class="field" style="margin-top:1.6rem">
+      <label class="label" for="set-reading-size" data-i18n="set.reading">Transcript text</label>
+      <div class="line">
+        <select id="set-reading-size">
+          <option value="0.92rem" data-i18n="set.small">Small</option>
+          <option value="1.02rem" data-i18n="set.normal">Normal</option>
+          <option value="1.18rem" data-i18n="set.large">Large</option>
+          <option value="1.35rem" data-i18n="set.larger">Larger</option>
+        </select>
+      </div>
+      <div class="line" style="margin-top:.5rem">
+        <select id="set-reading-face">
+          <option value="var(--display)">Serif</option>
+          <option value="var(--sans)">Sans serif</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:1.6rem">
+      <label class="label" for="set-watch" data-i18n="set.sources">Folders to watch for new recordings</label>
+      <textarea id="set-watch" rows="2" spellcheck="false"
+                placeholder="/Users/you/Documents/Zoom"></textarea>
+      <p class="hint" data-i18n="set.sourcesHint"></p>
+      <div class="actions" style="margin-top:.8rem">
+        <button id="add-watch" data-i18n="set.addFolder">Add a folder…</button>
+        <button id="check-now" data-i18n="set.checkNow">Check for new recordings now</button>
+        <button id="queue-folder" data-i18n="set.queueFolder">Transcribe a folder now…</button>
+      </div>
+      <p class="hint" id="folder-result" hidden></p>
+    </div>
+
+    <details class="tight" style="margin-top:1.6rem">
+      <summary data-i18n="set.expert">Expert</summary>
+      <div>
+        <div class="field">
+          <label class="label" for="set-model" data-i18n="set.modelFile">Model file</label>
+          <div class="line">
+            <input type="text" id="set-model" spellcheck="false">
+            <button class="link" data-browse="file" data-into="set-model" data-i18n="browse">Browse</button>
+          </div>
         </div>
-        <p class="hint" id="model-help"></p>
-      </div>
-      <div class="field">
-        <label class="label" for="set-vad" data-i18n="set.silenceModel">Silence-detection model</label>
-        <div class="line">
-          <input type="text" id="set-vad" spellcheck="false" placeholder="…/ggml-silero-v5.1.2.bin">
-          <button class="link" data-browse="file" data-into="set-vad" data-i18n="browse">Browse</button>
+        <div class="field">
+          <label class="label" for="set-vad" data-i18n="set.silenceModel">Silence-detection model</label>
+          <div class="line">
+            <input type="text" id="set-vad" spellcheck="false" placeholder="…/ggml-silero-v5.1.2.bin">
+            <button class="link" data-browse="file" data-into="set-vad" data-i18n="browse">Browse</button>
+          </div>
+          <p class="hint" id="vad-help"></p>
         </div>
-        <p class="hint" id="vad-help"></p>
+        <div class="field">
+          <label class="label" for="set-extra" data-i18n="set.extraArgs">Extra whisper-cli arguments</label>
+          <div class="line"><input type="text" id="set-extra" spellcheck="false"></div>
+        </div>
+        <div class="field">
+          <label class="label" for="set-ffmpeg">ffmpeg</label>
+          <div class="line"><input type="text" id="set-ffmpeg" spellcheck="false"></div>
+        </div>
+        <div class="field">
+          <label class="label" for="set-ffprobe">ffprobe</label>
+          <div class="line"><input type="text" id="set-ffprobe" spellcheck="false"></div>
+        </div>
+        <div class="field">
+          <label class="label" for="set-whisper">whisper-cli</label>
+          <div class="line"><input type="text" id="set-whisper" spellcheck="false"></div>
+        </div>
+        <p class="hint" data-i18n="set.toolsHint">Leave the three above empty and it finds them
+          by itself, which is what normally happens.</p>
       </div>
-      <div class="field">
-        <label class="label" for="set-extra" data-i18n="set.extraArgs">Extra whisper-cli arguments</label>
-        <div class="line"><input type="text" id="set-extra" spellcheck="false"></div>
+    </details>
+
+    <div class="field" style="margin-top:1.6rem">
+      <span class="label" data-i18n="set.backup">Backup</span>
+      <p class="hint" data-i18n="set.backupHint">Everything on this screen, as a file you can
+        keep or move to another computer.</p>
+      <div class="actions">
+        <button id="export-settings" data-i18n="set.export">Save settings to a file</button>
+        <button id="import-settings" data-i18n="set.import">Load settings from a file</button>
       </div>
-      <div class="field">
-        <label class="label" for="set-ffmpeg">ffmpeg</label>
-        <div class="line"><input type="text" id="set-ffmpeg" spellcheck="false"></div>
-      </div>
-      <div class="field">
-        <label class="label" for="set-ffprobe">ffprobe</label>
-        <div class="line"><input type="text" id="set-ffprobe" spellcheck="false"></div>
-      </div>
-      <div class="field">
-        <label class="label" for="set-whisper">whisper-cli</label>
-        <div class="line"><input type="text" id="set-whisper" spellcheck="false"></div>
-      </div>
-      <p class="hint" data-i18n="set.toolsHint">Leave the three above empty and it finds them
-        by itself, which is what normally happens.</p>
+      <p class="hint" id="backup-result" hidden aria-live="polite"></p>
     </div>
   </details>
-
-  <section class="step">
-    <span class="label" data-i18n="set.backup">Backup</span>
-    <p class="hint" data-i18n="set.backupHint">Everything on this screen, as a file you can
-      keep or move to another computer. Your transcripts are not included — they are already
-      files, sitting next to your recordings.</p>
-    <div class="actions">
-      <button id="export-settings" data-i18n="set.export">Save settings to a file</button>
-      <button id="import-settings" data-i18n="set.import">Load settings from a file</button>
-    </div>
-    <p class="hint" id="backup-result" hidden aria-live="polite"></p>
-  </section>
 
   <div class="actions">
     <button class="solid" id="save-settings" data-i18n="set.save">Save settings</button>

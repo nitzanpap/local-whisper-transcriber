@@ -1,7 +1,16 @@
 "use strict";
-// The Settings view: what every new transcription inherits, in plain words.
-// Paths and flags live under Expert; the top of the screen is the four things
-// that actually change the result.
+// The Settings view. Three questions at the top — which language, how accurate,
+// where the files go — and one door for everything else.
+//
+// Two controls were taken off the screen rather than moved, and both still work
+// from the settings file. Skipping silence, because its answer was always yes: the
+// app uses the silence model whenever there is one, and clearing that path under
+// Expert is the real off switch. And the maximum recording length, which §5a names
+// as a question only somebody debugging would ask.
+//
+// Removing a field means removing it from SETTING_FIELDS too. A key that is not
+// sent is left exactly as it was, because the server merges what it is given —
+// whereas a field that is gone but still listed would send a blank and wipe it.
 
 const SETTING_FIELDS = {
   "set-model": "default_model_path",
@@ -64,14 +73,8 @@ async function openSettings() {
     ? t("set.modelFound")
     : t("set.modelMissing");
 
-  $("set-silence").value = conf.vad_model_path ? "on" : "off";
-  $("silence-hint").textContent = conf.vad_model_path
-    ? t("set.silenceReady")
-    : t("set.silenceMissing");
-  $("vad-help").textContent = conf.vad_model_path ? "" : VAD_DOWNLOAD;
-
+  $("vad-help").textContent = conf.vad_model_path ? t("set.silenceReady") : VAD_DOWNLOAD;
   $("set-rec-auto").value = conf.record_auto_transcribe === true ? "on" : "off";
-  $("set-rec-minutes").value = conf.record_max_minutes || "";
 
   $("set-reading-size").value = display("reading_size", "1.02rem");
   $("set-reading-face").value = display("reading_face", "var(--display)");
@@ -84,19 +87,6 @@ function escAttr(text) {
 // Choosing a quality is choosing a model file; the Expert field follows along.
 $("set-quality").addEventListener("change", () => {
   $("set-model").value = $("set-quality").value;
-});
-
-// Turning silence-skipping off must not lose the path, so it is remembered here
-// and put back when switched on again.
-let rememberedVad = "";
-$("set-silence").addEventListener("change", () => {
-  if ($("set-silence").value === "off") {
-    rememberedVad = $("set-vad").value || rememberedVad;
-    $("set-vad").value = "";
-  } else if (!$("set-vad").value) {
-    $("set-vad").value = rememberedVad;
-    if (!rememberedVad) formError({ message: t("set.silenceNeedsModel"), details: VAD_DOWNLOAD });
-  }
 });
 
 // --- reading preferences live in the browser, applied at once ---------------
@@ -126,9 +116,6 @@ $("save-settings").onclick = async () => {
   // "Next to each recording" means no folder at all, not the last one typed.
   if ($("set-output-mode").value === "beside") body.output_folder = "";
   body.record_auto_transcribe = $("set-rec-auto").value === "on";
-  // A number the server can act on, or left out entirely so the default stands.
-  const minutes = parseInt($("set-rec-minutes").value, 10);
-  if (Number.isFinite(minutes) && minutes > 0) body.record_max_minutes = minutes;
   try {
     await api("/settings", body, "PUT");
   } catch (err) {

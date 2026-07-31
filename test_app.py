@@ -345,6 +345,21 @@ async def main() -> None:
     check("resumed srt keeps absolute times", "00:00:04,000 --> 00:01:06,500" in srt)
     check("no longer offered", not [r for r in jobs.resumable() if r["id"] == job["id"]])
 
+    # Settings taken off the screen must not be settings taken away. The page sends
+    # only the keys it still has fields for, and the server merges what it is given,
+    # so a value with no control left keeps standing. A field removed from the page
+    # but left in the save list would send a blank and wipe it — which is the one
+    # way this change could have destroyed something.
+    print("what leaves the screen does not leave the settings")
+    config.save_settings({"record_max_minutes": 45, "vad_model_path": "/models/silero.bin",
+                          "default_language": "he"})
+    config.save_settings({"default_language": "en"})       # what the page now sends
+    kept = config.settings()
+    check("a setting with no control left is untouched", kept["record_max_minutes"] == 45, str(kept))
+    check("and so is the one whose switch was removed",
+          kept["vad_model_path"] == "/models/silero.bin", str(kept))
+    check("while what was sent did change", kept["default_language"] == "en")
+
     print("taking the transcript away")
     # The save panel is shared with the settings backup now, so it has to be told
     # what it is saving. Names come from files somebody else chose the name of, and
