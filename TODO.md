@@ -84,9 +84,10 @@ evidence rather than a hunch.
 
 - [ ] **`record.py` is past the size this project keeps to.** Capture, mixing, orphans, permissions
       and device handling could be separate.
-- [ ] **A level check before recording would beat any device guess.** Preferring the system default
-      input is what Handy does and is still only a guess; showing the meter before the button is
-      pressed makes a wrong device obvious instead of inferred.
+- [x] **A level check before recording would beat any device guess.** Done as *Check it works*:
+      six seconds, a tone of the app's own, and a verdict per side. Offered on the first screen
+      until it passes. What is still missing is the cheaper half — a meter running before the
+      button is pressed, so a wrong device is obvious without asking for anything.
 - [ ] **Empty `whisper_cli_path` and `ffmpeg_path` resolve through PATH** and work, but read like
       misconfiguration in the state dump.
 
