@@ -571,6 +571,22 @@ async def main() -> None:
     check("and not the screen list it used to be in", "Screen" not in message, message)
     check("and is not blamed on two capture sessions", "Aggregate" not in message, message)
 
+    # Every other check that starts a recording names two real device indexes, so the
+    # branch that reaches for the system-audio helper had never once been run. A call
+    # left with an argument the function no longer takes sat in it through a green
+    # suite, a build and an install, until the app answered a click with Internal
+    # Server Error. Here the helper cannot be built — the fake world has no source —
+    # so the honest refusal is what this asks for, and anything raised on the way
+    # there fails instead of passing.
+    try:
+        reached = (await record.start("", record.SYSTEM_AUDIO)) and "no error at all"
+    except config.Failed as exc:
+        reached = exc.code
+    except Exception as exc:  # noqa: BLE001 — a TypeError here is the bug being caught
+        reached = f"{type(exc).__name__}: {exc}"
+    check("asking for the computer's audio gets through to the helper",
+          reached == "dependency_not_found", reached)
+
     async def with_helper(granted: bool) -> dict:
         """devices() as it looks on a machine where the helper exists."""
         async def fake() -> dict:
