@@ -288,6 +288,26 @@ $("job-again").onclick = () => { leaveFlow(); render(lastState); };
 const STAGE_KEYS = ["queued", "starting", "converting", "transcribing", "saving",
                     "completed", "cancelling", "cancelled", "failed"];
 
+// What it is doing, in words somebody would use. "Transcribing track 2 of 2" is a
+// description of the machinery; listening to one side of a conversation and then
+// the other is what is actually happening.
+function whatItIsDoing(job) {
+  const stage = STAGE_KEYS.includes(job.stage) ? t("job." + job.stage) : job.stage;
+  if (job.stage !== "transcribing") return stage;
+  if (!job.track) return t("job.listening");
+  return t(job.track.index === 0 ? "job.listeningYours" : "job.listeningTheirs");
+}
+
+// Roughly, and never to the second: an estimate that ticks down one second at a
+// time invites being checked against a watch, and it will lose.
+function inWords(seconds) {
+  if (seconds < 45) return t("job.almost");
+  const mins = Math.round(seconds / 60);
+  if (mins < 60) return t("job.minutes", { n: mins });
+  const hours = seconds / 3600;
+  return t("job.hours", { n: hours < 2 ? hours.toFixed(1) : Math.round(hours) });
+}
+
 function renderJob(job) {
   const live = job.status === "running" || job.status === "cancelling";
   const pct = Math.round(job.percent);
@@ -295,21 +315,31 @@ function renderJob(job) {
   $("job-meta").innerHTML = [job.source.split("/").pop(), clock(job.duration), job.language,
     job.model.split("/").pop()].map(x => `<span>${x}</span>`).join("<i>·</i>");
   $("job-count").innerHTML = `${pct}<sup>%</sup>`;
-  const stageText = STAGE_KEYS.includes(job.stage) ? t("job." + job.stage) : job.stage;
-  // A recording of two people is two whisper runs. Saying which one is running
-  // stops the bar looking as though it went backwards.
-  $("job-stage").textContent = job.track
-    ? t("job.track", { stage: stageText, label: job.track.label,
-                       n: job.track.index + 1, of: job.track.count })
-    : stageText;
+  $("job-stage").textContent = whatItIsDoing(job);
   $("job-progress").value = pct;
   $("job-tape").firstElementChild.style.width = pct + "%";
   $("job-tape").classList.toggle("idle", live && pct === 0);
   $("job-tape").classList.toggle("done", job.status === "completed");
 
   const secs = (live ? Date.now() / 1000 : job.ended_at || 0) - job.started_at;
-  $("job-elapsed").textContent = clock(secs);
-  $("job-clock-label").textContent = live ? t("job.elapsed") : t("job.total");
+  $("job-elapsed").textContent = t("job.spent", { at: clock(secs) });
+  // How much longer, which is the only number anybody is actually waiting on. Said
+  // in words rather than to the second, because a countdown that jitters reads as a
+  // promise being broken every time it moves.
+  const left = live ? job.remaining : null;
+  $("job-left").textContent = left == null ? clock(secs) : inWords(left);
+  $("job-left-label").textContent = left == null
+    ? (live ? t("job.elapsed") : t("job.total")) : t("job.left");
+  show($("job-elapsed"), left != null);
+  show($("job-leave"), live);
+
+  // Lines already transcribed, arriving as they arrive. The wait has a heartbeat.
+  const heard = (live && job.heard) || [];
+  show($("job-heard"), heard.length > 0);
+  if (heard.length) {
+    const esc = x => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    $("job-heard").innerHTML = heard.map(line => `<p dir="auto">${esc(line)}</p>`).join("");
+  }
 
   show($("job-cancel"), live);
   show($("job-again"), !live);

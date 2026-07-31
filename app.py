@@ -142,7 +142,14 @@ def safe_id(job_id: str) -> str:
 def state() -> dict:
     public = None
     if jobs.JOB is not None:
-        public = {k: v for k, v in jobs.JOB.items() if k != "log"} | {"log": list(jobs.JOB["log"])}
+        rows = jobs.history()
+        public = {k: v for k, v in jobs.JOB.items() if k != "log"} | {
+            "log": list(jobs.JOB["log"]),
+            # The two things the wait was missing: how much longer, and some sign
+            # that anything is happening at all.
+            "remaining": jobs.estimate_remaining(jobs.JOB, rows),
+            "heard": jobs.heard_so_far(jobs.JOB),
+        }
     conf = settings()
     saved = conf.get("default_model_path", "")
     return {

@@ -270,6 +270,71 @@ def append_history(job: dict) -> None:
         pass
 
 
+# The last few lines already transcribed, shown while the rest is still coming. Not
+# the transcript — a heartbeat. Three is enough to see it moving and few enough that
+# nobody starts reading it instead of waiting.
+HEARD_LINES = 3
+
+
+def heard_so_far(job: dict) -> list[str]:
+    """What has been transcribed already, for a run that is still going.
+
+    whisper-cli prints each finished segment to stdout as it goes and that is
+    appended straight to the segments file, so this costs one small read and is
+    always as current as the run itself.
+    """
+    if job.get("status") != "running" or job.get("stage") != "transcribing":
+        return []
+    tracks = job.get("tracks") or list(ONE_TRACK)
+    index = (job.get("track") or {}).get("index", 0)
+    _, segments_file = track_files(WORK_DIR / job["id"], index, len(tracks))
+    return [text for _, _, text in parse_segments(segments_file)][-HEARD_LINES:]
+
+
+# Below this the run has not done enough for its own pace to mean anything, and the
+# estimate comes from what this machine has managed before instead.
+ENOUGH_PROGRESS = 8.0
+
+
+def past_speed(model: str, rows: list[dict]) -> float | None:
+    """How many seconds of audio this machine got through per second, before now.
+
+    Measured rather than assumed, and per model, because the difference between the
+    large model and a small one is the whole question. Nothing is returned when
+    nothing comparable has been run: an estimate with no evidence behind it is worse
+    than no estimate, because it will be believed.
+    """
+    seen = [row["duration"] / row["work_seconds"] for row in rows
+            if row.get("status") == "completed" and row.get("model") == model
+            and row.get("duration") and row.get("work_seconds")]
+    if not seen:
+        return None
+    seen.sort()
+    # The middle one, so a single unusual run cannot skew it — and the lower of the
+    # two middles when there is an even number, which makes the estimate slightly
+    # pessimistic on purpose. Finishing early is a pleasant surprise; finishing late
+    # is a promise broken, and this number is a promise.
+    return seen[(len(seen) - 1) // 2]
+
+
+def estimate_remaining(job: dict, rows: list[dict], now: float | None = None) -> float | None:
+    """Seconds left, or None when there is no honest way to say.
+
+    Once a run is properly under way its own pace is the best evidence there is, so
+    that is what is used. Before that, what the same model managed on this machine
+    before. And if neither, nothing at all — the wait says how long it has taken and
+    stops there, which is honest, where a made-up number is not.
+    """
+    elapsed = (now or time.time()) - (job.get("started_at") or 0)
+    percent = job.get("percent") or 0.0
+    if percent >= ENOUGH_PROGRESS and elapsed > 0:
+        return max(0.0, elapsed * (100.0 - percent) / percent)
+    speed = past_speed(job.get("model", ""), rows)
+    if not speed or not job.get("duration"):
+        return None
+    return max(0.0, job["duration"] / speed - elapsed)
+
+
 def history(limit: int = 30) -> list[dict]:
     try:
         lines = HISTORY.read_text(encoding="utf-8").splitlines()[-limit:]

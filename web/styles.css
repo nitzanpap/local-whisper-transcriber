@@ -219,6 +219,23 @@ button.danger:hover { color: var(--accent); border-color: var(--accent); }
 .stage { font: 400 1.05rem/1.4 var(--display); margin-top: .5rem; }
 .clock { text-align: right; color: var(--ink-soft); font: 400 .8rem/1.7 var(--mono); }
 .clock b { display: block; font: 400 1.5rem/1.2 var(--display); color: var(--ink); font-variant-numeric: tabular-nums; }
+/* Time already spent is not what anybody is waiting to know, so it sits under the
+   time still to go rather than in its place. */
+.clock .spent { display: block; font-size: .72rem; opacity: .55; }
+
+/* What has been transcribed so far. Set in the reading face because it is the only
+   thing on this screen that is the actual work rather than a report about it. The
+   newest line is the one being written, so it is the one with the ink. */
+.heard {
+  margin-top: 1.6rem; border-top: 1px solid var(--rule-soft); padding-top: 1rem;
+  display: grid; gap: .5rem;
+}
+.heard p {
+  font: 400 1.02rem/1.55 var(--display); color: var(--ink-soft);
+  unicode-bidi: plaintext; text-align: start;
+  animation: rise .5s cubic-bezier(.2,.7,.2,1) backwards;
+}
+.heard p:last-child { color: var(--ink); }
 
 /* tape-counter rule */
 .tape { position: relative; height: 1.6rem; margin: 1.4rem 0 .4rem; overflow: hidden; }

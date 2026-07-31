@@ -291,11 +291,27 @@
       <p class="count" id="job-count" aria-hidden="true">0<sup>%</sup></p>
       <p class="stage" id="job-stage" role="status"></p>
     </div>
-    <p class="clock"><b id="job-elapsed">0:00</b><span id="job-clock-label">elapsed</span></p>
+    <!-- How long is left, where the number people actually want goes: bigger than
+         the time already spent, which nobody is waiting on. Absent entirely rather
+         than guessed, when there is nothing to base it on. -->
+    <p class="clock">
+      <b id="job-left">—</b><span id="job-left-label"></span>
+      <span class="spent" id="job-elapsed">0:00</span>
+    </p>
   </div>
 
   <div class="tape" id="job-tape"><i></i></div>
   <progress class="sr" id="job-progress" max="100" value="0" aria-label="Transcription progress"></progress>
+
+  <!-- Permission to go away. The commonest thing anybody wants to know during a
+       forty-minute wait is whether they are required to sit through it. -->
+  <p class="hint" id="job-leave" hidden data-i18n="job.leave">You can leave this — it keeps
+    going whether or not you are watching, and the transcript will be in your library when
+    it is done.</p>
+
+  <!-- The heartbeat: what has been transcribed so far, arriving as it arrives. Not
+       the transcript, which comes at the end — just enough to see it is alive. -->
+  <div class="heard" id="job-heard" hidden aria-live="polite"></div>
 
   <div class="note" id="job-error" hidden tabindex="-1" role="alert">
     <h2 id="job-error-msg"></h2>

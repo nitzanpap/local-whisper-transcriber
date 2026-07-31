@@ -172,6 +172,31 @@ async def main() -> None:
     check("the loop kept running while the write waited", turns > 5, f"{turns} turns")
     check("and the write still happened", (out / "stalled.txt").exists())
 
+    print("the wait, and what it is honest about")
+    # An estimate with no evidence behind it is worse than none, because it will be
+    # believed. So: nothing at all until either this run has done enough to speak
+    # for itself, or the same model has been through this machine before.
+    fresh = {"model": model, "duration": 600.0, "percent": 0.0, "started_at": 1000.0}
+    check("nothing is claimed with nothing to claim it from",
+          jobs.estimate_remaining(fresh, [], now=1010.0) is None)
+    ran_before = [{"status": "completed", "model": model, "duration": 600.0, "work_seconds": 60.0},
+                  {"status": "completed", "model": model, "duration": 300.0, "work_seconds": 20.0},
+                  {"status": "completed", "model": "other", "duration": 60.0, "work_seconds": 600.0}]
+    check("a model this machine has run before is measured, not guessed",
+          jobs.past_speed(model, ran_before) == 10.0, str(jobs.past_speed(model, ran_before)))
+    check("and another model's runs are not borrowed", jobs.past_speed("never-run", ran_before) is None)
+    # 600s of audio at 10x is 60s of work, 10 of which have gone.
+    check("so ten minutes of audio is about fifty seconds more",
+          jobs.estimate_remaining(fresh, ran_before, now=1010.0) == 50.0,
+          str(jobs.estimate_remaining(fresh, ran_before, now=1010.0)))
+    # Once it is properly under way its own pace is better evidence than any history.
+    underway = {**fresh, "percent": 25.0}
+    check("a run far enough along speaks for itself",
+          jobs.estimate_remaining(underway, ran_before, now=1020.0) == 60.0,
+          str(jobs.estimate_remaining(underway, ran_before, now=1020.0)))
+    check("and never counts backwards",
+          jobs.estimate_remaining({**fresh, "percent": 100.0}, [], now=2000.0) == 0.0)
+
     print("collision detection")
     body = app.StartIn(source=src, model=model, out_dir=str(out), basename="meeting-transcript")
     check("existing files reported", len(app.collisions(body)["existing"]) == 2)
