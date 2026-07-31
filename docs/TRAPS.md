@@ -126,16 +126,27 @@ backend gives that dialog five minutes, so the caller now waits five and a half.
 sign of it. When something "does nothing", check whether it did everything and
 failed to say so — `/api/state` showed the finished job immediately.
 
-## 8. Build only what is used
+## 8. Build only what is used, and prove the copy took
 
 `tauri build` makes a `.app` and a `.dmg`. `rebuild.sh` installs the `.app` and has
-never once touched the disk image — but a DMG run that leaves its scratch volume
-mounted makes *every later build fail*, at a step nothing depends on, with an error
-that points at bundling rather than at a stray `/Volumes/dmg.XXXXXX`. It builds
-`--bundles app` now. `tauri build` still makes both for a real release.
+never once touched the disk image — but building the DMG mounts a scratch volume
+and opens the familiar drag-me-to-Applications Finder window, which looked enough
+like an installer that the owner dragged the app across by hand after **every**
+rebuild for a whole session. Nothing asked them to; the copy had already happened.
 
-If a build fails in `bundle_dmg.sh`, look for a mounted volume first:
+Worse, a DMG run that leaves its volume mounted makes *every later build fail*, at
+a step nothing depends on, with an error pointing at bundling rather than at a
+stray `/Volumes/dmg.XXXXXX`. It builds `--bundles app` now — no window, no volume,
+half the bundling. `tauri build` still makes both for a real release.
+
+If a build ever fails in `bundle_dmg.sh`, look for a mounted volume first:
 `hdiutil info | grep image-path`, then `hdiutil detach /Volumes/dmg.XXXXXX -force`.
+
+**And the copy into /Applications is now checked against the working tree**, not
+only for a valid signature. Everything before it can pass while `/Applications`
+still holds an older app — it is the one step whose failure looks exactly like
+success, and this session spent time testing an app that was not the one just
+built.
 
 ## 9. Verify the artefact you just made
 
@@ -145,7 +156,8 @@ had not been written yet. The number was reported before it was checked.
 
 **Confirm the artefact's identity — its name, its timestamp — before drawing a
 conclusion from it.** Waiting on a fixed `sleep` and then taking "the newest file"
-is not a check.
+is not a check. This one was written, then deleted by a careless slice edit while
+adding the section above it, then restored — which is itself entry 11's last bullet.
 
 ## 10. A test that dies early hides everything behind it
 

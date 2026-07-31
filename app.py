@@ -326,6 +326,27 @@ def glance() -> str:
     return record.glance()
 
 
+def free_basename(out_dir: Path, basename: str) -> str:
+    """A name nothing is written under yet: the same one, or -2, -3, …
+
+    The window asks before overwriting a transcript. The menu bar has nowhere to
+    ask, and refusing is the wrong answer to a click — choosing a file that had
+    already been transcribed opened the window and did nothing at all, which is
+    indistinguishable from a broken menu item.
+
+    Renaming rather than overwriting, which is what recordings already do: a
+    transcript can be corrected by hand, and regenerating one is not a reason to
+    throw that away.
+    """
+    taken = lambda name: any((out_dir / f"{name}.{ext}").exists() for ext in ("txt", "srt"))
+    if not taken(basename):
+        return basename
+    for n in range(2, 500):
+        if not taken(f"{basename}-{n}"):
+            return f"{basename}-{n}"
+    return basename
+
+
 @app.post("/api/transcribe/pick")
 async def transcribe_pick() -> dict:
     """Choose a file and start transcribing it, with nothing else to answer.
@@ -349,7 +370,8 @@ async def transcribe_pick() -> dict:
     started = await start(StartIn(
         source=found["path"], model=model,
         language=conf.get("default_language") or "auto",
-        out_dir=found["out_dir"], basename=found["basename"],
+        out_dir=found["out_dir"],
+        basename=free_basename(Path(found["out_dir"]), found["basename"]),
         extra_args=conf.get("default_extra_args") or DEFAULT_EXTRA))
     return {"started": True, **started}
 

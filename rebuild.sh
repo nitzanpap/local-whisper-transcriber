@@ -108,6 +108,15 @@ codesign --verify --deep --strict "$INSTALLED" 2>/dev/null \
     && ok "installed, and still verifies" \
     || bad "the installed copy does not verify"
 
+# The same check the built bundle got, asked again of the copy that will actually
+# run. Everything up to here can pass while /Applications holds an older app: the
+# copy is the one step whose failure looks exactly like success.
+for f in record.py app.py web/index.html web/app.js; do
+    diff -q "$f" "$INSTALLED/Contents/Resources/backend/$f" >/dev/null 2>&1 \
+        || bad "$INSTALLED is not this working tree — the copy did not take"
+done
+ok "the installed app is this working tree"
+
 # And then there is only one of it. Spotlight indexes the build directory too, so
 # leaving the bundle there put a second "Local Whisper Transcriber" in every search
 # — a different binary, with its own identity as far as macOS permissions are

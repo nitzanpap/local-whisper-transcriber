@@ -1240,6 +1240,19 @@ async def main() -> None:
     check("a device that cannot be seen keeps its name", record.name_for("uid-1", []) == "uid-1")
     check("and nothing chosen names nothing", record.name_for("", []) == "")
 
+    # Picking a file that had already been transcribed refused, so the menu bar
+    # opened the window and did nothing — which reads as a broken menu item. The
+    # window can ask about overwriting; the menu bar has nowhere to.
+    here = TMP / "already"
+    here.mkdir(exist_ok=True)
+    check("a name nothing uses is left alone", app.free_basename(here, "talk") == "talk")
+    (here / "talk.txt").write_text("a transcript somebody may have corrected")
+    check("and one that is taken steps aside", app.free_basename(here, "talk") == "talk-2")
+    (here / "talk-2.srt").write_text("")
+    check("as many times as it needs to", app.free_basename(here, "talk") == "talk-3")
+    check("nothing already written is overwritten",
+          (here / "talk.txt").read_text().startswith("a transcript"))
+
     print("pausing takes the time out rather than filling it")
     # A pause is not an interruption and must not be treated as one. An
     # interruption is kept as the silence it was, because the meeting carried on in
