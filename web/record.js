@@ -101,9 +101,15 @@ $("rec-refresh").onclick = (e) => loadDevices(e.currentTarget);
 
 function recError(detail) {
   show($("rec-error"), !!detail);
+  show($("rec-allow"), !!(detail && detail.pane));
   if (!detail) return;
   $("rec-error-msg").textContent = detail.message;
   $("rec-error-code").textContent = (detail.code || "").replace(/_/g, " ");
+  // The pane, opened rather than described. Somebody who has just been told a
+  // recording captured nothing should not then have to go and find the switch.
+  if (detail.pane) {
+    $("rec-allow").onclick = () => api("/privacy/" + detail.pane, {}).catch(() => {});
+  }
   if (detail.details) {
     $("rec-log").textContent = detail.details;
     show($("rec-log-box"), true);

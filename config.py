@@ -70,9 +70,12 @@ def source_folders() -> list[str]:
 
 
 class Failed(Exception):
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, pane: str = ""):
         super().__init__(message)
-        self.code, self.message = code, message
+        # `pane` names a macOS privacy pane to offer to open. Naming the pane in a
+        # sentence is not the same as getting somebody to it, and the difference is
+        # a person hunting through System Settings while a meeting starts.
+        self.code, self.message, self.pane = code, message, pane
 
 
 class Cancelled(Exception):

@@ -574,6 +574,24 @@ async def main() -> None:
     check("while a side nobody asked for is not mentioned at all",
           record.silent_sides({**both, "computer": ""}, ["voice"], {"voice": -12.0}) == [])
 
+    # The heart of it: a recording that is not recording has to say so at the click,
+    # not forty seconds later. This used to add the sides together and stop as soon
+    # as the total moved, so a working microphone answered for a computer channel
+    # producing nothing at all.
+    waiting = {**rec, "voice": "1", "computer": record.SYSTEM_AUDIO}
+    (TMP / "voice.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
+    (TMP / "computer.pcm").write_bytes(b"")
+    missing = await record._until_audio_arrives({**waiting, "status": "recording"}, timeout=0.3)
+    check("one side arriving does not answer for the other", missing == ["computer"], str(missing))
+    (TMP / "computer.pcm").write_bytes(b"x" * (record.EMPTY_WAV + 1))
+    check("and nothing is reported once both are arriving",
+          await record._until_audio_arrives({**waiting, "status": "recording"}, timeout=0.3) == [])
+    refusal = record._nothing_arriving(["computer"])
+    check("the refusal names a pane to open", refusal.pane == "audio", refusal.pane)
+    check("and says nothing was kept", "Nothing was kept" in refusal.message, refusal.message)
+    (TMP / "voice.wav").unlink()
+    (TMP / "computer.pcm").unlink()
+
     print("the computer's audio without a driver")
     code, message = record._why_nothing_arrived({**rec, "helper_code": record.HELPER_DENIED})
     check("a refused permission is named, not guessed at",

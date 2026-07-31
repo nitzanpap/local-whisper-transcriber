@@ -509,9 +509,23 @@ async def start(voice: str, computer: str) -> dict:
     RECORDING = rec
     _checkpoint(rec)
     TASK = asyncio.create_task(_run(rec))
-    await _until_audio_arrives(rec)
+    missing = await _until_audio_arrives(rec)
     if rec["status"] == "failed":
         raise Failed(rec["error"]["code"], rec["error"]["message"])
+    if missing:
+        # Thrown away rather than kept. A few seconds of half a recording is worth
+        # nothing, and keeping it would leave an unfinished transcription behind to
+        # be tidied up — which is how this was found out about in the first place.
+        # A short grace: this capture is producing nothing, so there is no file
+        # being finished off and nothing to lose by insisting quickly.
+        ask_to_stop(rec, keep=False, grace=1.0)
+        # Given a moment to actually be over, so that fixing the permission and
+        # pressing record again is not answered with "already recording".
+        try:
+            await asyncio.wait_for(asyncio.shield(TASK), timeout=2.0)
+        except (TimeoutError, asyncio.CancelledError):
+            pass
+        raise _nothing_arriving(missing)
     # Remember the choice by name, so the next recording is one decision lighter and
     # still points at the same device after something is plugged in or unplugged.
     try:
@@ -525,19 +539,64 @@ async def start(voice: str, computer: str) -> dict:
     return public()
 
 
-async def _until_audio_arrives(rec: dict, timeout: float = 3.0) -> None:
-    """Wait for the file to start growing, so a refusal is reported by the click.
+def _side_bytes(rec: dict, side: str) -> int:
+    """How much has arrived on one side, whichever file that side is writing to."""
+    keys = ("voice_wav",) if side == "voice" else ("computer_wav", "sys_pcm")
+    total = 0
+    for key in keys:
+        try:
+            total += rec[key].stat().st_size
+        except (OSError, AttributeError, KeyError):
+            pass
+    return total
 
-    Without this, a denied microphone permission looks like a recording that
-    started fine and turns out, minutes later, to be nothing.
+
+def _asked_for(rec: dict) -> list[str]:
+    return [side for side, chosen in (("voice", rec.get("voice")),
+                                      ("computer", rec.get("computer"))) if chosen]
+
+
+async def _until_audio_arrives(rec: dict, timeout: float = 6.0) -> list[str]:
+    """Wait for every side that was asked for to start growing. Returns the ones
+    that never did.
+
+    Each side on its own, which is the whole point. This used to add the sides
+    together and stop as soon as the total moved, so a working microphone answered
+    for a computer channel that was producing nothing at all — and the recording ran
+    for forty seconds looking perfectly healthy while capturing half of what it had
+    been asked for. An ungranted audio tap writes no bytes whatever, so this is not
+    a guess: it is the difference between a source that is working and one that is
+    not, available within a second of pressing the button.
     """
+    wanted = _asked_for(rec)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if rec["status"] != "recording":
-            return
-        if _captured_bytes(rec) > EMPTY_WAV:
-            return
+            return []
+        missing = [side for side in wanted if _side_bytes(rec, side) <= EMPTY_WAV]
+        if not missing:
+            return []
         await asyncio.sleep(0.1)
+    return [side for side in wanted if _side_bytes(rec, side) <= EMPTY_WAV]
+
+
+# What to say, and which pane to offer, for a side that never produced a byte.
+NOT_ARRIVING = {
+    "voice": ("Your microphone is not recording anything. macOS may not have allowed "
+              "it yet, or the wrong input is selected.", "microphone"),
+    "computer": ("Your computer's audio is not being captured. macOS asks for this "
+                 "separately, and until it is allowed the recording runs perfectly "
+                 "and captures nothing at all.", "audio"),
+}
+
+
+def _nothing_arriving(missing: list[str]) -> Failed:
+    """A recording that is not recording, said at the click rather than at the end."""
+    said = " ".join(NOT_ARRIVING[side][0] for side in missing)
+    # One pane can be offered, so it is the one for the first missing side.
+    return Failed("capture_not_arriving",
+                  f"{said} Nothing was kept — allow it and press record again.",
+                  NOT_ARRIVING[missing[0]][1])
 
 
 async def _start_helper(rec: dict) -> bool:
@@ -907,15 +966,26 @@ def _failed(rec: dict, code: str, message: str) -> None:
         shutil.rmtree(rec["work"], ignore_errors=True)
 
 
+def ask_to_stop(rec: dict, keep: bool, grace: float = 10.0) -> None:
+    """Signal both captures to finish, and mean it if they do not.
+
+    The escalation is the part worth sharing. A start that refuses itself used to
+    signal by hand without it, and a capture blocked on a permission prompt ignored
+    the signal and sat in "stopping" — which then answered the next press of record
+    with "a recording is already running".
+    """
+    rec["keep"] = keep
+    rec["status"] = "stopping"
+    _signal(signal.SIGINT)  # ffmpeg finishes the file and exits; a kill would not
+    asyncio.create_task(_insist(rec, grace))
+
+
 async def stop(keep: bool = True) -> dict:
     """Ask ffmpeg to finish. The rest happens in the task that owns the recording."""
     rec = RECORDING
     if rec is None or rec["status"] != "recording":
         raise Failed("not_recording", "Nothing is being recorded.")
-    rec["keep"] = keep
-    rec["status"] = "stopping"
-    _signal(signal.SIGINT)  # ffmpeg finishes the file and exits; a kill would not
-    asyncio.create_task(_insist(rec))
+    ask_to_stop(rec, keep)
     return public()
 
 

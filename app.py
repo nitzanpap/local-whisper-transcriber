@@ -313,8 +313,27 @@ async def record_start(body: RecordIn) -> dict:
     try:
         return await record.start(body.voice, body.computer)
     except Failed as exc:
-        raise HTTPException(400, {"code": exc.code, "message": exc.message,
+        raise HTTPException(400, {"code": exc.code, "message": exc.message, "pane": exc.pane,
                                   "details": "\n".join((record.public() or {}).get("log", [])[-12:])})
+
+
+# The panes worth offering. Naming one in a sentence is not the same as getting
+# somebody to it, and the difference is a person hunting through System Settings
+# with a meeting already starting.
+PRIVACY_PANES = {
+    "audio": "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture",
+    "microphone": "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+}
+
+
+@app.post("/api/privacy/{which}")
+def privacy_pane(which: str) -> dict:
+    url = PRIVACY_PANES.get(which)
+    if url is None or sys.platform != "darwin":
+        raise HTTPException(400, {"code": "invalid_input_path",
+                                  "message": "There is no settings pane to open for that."})
+    subprocess.run(["open", url], check=False)
+    return {"ok": True}
 
 
 @app.post("/api/record/stop")
