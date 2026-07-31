@@ -30,10 +30,14 @@ evidence rather than a hunch.
 - [ ] **The two captures lose their relative start offset.** `aresample=first_pts=0` is applied to
       each independently, so if they begin 200 ms apart every cross-channel time is out by that.
       Tolerable for labelling, wrong for overlapping speech. Stamp each start, apply the delta when
-      mixing. Now the largest remaining timing error in a recording, and it is not 200 ms by
-      accident: the tap is deliberately held back until the microphone is delivering, because
-      creating its aggregate device kills an AVFoundation capture opened afterwards. Measure the
-      offset before building anything — it may be small enough to say so and stop.
+      mixing. Measured, in a quiet room, from speech played through the speakers exactly two
+      seconds apart: the microphone channel sits **2.84 s behind** the computer's (+2.86, +2.81,
+      +2.85 over three runs), and it is that large because the tap is deliberately held back until
+      the microphone is delivering — creating its aggregate device kills an AVFoundation capture
+      opened afterwards. So in a two-speaker transcript your own voice is stamped nearly three
+      seconds later than the other side, which is enough to reorder the turns of a quick exchange.
+      Now the largest remaining timing error, and no longer a guess: stamp both starts and trim the
+      earlier file by the difference.
 - [ ] **Orphan durations assume 48 kHz.** The microphone is recorded at whatever rate it offers now,
       so the length shown for a recovered recording is wrong.
 - [ ] **A source that dies is survived but never reopened.** A Bluetooth microphone that drops and
@@ -49,12 +53,12 @@ evidence rather than a hunch.
       of `web/` so edits appeared to do nothing. `rebuild.sh` now checks the mechanics of a build;
       nothing checks its behaviour.
 
-- [ ] **A recording loses the time it was interrupted for.** Measured: 70 seconds open, 39.2
-      seconds saved, 31 seconds gone. Neither capture dies — both pause and resume on their own —
-      and the hole is closed up rather than filled, so every timestamp after it is 31 seconds
-      early. Nothing on screen says a thing, because the warning asks whether a side is arriving
-      and the last level it saw is still there. Reproduced twice — 31 s missing of 70, then
-      36 s of 91. See docs/RECORDING.md §3.
+- [x] **A recording loses the time it was interrupted for.** Measured: 70 seconds open, 39.2
+      seconds saved, 31 seconds gone, twice over. Each capture now keeps its own clock and writes
+      down the silence it missed. Chasing it found a far larger version of the same fault: the tap
+      wrote nothing at all while the machine was quiet, and the microphone lost about an eighth of
+      every recording to samples that never arrived — 1.775 s of speech where 2.000 s was played.
+      Both fixed and both verified in the packaged app. See docs/RECORDING.md §3.
 - [ ] **Nothing tests the app bundle.** Both packaging faults — a missing `record.py`, and a
       signature invalidated by running the app — shipped because CI never builds or opens a bundle.
 - [ ] **No automated end-to-end run.** The suite fakes both binaries. Driving `jobs.run_job` over a
