@@ -272,16 +272,47 @@ def is_loopback(device: dict) -> bool:
     return any(hint in haystack for hint in LOOPBACK_HINTS)
 
 
+async def _core_audio_inputs() -> list[dict]:
+    """The microphones, asked of Core Audio through the helper.
+
+    Identified by UID rather than by position. ffmpeg numbers devices by where
+    they sit in a list and that moves the moment anything is plugged in or taken
+    away — a stored `1` has already meant two different microphones on this
+    machine, and the recording that came back was silence that looked exactly like
+    a bug in the recorder.
+    """
+    helper = await helper_path()
+    if helper is None:
+        return []
+    try:
+        code, out = await capture([str(helper), "--list-inputs"], timeout=20)
+    except (Failed, OSError):
+        return []
+    if code != 0:
+        return []
+    found = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0].strip():
+            found.append({"id": parts[0], "name": parts[1],
+                          "default": len(parts) > 2 and parts[2].strip() == "default"})
+    return found
+
+
 async def devices() -> dict:
     """Audio inputs this machine offers, and what is missing if anything is.
 
     Never called from /api/state: listing devices spawns ffmpeg, and on macOS it
     opens each device briefly. Once per visit to the Record view is enough.
     """
-    # `-list_devices true` has no input to process, so ffmpeg prints the list and
-    # then exits non-zero. The code says nothing about whether listing worked.
-    _, out = await capture(_list_command(), timeout=30)
-    found = _parse_avfoundation(out) if sys.platform == "darwin" else _parse_pulse(out)
+    found = await _core_audio_inputs() if sys.platform == "darwin" else []
+    if not found:
+        # `-list_devices true` has no input to process, so ffmpeg prints the list
+        # and then exits non-zero. The code says nothing about whether listing
+        # worked. Still the answer everywhere but macOS, and the fallback there if
+        # the helper cannot be built.
+        _, out = await capture(_list_command(), timeout=30)
+        found = _parse_avfoundation(out) if sys.platform == "darwin" else _parse_pulse(out)
     for device in found:
         device["loopback"] = is_loopback(device)
     # Listed last so that it is the computer side's first loopback without ever
@@ -290,9 +321,10 @@ async def devices() -> dict:
     if sysaudio is not None:
         found.append({"id": SYSTEM_AUDIO, "name": "System audio",
                       "loopback": True, "builtin": True})
-    default_input = await _default_input_name()
-    for device in found:
-        device["default"] = bool(default_input) and device["name"] == default_input
+    if not any(device.get("default") for device in found):
+        default_input = await _default_input_name()
+        for device in found:
+            device["default"] = bool(default_input) and device["name"] == default_input
     conf = recording_config()
     advice = []
     if not found:
@@ -443,17 +475,31 @@ def capture_commands(rec: dict) -> list[list[str]]:
     filled the difference with silence.
     """
     out = []
-    for device, path in ((rec["voice"], rec["voice_wav"]),
-                         (rec["computer"], rec["computer_wav"])):
-        if device and device != SYSTEM_AUDIO:
-            out.append(capture_command(rec, device, path))
+    for side, device, path in (("voice", rec["voice"], rec["voice_wav"]),
+                               ("computer", rec["computer"], rec["computer_wav"])):
+        if not device or device == SYSTEM_AUDIO:
+            continue
+        # The microphone belongs to the helper wherever there is one. ffmpeg's
+        # avfoundation input was handing over 86% of the samples the device
+        # produced; Core Audio hands over all of them. What is left for ffmpeg
+        # here is a real loopback device chosen as the computer's side, and
+        # everywhere that is not macOS.
+        if side == "voice" and helper_takes_the_microphone(rec):
+            continue
+        out.append(capture_command(rec, device, path))
     return out
+
+
+def helper_takes_the_microphone(rec: dict) -> bool:
+    """Whether the microphone is the helper's job rather than ffmpeg's."""
+    return bool(rec.get("helper")) and bool(rec.get("voice")) \
+        and rec.get("voice") != SYSTEM_AUDIO
 
 
 def _captured_bytes(rec: dict) -> int:
     """How much audio has arrived, across whichever sources are running."""
     total = 0
-    for key in ("voice_wav", "computer_wav", "sys_pcm"):
+    for key in ("voice_wav", "voice_pcm", "computer_wav", "sys_pcm"):
         path = rec.get(key)
         try:
             total += path.stat().st_size
@@ -473,7 +519,8 @@ def captured_sources(rec: dict) -> list[str]:
     on a recording rescued from a crash, and unknown is not the same as no.
     """
     out = []
-    for keys, label in ((("voice_wav",), "voice"), (("computer_wav", "sys_pcm"), "computer")):
+    for keys, label in ((("voice_wav", "voice_pcm"), "voice"),
+                        (("computer_wav", "sys_pcm"), "computer")):
         heard = rec.get("ever")
         if label == "computer" and rec.get("computer") == SYSTEM_AUDIO \
                 and heard is not None and label not in heard:
@@ -489,6 +536,26 @@ def captured_sources(rec: dict) -> list[str]:
     return out
 
 
+def raw_input_for(rec: dict, wav_key: str, pcm_key: str) -> list[str]:
+    """One input for a side, from whichever of its two files it actually used.
+
+    A side is captured either by ffmpeg into a WAV or by the helper into raw
+    samples, never both. Raw samples carry no header, so the format the helper
+    promised has to be stated on the command line.
+    """
+    wav, pcm = rec.get(wav_key), rec.get(pcm_key)
+    try:
+        if wav is not None and wav.is_file() and wav.stat().st_size > EMPTY_WAV:
+            return ["-i", str(wav)]
+    except OSError:
+        pass
+    # A recording rescued from a crash predates knowing about the second file, so
+    # the WAV is the only answer there is.
+    if pcm is None:
+        return ["-i", str(wav)]
+    return ["-f", "s16le", "-ar", "48000", "-ac", "1", "-i", str(pcm)]
+
+
 def mix_command(rec: dict, sources: list[str]) -> list[str]:
     """Combine the finished captures into the stereo master that gets kept.
 
@@ -498,14 +565,9 @@ def mix_command(rec: dict, sources: list[str]) -> list[str]:
     """
     cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "warning", "-y"]
     if "voice" in sources:
-        cmd += ["-i", str(rec["voice_wav"])]
+        cmd += raw_input_for(rec, "voice_wav", "voice_pcm")
     if "computer" in sources:
-        if rec.get("computer_wav") is not None and rec["computer_wav"].is_file() \
-                and rec["computer_wav"].stat().st_size > EMPTY_WAV:
-            cmd += ["-i", str(rec["computer_wav"])]
-        else:
-            # Raw samples carry no header, so the format the helper promised is stated.
-            cmd += ["-f", "s16le", "-ar", "48000", "-ac", "1", "-i", str(rec["sys_pcm"])]
+        cmd += raw_input_for(rec, "computer_wav", "sys_pcm")
     if len(sources) == 2:
         graph = (f"[0:a]{ONE_STREAM}[voice];[1:a]{ONE_STREAM}[computer];"
                  "[voice][computer]join=inputs=2:channel_layout=stereo[out]")
@@ -541,6 +603,11 @@ async def start(voice: str, computer: str) -> dict:
         raise Failed("invalid_input_path", "Choose at least one thing to record.")
 
     helper = None
+    # The microphone goes through the helper too now, so it is wanted on macOS
+    # whenever anything at all is being recorded — not only for the tap.
+    if sys.platform == "darwin" and voice.strip() and SYSTEM_AUDIO not in chosen:
+        sysaudio = await system_audio()
+        helper = sysaudio["helper"] if sysaudio is not None else None
     if SYSTEM_AUDIO in chosen:
         # macOS is asked by the click that starts the recording, not silently at
         # startup: a permission prompt out of nowhere is worse than one with a
@@ -606,6 +673,10 @@ async def start(voice: str, computer: str) -> dict:
         "voice_wav": work / "voice.wav",
         "computer_wav": work / "computer.wav",
         "sys_pcm": work / "computer.pcm",
+        # The microphone, when the helper is taking it. Raw for the same reasons
+        # the tap is: ffmpeg is told the format on its command line, and every
+        # prefix of a raw stream is still audio.
+        "voice_pcm": work / "voice.pcm",
         "log": deque(maxlen=MAX_LOG),
         # Sides that real audio ever reached, as against sides whose file merely
         # exists. Present from the start so that empty means no rather than unknown.
@@ -637,7 +708,7 @@ async def start(voice: str, computer: str) -> dict:
 
 def _side_bytes(rec: dict, side: str) -> int:
     """How much has arrived on one side, whichever file that side is writing to."""
-    keys = ("voice_wav",) if side == "voice" else ("computer_wav", "sys_pcm")
+    keys = ("voice_wav", "voice_pcm") if side == "voice" else ("computer_wav", "sys_pcm")
     total = 0
     for key in keys:
         try:
@@ -719,7 +790,13 @@ async def _start_helper(rec: dict) -> bool:
     It writes to a file of its own, so it neither waits for ffmpeg nor races it.
     """
     global HELPER
-    cmd = [str(rec["helper"]), str(rec["sys_pcm"])]
+    cmd = [str(rec["helper"])]
+    if rec.get("computer") == SYSTEM_AUDIO:
+        cmd += ["--tap", str(rec["sys_pcm"])]
+    if helper_takes_the_microphone(rec):
+        # By UID. Positions move when anything is plugged in; a stored index has
+        # already meant two different microphones on this machine.
+        cmd += ["--mic", str(rec["voice_pcm"]), "--mic-device", rec["voice"]]
     rec["log"].append("$ " + shlex.join(cmd))
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -814,7 +891,11 @@ async def _run(rec: dict) -> None:
     PROCS.extend(procs)
     # Only now, and only once the microphone is live. See _until_mic_ready.
     if rec.get("helper") is not None:
-        await _until_mic_ready(rec)
+        # Only when ffmpeg holds the microphone. When the helper holds it there is
+        # nothing to wait for: it starts the microphone before the tap inside its
+        # own process, which is the whole reason for putting them together.
+        if not helper_takes_the_microphone(rec):
+            await _until_mic_ready(rec)
         if not await _start_helper(rec):
             return
     asyncio.create_task(_watch_disk(rec))
@@ -1547,7 +1628,7 @@ def _orphan(rec_id: str) -> dict | None:
         return None
     return {**record, "work": work, "wav": work / "master.wav",
             "voice_wav": work / "voice.wav", "computer_wav": work / "computer.wav",
-            "sys_pcm": work / "computer.pcm",
+            "sys_pcm": work / "computer.pcm", "voice_pcm": work / "voice.pcm",
             "keep": True, "ended_at": None, "path": None, "job_id": None,
             "error": None, "max_seconds": 0, "log": deque(maxlen=MAX_LOG)}
 

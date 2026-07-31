@@ -850,11 +850,38 @@ async def main() -> None:
 
     # The order is the bug that broke every two-source recording. Creating the
     # aggregate device that carries a Core Audio process tap reconfigures the audio
-    # HAL, and an AVFoundation capture opened afterwards never delivers one sample —
-    # measured both ways round outside the app: microphone first and it keeps
-    # running, tap first and it yields zero frames for as long as you wait. So the
-    # helper must not be started until the captures are up.
-    print("the microphone is opened before the tap, never after")
+    # HAL, and a capture opened afterwards never delivers one sample — measured both
+    # ways round outside the app: microphone first and it keeps running, tap first
+    # and it yields zero frames for as long as you wait.
+    #
+    # That ordering now lives inside the helper, which starts the microphone before
+    # it builds the tap's aggregate device in one process. So what is checked here
+    # has changed: not that ffmpeg was up first, but that ffmpeg is not given the
+    # microphone at all when the helper can take it — because ffmpeg's avfoundation
+    # input was handing over 86% of the samples the device produced, and two
+    # captures started in sequence were 2.84 seconds apart.
+    print("the microphone and the tap are one process")
+    both_at_once = {"voice": "BuiltInMic", "computer": record.SYSTEM_AUDIO,
+                    "helper": Path("/x/syscapture"), "max_seconds": 60,
+                    "voice_wav": TMP / "v.wav", "computer_wav": TMP / "c.wav",
+                    "sys_pcm": TMP / "c.pcm", "voice_pcm": TMP / "v.pcm",
+                    "devices": ["BuiltInMic", record.SYSTEM_AUDIO], "log": []}
+    check("ffmpeg is not asked for the microphone",
+          record.capture_commands(both_at_once) == [],
+          str(record.capture_commands(both_at_once)))
+    check("and the helper is the one that takes it",
+          record.helper_takes_the_microphone(both_at_once))
+    # A loopback device chosen as the computer's side is still ffmpeg's job: there
+    # is no tap involved, so there is no aggregate device and no hazard.
+    loopback = {**both_at_once, "computer": "3"}
+    only = record.capture_commands(loopback)
+    check("a real device on the computer's side still gets an ffmpeg",
+          len(only) == 1 and str(loopback["computer_wav"]) in only[0], str(only))
+    # Without a helper — anything that is not macOS — nothing changes.
+    check("and with no helper the microphone goes back to ffmpeg",
+          len(record.capture_commands({**both_at_once, "helper": None,
+                                       "computer": "3"})) == 2)
+
     seen = {}
     real_helper, real_sysaudio = record._start_helper, record.system_audio
 
@@ -868,7 +895,10 @@ async def main() -> None:
     record._start_helper, record.system_audio = watching, pretend
     config.save_settings({"recording_folder": str(TMP / "order"), "default_model_path": model})
     try:
-        await record.start("0", record.SYSTEM_AUDIO)
+        # No microphone here: with one, the helper takes it and there is no ffmpeg
+        # to be running first. This is the case that is left — a real device on the
+        # computer's side, where the ordering rule still has something to say.
+        await record.start("", record.SYSTEM_AUDIO)
         await record.TASK
     except Exception:  # noqa: BLE001 — the fake helper refuses on purpose
         pass
@@ -881,8 +911,7 @@ async def main() -> None:
         record.PROCS.clear()
         for stray in config.WORK_DIR.glob(f"{config.RECORDING_PREFIX}*"):
             shutil.rmtree(stray, ignore_errors=True)
-    check("the captures were already running when the tap was asked for",
-          seen.get("captures_up", 0) > 0, str(seen))
+    check("the tap is still asked for last", "captures_up" in seen, str(seen))
 
     # A check that costs six seconds on a quiet afternoon rather than the first ten
     # minutes of a meeting. It plays a tone of its own, which is the only way to tell

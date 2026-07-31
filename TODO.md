@@ -27,17 +27,15 @@ evidence rather than a hunch.
       peak-minus-25 dB, and `--max-len` splits it into times that are interpolated rather than
       measured. Needs speech regions located properly and each transcribed with `--offset-t`, which
       `whisper-cli` gives no way to do: it never reports where VAD found speech.
-- [ ] **The two captures lose their relative start offset.** `aresample=first_pts=0` is applied to
-      each independently, so if they begin 200 ms apart every cross-channel time is out by that.
-      Tolerable for labelling, wrong for overlapping speech. Stamp each start, apply the delta when
-      mixing. Measured, in a quiet room, from speech played through the speakers exactly two
-      seconds apart: the microphone channel sits **2.84 s behind** the computer's (+2.86, +2.81,
-      +2.85 over three runs), and it is that large because the tap is deliberately held back until
-      the microphone is delivering — creating its aggregate device kills an AVFoundation capture
-      opened afterwards. So in a two-speaker transcript your own voice is stamped nearly three
-      seconds later than the other side, which is enough to reorder the turns of a quick exchange.
-      Now the largest remaining timing error, and no longer a guess: stamp both starts and trim the
-      earlier file by the difference.
+- [x] **The two captures lose their relative start offset.** Was 2.84 s, measured in a quiet room
+      from speech played through the speakers exactly two seconds apart. Gone by construction rather
+      than corrected: the helper captures both sides in one process and gives them second zero at
+      the same instant. Measured again through the app afterwards, the same speech lands at 2.75,
+      4.75 … 22.75 in *both* channels.
+- [ ] **A loopback device chosen as the computer's side is still captured by ffmpeg**, so it still
+      loses about an eighth of its samples and `aresample` still fills the holes with audible
+      silence. The helper lists those devices as inputs already — Teams and Zoom both appear — so it
+      could take them the same way it takes the microphone.
 - [ ] **Orphan durations assume 48 kHz.** The microphone is recorded at whatever rate it offers now,
       so the length shown for a recovered recording is wrong.
 - [ ] **A source that dies is survived but never reopened.** A Bluetooth microphone that drops and
