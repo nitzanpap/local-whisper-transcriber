@@ -612,8 +612,18 @@ async def main() -> None:
     cmd = " ".join(commands[0])
     check("the microphone is captured on its own", cmd.count("-i ") == 1, cmd)
     check("into a file of its own", "voice.wav" in cmd, cmd)
-    check("nothing is mixed while recording",
-          "join=" not in cmd and "aresample" not in cmd, cmd)
+    # What ruined a recording was two live devices reconciled against each other
+    # inside one ffmpeg, which filled the difference with 0.237 s of silence nearly
+    # four times a second and left the quieter side in pieces. One input and
+    # async=1 is a different job: fill and trim against the device's own
+    # timestamps, never stretch. Banning the filter outright also banned the only
+    # thing that keeps the microphone's timeline honest, so the check now says
+    # which use is the dangerous one.
+    check("nothing is mixed while recording", "join=" not in cmd, cmd)
+    check("and the capture is never stretched to fit",
+          "aresample" not in cmd or "aresample=async=1," in cmd + "," , cmd)
+    check("the timeline is kept the same way on both outputs",
+          cmd.count("aresample=async=1") == 2, cmd)
     check("and nothing is asked of the device",
           "-ar " not in cmd and "channel_layouts" not in cmd, cmd)
     check("it stops by itself", "-t 60" in cmd, cmd)

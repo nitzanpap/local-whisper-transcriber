@@ -350,6 +350,27 @@ def pad_command(src: Path, dst: Path, gaps: list[tuple[float, float]]) -> list[s
     return cmd + ["-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_s16le", str(dst)]
 
 
+# Fill the holes the device leaves, using the timestamps it already provides.
+#
+# Measured, and it is not small: the microphone was handing over 17.05 seconds of
+# audio for every 20 seconds of wall clock. Not a startup gap — the shortfall grows
+# with the recording, and the ratio held at about 0.78 across runs of 10, 30 and 60
+# seconds. Letting ffmpeg stop itself at 20 seconds of stream time is what named it:
+# it took 20.36 seconds of clock to get there, so the device's timestamps are right
+# and it is the samples between them that never arrive. WAV carries no timestamps,
+# so the holes close up and the recording plays back short.
+#
+# Confirmed from the other end, with a pattern played through the speakers exactly
+# two seconds apart: the tap recorded it two seconds apart, the microphone recorded
+# it 1.775 seconds apart. That is nearly seven minutes of drift in an hour between
+# the two sides of the same conversation.
+#
+# async=1 fills and trims only, and never stretches. It is not the setting that once
+# ruined the quieter side of a recording — that was async=1000 reconciling two live
+# devices inside one ffmpeg, which is a different job this no longer asks of it.
+KEEP_TIME = "aresample=async=1"
+
+
 def capture_command(rec: dict, device: str, out: Path) -> list[str] | None:
     """ffmpeg's part of a recording: the microphone, alone, to its own file.
 
@@ -376,10 +397,16 @@ def capture_command(rec: dict, device: str, out: Path) -> list[str] | None:
             # unnoticed for hours; a meter has to measure something or it is
             # decoration that lies. First, so that the recording stays the last
             # thing on the line and reads as the point of the command.
+            #
+            # Both outputs are kept honest the same way, and they have to be the
+            # same way: the meter is what tells the app how much audio has arrived,
+            # so a meter measuring one timeline and a file holding another is how
+            # the app would come to put a gap back that ffmpeg had already filled.
             + ["-t", str(rec["max_seconds"]),
-               "-af", "ebur128=metadata=1,ametadata=print:key=lavfi.r128.M",
+               "-af", f"{KEEP_TIME},ebur128=metadata=1,ametadata=print:key=lavfi.r128.M",
                "-f", "null", "-"]
-            + ["-t", str(rec["max_seconds"]), "-c:a", "pcm_s16le", str(out)])
+            + ["-t", str(rec["max_seconds"]), "-af", KEEP_TIME,
+               "-c:a", "pcm_s16le", str(out)])
 
 
 def capture_commands(rec: dict) -> list[list[str]]:
