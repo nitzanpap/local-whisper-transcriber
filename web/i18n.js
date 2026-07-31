@@ -50,9 +50,8 @@ const STRINGS = {
     "rec.notArriving.voice": "Your microphone is not producing any audio. It is still " +
       "recording, so if this is a quiet moment it will sort itself out — but if it stays, " +
       "check that macOS has allowed the microphone and that the right input is selected.",
-    "rec.notArriving.computer": "Your computer's audio is not being captured. macOS asks " +
-      "for this separately, and a refusal is silent: the recording runs perfectly and keeps " +
-      "nothing. If this stays, allow it and start again.",
+    "rec.notArriving.computer": "The capture of your computer's audio has stopped. " +
+      "Whatever it plays from now on will not be in the recording.",
     "rec.stop": "Stop",
     "rec.throw": "Stop and throw it away",
     "rec.throwConfirm": "Stop recording and delete what was recorded? This cannot be undone.",
@@ -79,11 +78,11 @@ const STRINGS = {
     "rec.quietVoice": "Nothing audible was recorded from your microphone. Check that " +
       "it is allowed under System Settings → Privacy & Security → Microphone, that the " +
       "right input is selected, and that it is not muted or asleep.",
-    "rec.quietComputer": "Nothing audible was recorded from your computer. The usual " +
-      "reason is permission: System Settings → Privacy & Security → System Audio " +
-      "Recording Only. A refusal there is silent — the recording runs perfectly and " +
-      "captures nothing. Otherwise check that sound was really playing, and that the " +
-      "output is not muted.",
+    "rec.quietComputer": "Nothing was captured from your computer. If nothing was " +
+      "playing on it, that is exactly right and there is nothing to fix. If there " +
+      "was sound, check that the output is not muted, and that macOS has allowed it " +
+      "under System Settings → Privacy & Security → System Audio Recording Only — a " +
+      "refusal there is silent.",
     "rec.systemAudio": "System audio (no driver needed)",
     "rec.howTo": "How to set that up",
     "rec.loopbackSteps":
@@ -265,8 +264,8 @@ const STRINGS = {
     "rec.nothingTitle": "לא מגיע כלום",
     "rec.notArriving.voice": "המיקרופון לא מפיק שום אודיו. ההקלטה עדיין רצה, אז אם זה רק " +
       "רגע שקט זה יסתדר — אבל אם זה נשאר, בדקו שיש הרשאת מיקרופון ושנבחר הקלט הנכון.",
-    "rec.notArriving.computer": "האודיו של המחשב לא נקלט. ‏macOS מבקש על זה הרשאה בנפרד, " +
-      "וסירוב הוא שקט: ההקלטה רצה מצוין ולא שומרת כלום. אם זה נשאר, אשרו והתחילו מחדש.",
+    "rec.notArriving.computer": "הקליטה של האודיו מהמחשב נעצרה. כל מה שיתנגן מכאן " +
+      "והלאה לא ייכנס להקלטה.",
     "rec.stop": "עצירה",
     "rec.throw": "עצירה ומחיקה",
     "rec.throwConfirm": "לעצור את ההקלטה ולמחוק את מה שהוקלט? אין דרך לשחזר.",
@@ -290,9 +289,9 @@ const STRINGS = {
       "לאפליקציה הרשאה למיקרופון: הגדרות המערכת → פרטיות ואבטחה → מיקרופון.",
     "rec.quietVoice": "לא הוקלט שום דבר שנשמע מהמיקרופון. בדקו שיש לו הרשאה תחת " +
       "הגדרות המערכת ← פרטיות ואבטחה ← מיקרופון, שנבחר הקלט הנכון, ושהוא לא מושתק או רדום.",
-    "rec.quietComputer": "לא הוקלט שום דבר שנשמע מהמחשב. הסיבה הרגילה היא הרשאה: " +
-      "הגדרות המערכת ← פרטיות ואבטחה ← ‏System Audio Recording Only. סירוב שם הוא שקט — " +
-      "ההקלטה רצה מצוין ולא קולטת כלום. אחרת בדקו שבאמת התנגן צליל, ושהפלט לא מושתק.",
+    "rec.quietComputer": "לא נקלט כלום מהמחשב. אם לא התנגן בו כלום — זה בדיוק כמו " +
+      "שצריך ואין מה לתקן. אם כן היה צליל, בדקו שהפלט לא מושתק, ושיש הרשאה תחת " +
+      "הגדרות המערכת ← פרטיות ואבטחה ← ‏System Audio Recording Only; סירוב שם הוא שקט.",
     "rec.systemAudio": "האודיו של המחשב (בלי דרייבר)",
     "rec.howTo": "איך מגדירים את זה",
     "rec.loopbackSteps":

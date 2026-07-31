@@ -553,9 +553,18 @@ def _side_arriving(rec: dict, side: str) -> bool:
     working perfectly well leaves its WAV at zero bytes on disk for tens of seconds
     before the first flush — which is exactly how a recording that was working was
     refused for not working, with the meter sitting there the whole time reading
-    -43 dB. The size still answers for the system-audio helper, which has no meter
-    and writes straight through with write(2).
+    -43 dB.
+
+    The computer's side, when it is the tap, cannot be asked this question at all.
+    A Core Audio tap on an output device playing nothing delivers no callbacks
+    whatever — measured, 0 bytes with the machine quiet against 285,696 with a
+    sound playing — so an empty file means the room was quiet, not that the capture
+    is broken. Reading it as broken is how somebody came to be told their computer's
+    audio was not being captured while it worked perfectly and simply had nothing to
+    capture. All that can honestly be asked of it is whether the helper is running.
     """
+    if side == "computer" and rec.get("computer") == SYSTEM_AUDIO:
+        return rec.get("helper_code") is None
     if rec.get("live", {}).get(side) is not None:
         return True
     return _side_bytes(rec, side) > EMPTY_WAV
@@ -588,25 +597,6 @@ async def _until_audio_arrives(rec: dict, timeout: float = 6.0) -> list[str]:
             return []
         await asyncio.sleep(0.1)
     return [side for side in wanted if not _side_arriving(rec, side)]
-
-
-# What to say, and which pane to offer, for a side that never produced a byte.
-NOT_ARRIVING = {
-    "voice": ("Your microphone is not recording anything. macOS may not have allowed "
-              "it yet, or the wrong input is selected.", "microphone"),
-    "computer": ("Your computer's audio is not being captured. macOS asks for this "
-                 "separately, and until it is allowed the recording runs perfectly "
-                 "and captures nothing at all.", "audio"),
-}
-
-
-def _nothing_arriving(missing: list[str]) -> Failed:
-    """A recording that is not recording, said at the click rather than at the end."""
-    said = " ".join(NOT_ARRIVING[side][0] for side in missing)
-    # One pane can be offered, so it is the one for the first missing side.
-    return Failed("capture_not_arriving",
-                  f"{said} Nothing was kept — allow it and press record again.",
-                  NOT_ARRIVING[missing[0]][1])
 
 
 async def _start_helper(rec: dict) -> bool:

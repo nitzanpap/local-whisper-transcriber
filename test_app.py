@@ -575,33 +575,48 @@ async def main() -> None:
     check("while a side nobody asked for is not mentioned at all",
           record.silent_sides({**both, "computer": ""}, ["voice"], {"voice": -12.0}) == [])
 
-    # The heart of it: a recording that is not recording has to say so at the click,
-    # not forty seconds later. This used to add the sides together and stop as soon
-    # as the total moved, so a working microphone answered for a computer channel
+    # Each side on its own. This used to add them together and stop as soon as the
+    # total moved, so a working microphone answered for a computer channel that was
     # producing nothing at all.
-    waiting = {**rec, "voice": "1", "computer": record.SYSTEM_AUDIO, "status": "recording"}
+    #
+    # A real loopback device on the computer's side, because it is the one the file
+    # and the meter can honestly answer for. The tap is a different question and is
+    # asked below.
+    both = {**rec, "voice": "1", "computer": "2", "status": "recording"}
     (TMP / "voice.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
-    (TMP / "computer.pcm").write_bytes(b"")
-    missing = await record._until_audio_arrives(waiting, timeout=0.3)
+    (TMP / "computer.wav").write_bytes(b"")
+    missing = await record._until_audio_arrives(both, timeout=0.3)
     check("one side arriving does not answer for the other", missing == ["computer"], str(missing))
-    (TMP / "computer.pcm").write_bytes(b"x" * (record.EMPTY_WAV + 1))
+    (TMP / "computer.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
     check("and nothing is reported once both are arriving",
-          await record._until_audio_arrives(waiting, timeout=0.3) == [])
+          await record._until_audio_arrives(both, timeout=0.3) == [])
+
     # The meter answers before the file does. ffmpeg buffers its output, so a
     # microphone working perfectly leaves a WAV at zero bytes for tens of seconds —
     # and a check that only watched the file refused a recording that was working,
     # with the meter reading -43 dB at the time.
     (TMP / "voice.wav").write_bytes(b"")
-    metered = {**waiting, "live": {"voice": -43.9}}
+    metered = {**both, "live": {"voice": -43.9}}
     check("a side with a meter reading is arriving, whatever the file says",
           await record._until_audio_arrives(metered, timeout=0.3) == [], "refused a working capture")
     check("and a side with neither is still missing",
           await record._until_audio_arrives({**metered, "live": {}}, timeout=0.3) == ["voice"])
-    refusal = record._nothing_arriving(["computer"])
-    check("the refusal names a pane to open", refusal.pane == "audio", refusal.pane)
-    check("and says nothing was kept", "Nothing was kept" in refusal.message, refusal.message)
-    (TMP / "voice.wav").unlink()
-    (TMP / "computer.pcm").unlink()
+
+    # The tap cannot be asked this question by looking at its output at all. An
+    # output device playing nothing delivers no callbacks whatever — measured, 0
+    # bytes with the machine quiet against 285,696 with a sound playing — so an
+    # empty file means the room was quiet. Reading it as broken told somebody their
+    # computer's audio was not being captured while it worked perfectly and simply
+    # had nothing to capture.
+    tapping = {**rec, "voice": "1", "computer": record.SYSTEM_AUDIO,
+               "status": "recording", "live": {"voice": -30.0}}
+    (TMP / "computer.pcm").write_bytes(b"")
+    check("a quiet machine is not a broken tap",
+          await record._until_audio_arrives(tapping, timeout=0.3) == [], "blamed a quiet machine")
+    check("but a helper that has exited is a broken tap",
+          await record._until_audio_arrives({**tapping, "helper_code": 3}, timeout=0.3) == ["computer"])
+    for leftover in ("voice.wav", "computer.wav", "computer.pcm"):
+        (TMP / leftover).unlink(missing_ok=True)
 
     print("the computer's audio without a driver")
     code, message = record._why_nothing_arrived({**rec, "helper_code": record.HELPER_DENIED})
