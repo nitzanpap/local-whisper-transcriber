@@ -103,11 +103,13 @@ $("rec-refresh").onclick = (e) => loadDevices(e.currentTarget);
 
 const SIDE_ICON = { true: "✓", false: "✕" };
 
-$("rec-check").onclick = async (e) => {
-  const button = e.currentTarget;
+async function runCheck(button) {
   const said = button.textContent;
   button.disabled = true;
   button.textContent = t("rec.checking");
+  // The result is drawn inside What to record, so open it: a verdict nobody can see
+  // is not a verdict, and this is also how somebody learns where the control lives.
+  $("rec-sources").open = true;
   show($("rec-check-result"), false);
   recError(null);
   try {
@@ -119,8 +121,16 @@ $("rec-check").onclick = async (e) => {
   } finally {
     button.disabled = false;
     button.textContent = said;
+    await refresh();   // a passing check takes the offer off the first screen
   }
-};
+}
+$("rec-check").onclick = (e) => runCheck(e.currentTarget);
+$("first-go").onclick = (e) => runCheck(e.currentTarget);
+
+// Not now is for now, not for ever: it stays gone until the app is opened again,
+// because somebody who has not answered the question still has not answered it.
+let firstDismissed = false;
+$("first-later").onclick = () => { firstDismissed = true; show($("first-check"), false); };
 
 function renderCheck(sides) {
   const rows = Object.entries(sides);
@@ -198,8 +208,12 @@ for (const id of ["rec-again", "rec-dismiss"]) {
 
 const RECORDING_LIVE = ["recording", "stopping", "saving"];
 
-function renderRecording(rec, orphans) {
+function renderRecording(rec, orphans, settings) {
   renderOrphans(orphans || []);
+  // Offered until it has been answered, and only when there is something to answer
+  // with: a machine with no inputs at all has a different problem, said elsewhere.
+  show($("first-check"), !firstDismissed && recDevices.length > 0
+       && !(settings || {}).capture_checked);
   const live = !!rec && RECORDING_LIVE.includes(rec.status);
   recIsLive = live;
   show($("rec-live"), live);

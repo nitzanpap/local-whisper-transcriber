@@ -743,6 +743,17 @@ async def main() -> None:
     check("a microphone that heard almost nothing is quiet, not refused",
           murmur["voice"]["why"] == "quiet", str(murmur["voice"]))
 
+    # What takes the offer off the first screen, and what puts it back. Only a check
+    # where every side asked for came back counts; a passing microphone beside a
+    # refused tap is exactly the state somebody most needs to be told about again.
+    config.save_settings({"capture_checked": 0})
+    record.remember_check(record.check_verdict(both_sides, {"voice": -24.0, "computer": -18.0}))
+    check("a check where everything was heard is remembered",
+          config.settings().get("capture_checked", 0) > 0)
+    record.remember_check(record.check_verdict(both_sides, {"voice": -24.0, "computer": -120.0}))
+    check("and one where something was not puts the offer back",
+          not config.settings().get("capture_checked"))
+
     print("recording, then transcribing both speakers apart")
     recordings = TMP / "recordings"
     config.save_settings({"recording_folder": str(recordings), "default_model_path": model,

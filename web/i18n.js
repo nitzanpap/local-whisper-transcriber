@@ -45,6 +45,10 @@ const STRINGS = {
     "rec.start": "Record",
     "rec.startHint": "A meeting, a call, anything playing on this Mac.",
     "rec.refresh": "Look again",
+    "first.title": "Before your first meeting",
+    "first.what": "Six seconds, and nothing is kept. It plays a tone, listens to both sides, " +
+      "and says plainly if macOS has not allowed something yet — much better found now than " +
+      "ten minutes into a call.",
     "rec.check": "Check it works",
     "rec.checking": "Listening…",
     "rec.checkGood": "Both sides are working",
@@ -275,6 +279,9 @@ const STRINGS = {
     "rec.start": "להקליט",
     "rec.startHint": "פגישה, שיחה, כל דבר שמתנגן במחשב הזה.",
     "rec.refresh": "לבדוק שוב",
+    "first.title": "לפני הפגישה הראשונה",
+    "first.what": "שש שניות, ושום דבר לא נשמר. מתנגן צליל, שני הצדדים נבדקים, ונאמר בפירוש " +
+      "אם ‏macOS עדיין לא אישר משהו — עדיף לגלות עכשיו מאשר עשר דקות בתוך שיחה.",
     "rec.check": "לבדוק שזה עובד",
     "rec.checking": "מקשיב…",
     "rec.checkGood": "שני הצדדים עובדים",

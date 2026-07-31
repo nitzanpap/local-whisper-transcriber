@@ -1073,6 +1073,17 @@ def check_verdict(asked: list[str], loudest: dict[str, float], tone_played: bool
     return out
 
 
+def remember_check(sides: dict) -> None:
+    """Whether the offer on the first screen has been answered.
+
+    Only a check where every side asked for came back counts. A working microphone
+    beside a refused tap is precisely the state somebody most needs offering again,
+    so it puts the offer back rather than leaving it half-answered.
+    """
+    passed = bool(sides) and all(side["heard"] for side in sides.values())
+    save_settings({"capture_checked": time.time() if passed else 0})
+
+
 async def _play_test_tone(rec: dict) -> bool:
     """A sound of our own, through whatever the machine is playing out of.
 
@@ -1127,7 +1138,9 @@ async def check(voice: str, computer: str) -> dict:
         await stop(keep=False)
     except Failed:
         pass  # already over, which is fine: nothing was going to be kept
-    return {"sides": check_verdict(asked, loudest, played), "log": log[-12:]}
+    sides = check_verdict(asked, loudest, played)
+    remember_check(sides)
+    return {"sides": sides, "log": log[-12:]}
 
 
 async def stop(keep: bool = True) -> dict:

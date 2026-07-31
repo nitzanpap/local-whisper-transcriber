@@ -463,7 +463,9 @@ function render(s) {
   }
 
   // Drawn before the phase is decided, because it is what sets recIsLive.
-  if (typeof renderRecording === "function") renderRecording(s.recording, s.orphan_recordings);
+  if (typeof renderRecording === "function") {
+    renderRecording(s.recording, s.orphan_recordings, s.settings);
+  }
 
   const { at, reading } = paintPhase();
   if (!reading && (at === "working" || at === "done")) renderJob(s.job);
