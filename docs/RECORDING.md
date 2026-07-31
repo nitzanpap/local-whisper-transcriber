@@ -110,11 +110,21 @@ problem: nothing dies. What is needed is to notice that a capture has gone quiet
 any pause in a conversation, and to pad the gap with the silence that actually happened so the
 timeline survives it.
 
-**One honest limit on that measurement.** The sampling loop ran straight through with no jump in
-the wall clock, which means the *system* never suspended — `caffeinate` was holding it — so what
-was measured is the audio devices being suspended while the machine stayed up. That is the lid
-closed on power, or the display sleeping, and it is probably the commoner case. A full suspend,
-with the process frozen too, has still not been measured and may behave differently again.
+It was then run a second time, with `caffeinate` stopped in case that was what had kept the
+machine up. The same thing happened: 91 seconds open, 54.6 seconds of audio, 36 missing, with a
+32-second stretch where the tap produced nothing at all. Different numbers, same shape.
+
+**One honest limit, and it survived two attempts to remove it.** Neither run showed a jump in the
+wall clock between consecutive samples, which means the sampling process was never frozen — so
+what has been measured, twice, is the audio devices suspending while the machine itself stays up.
+`pmset sleepnow` did not fully suspend this Mac either time.
+
+That limit is worth keeping in proportion. A full suspend could differ in exactly one way: the
+capture processes might not survive it. If they do not, the recording ends up as an orphan, and
+orphan recovery already exists and is already tested. Every other consequence — the missing time,
+the collapsed timeline, the silence about it — is the same, and is what the two runs measured.
+So the fix does not wait on measuring a full suspend, and chasing one further would be work spent
+on the least uncertain part of the problem.
 
 ## 4. What a long meeting needs
 

@@ -48,7 +48,8 @@ evidence rather than a hunch.
       seconds saved, 31 seconds gone. Neither capture dies — both pause and resume on their own —
       and the hole is closed up rather than filled, so every timestamp after it is 31 seconds
       early. Nothing on screen says a thing, because the warning asks whether a side is arriving
-      and the last level it saw is still there. See docs/RECORDING.md §3.
+      and the last level it saw is still there. Reproduced twice — 31 s missing of 70, then
+      36 s of 91. See docs/RECORDING.md §3.
 - [ ] **Nothing tests the app bundle.** Both packaging faults — a missing `record.py`, and a
       signature invalidated by running the app — shipped because CI never builds or opens a bundle.
 - [ ] **No automated end-to-end run.** The suite fakes both binaries. Driving `jobs.run_job` over a
