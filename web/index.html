@@ -65,33 +65,38 @@
 
   <section class="step" id="ways">
     <span class="label" data-i18n="start.what">What do you want words from?</span>
-    <div class="grid even">
+    <!-- Two rows, shared: the invitations line up with each other and what hangs
+         under them lines up too. One box floating in the middle of a taller one
+         reads as a mistake before it reads as anything else. -->
+    <div class="grid even ways">
       <div id="way-record">
         <button class="invite primary" id="rec-start" disabled>
           <b data-i18n="rec.start">Record</b>
           <span data-i18n="rec.startHint">A meeting, a call, anything playing on this Mac.</span>
         </button>
-        <p class="out" id="rec-plan"></p>
-        <!-- Which device carries which side is the author's control, not the
-             stranger's: it is guessed here and correct nearly always, and asking
-             it on the first screen made the app's opening question a question
-             about plumbing. -->
-        <details class="more" id="rec-sources">
-          <summary data-i18n="rec.sources">What to record</summary>
-          <div class="grid">
-            <div class="field">
-              <label class="label" for="rec-voice" data-i18n="rec.voice">Your voice</label>
-              <div class="line"><select id="rec-voice"></select></div>
+        <div>
+          <p class="out" id="rec-plan"></p>
+          <!-- Which device carries which side is the author's control, not the
+               stranger's: it is guessed here and correct nearly always, and asking
+               it on the first screen made the app's opening question a question
+               about plumbing. -->
+          <details class="more" id="rec-sources">
+            <summary data-i18n="rec.sources">What to record</summary>
+            <div class="grid">
+              <div class="field">
+                <label class="label" for="rec-voice" data-i18n="rec.voice">Your voice</label>
+                <div class="line"><select id="rec-voice"></select></div>
+              </div>
+              <div class="field">
+                <label class="label" for="rec-computer" data-i18n="rec.computer">Your computer's audio</label>
+                <div class="line"><select id="rec-computer"></select></div>
+              </div>
             </div>
-            <div class="field">
-              <label class="label" for="rec-computer" data-i18n="rec.computer">Your computer's audio</label>
-              <div class="line"><select id="rec-computer"></select></div>
+            <div class="actions" style="margin-top:1.1rem">
+              <button class="link" id="rec-refresh" data-i18n="rec.refresh">Look again</button>
             </div>
-          </div>
-          <div class="actions" style="margin-top:1.1rem">
-            <button class="link" id="rec-refresh" data-i18n="rec.refresh">Look again</button>
-          </div>
-        </details>
+          </details>
+        </div>
       </div>
 
       <div id="way-file">
@@ -99,9 +104,11 @@
           <b data-i18n="new.choose">Choose an audio or video file</b>
           <span data-i18n="new.chooseHint">MP3, WAV, M4A, MP4, MOV — anything your ffmpeg reads.</span>
         </button>
-        <div class="paste" id="paste-row">
-          <label class="label" for="source" data-i18n="new.paste">or paste a path</label>
-          <div class="line"><input type="text" id="source" spellcheck="false" placeholder="/Users/you/Documents/recording.m4a"></div>
+        <div>
+          <div class="paste" id="paste-row">
+            <label class="label" for="source" data-i18n="new.paste">or paste a path</label>
+            <div class="line"><input type="text" id="source" spellcheck="false" placeholder="/Users/you/Documents/recording.m4a"></div>
+          </div>
         </div>
       </div>
     </div>

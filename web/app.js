@@ -302,7 +302,7 @@ function renderJob(job) {
 }
 
 let lastState = null;
-let historyCount = null;  // how many runs the library was last drawn for
+let lastRun = null;  // which run the library was last drawn for
 
 function renderQueue(rows) {
   show($("queue-box"), rows.length > 0);
@@ -371,10 +371,14 @@ function render(s) {
   renderResumable(s.resumable || []);
 
   // The library is the resting state, so a finished transcript has to land in it
-  // without anybody navigating anywhere. History changing is the cheapest tell,
-  // and it also covers the first paint.
-  if (s.history.length !== historyCount) {
-    historyCount = s.history.length;
+  // without anybody navigating anywhere. The newest run rather than how many there
+  // are: /state returns the last thirty, so after the thirtieth the count never
+  // moves again and the list only ever loaded when the app was opened — which is
+  // exactly how it behaved. Empty string covers the first paint.
+  const top = s.history[0];
+  const newest = top ? `${top.id}:${top.status}:${top.ended_at}` : "";
+  if (newest !== lastRun) {
+    lastRun = newest;
     if (typeof openLibrary === "function") openLibrary();
   }
   show($("history-box"), s.history.length > 0);

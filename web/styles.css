@@ -61,12 +61,20 @@ h1 em { font-style: normal; color: var(--accent); }
 .pill.bad::before { background: var(--accent); }
 
 /* --- steps --- */
-section { margin-bottom: 2rem; }
-.step { display: block; }
+/* Sections have to look like sections. At the same weight as the captions inside
+   them, with a hairline that faded into the paper, the whole page read as one long
+   article — you could not see where anything began or ended. The marking stays
+   monospaced small caps; it is just given the ink and the air of a heading. */
+section { margin-bottom: 2.75rem; }
+/* A rule across the top and the marking sitting on it. The trailing hairline it
+   replaces was the same weight as everything else on the page and stopped short of
+   the edge, so nothing announced where a section began — the whole app read as one
+   long article. The marking stays monospaced small caps; it is given ink and air. */
+.step { display: block; border-top: 1px solid var(--rule); padding-top: 1.1rem; }
 .step > .label {
-  color: var(--ink-soft); display: flex; align-items: center; gap: .6rem; margin-bottom: .85rem;
+  color: var(--ink); font-size: .72rem; letter-spacing: .14em;
+  display: block; margin-bottom: 1.1rem;
 }
-.step > .label::after { content: ""; flex: 1; height: 1px; background: var(--rule-soft); }
 
 /* the big invitation */
 .invite {
@@ -83,11 +91,16 @@ section { margin-bottom: 2rem; }
    for, and side by side in identical boxes it read as a coin toss. */
 .invite.primary { border-color: var(--accent); }
 .invite.primary b { color: var(--accent); font-size: clamp(1.6rem, 4.2vw, 2.1rem); }
+/* Both cells span the same two rows, so the invitations share a height whatever
+   their wording does and so does everything hanging beneath them. */
+.ways { grid-template-rows: auto auto; }
+.ways > div { display: grid; grid-row: span 2; grid-template-rows: subgrid; }
+.invite { display: flex; flex-direction: column; justify-content: center; }
 /* Where the recording will land and who will be labelled what. A caption under the
    button, not a second box competing with it: the filled panel .out draws for the
    output preview reads as another thing to deal with here. */
 #rec-plan {
-  background: none; padding: .1rem 0; margin-top: .9rem;
+  background: none; padding: .1rem 0;
   font-size: .82rem; color: var(--ink-soft); word-break: normal;
 }
 #rec-plan b { color: var(--ink); }
