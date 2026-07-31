@@ -64,6 +64,15 @@ evidence rather than a hunch.
 
 ## Architecture
 
+- [ ] **The app asks for screen recording and only wants audio.** `syscapture.swift` captures
+      system audio with ScreenCaptureKit, which is a screen API: it always costs the *Screen &
+      System Audio Recording* grant, and it will not run audio-only, so the helper configures a
+      2×2 video stream at 1 fps and drains the frames into a `Discard` sink to keep audio
+      flowing. A Core Audio process tap — `CATapDescription` with `AudioHardwareCreateProcessTap`,
+      macOS 14.4 and later — is the API behind the separate *System Audio Recording Only* grant
+      and needs nothing else. It removes the frightening prompt and the video nobody wants, and it
+      rewrites the most expensively debugged file here, so it belongs to recording's own discovery.
+
 - [ ] **`record.py` is past the size this project keeps to.** Capture, mixing, orphans, permissions
       and device handling could be separate.
 - [ ] **A level check before recording would beat any device guess.** Preferring the system default
