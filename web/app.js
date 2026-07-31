@@ -78,14 +78,29 @@ let auto = { out_dir: "", basename: "" };
 // Files picked alongside the first one. They inherit this form's settings and are
 // written next to their own sources. Declared here because paint() reads it.
 let extras = [];
-let pinned = false;      // user asked for the compose screen while a finished job exists
+let pinned = false;      // user asked for the surface while a finished job exists
+let pinnedPast = null;   // the job that was on screen when they asked
 let bootstrapped = false; // defaults from the server applied once
+
+// Quality as a grade rather than a file name, the same words Settings uses. §5a:
+// what a model is called is a question nobody outside this repository can evaluate.
+function qualityOf(path) {
+  const models = (lastState && lastState.models) || [];
+  const model = models.find(m => m.path === path);
+  if (!model) return path ? tail(path, 1) : "";
+  return typeof qualityLabel === "function" ? qualityLabel(model).split(" · ")[0] : model.name;
+}
 
 function paint() {
   const f = form();
   const exts = [f.want_txt && "txt", f.want_srt && "srt"].filter(Boolean);
+  const esc = text => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const chosen = $("language").selectedOptions[0];
+  // One sentence rather than four controls: how well, in what language, and where
+  // it lands. All three are readable; none of them is a question being asked.
   $("out-preview").innerHTML = f.out_dir && f.basename && exts.length
-    ? `<i>…/${tail(f.out_dir).replace(/&/g, "&amp;").replace(/</g, "&lt;")}/</i><b>${f.basename.replace(/</g, "&lt;")}</b><i>.${exts.join(" + .")}</i>`
+    ? `<b>${esc(qualityOf(f.model))}</b><i> · </i><b>${esc(chosen ? chosen.textContent : f.language)}</b>` +
+      `<i> · …/${esc(tail(f.out_dir))}/</i><b>${esc(f.basename)}</b><i>.${exts.join(" + .")}</i>`
     : `<i>${t("new.outEmpty")}</i>`;
   $("start").disabled = !(f.source && f.model && f.out_dir && f.basename && exts.length);
   $("start").firstChild.textContent = extras.length
@@ -96,6 +111,7 @@ function paint() {
   show($("ways"), !f.source);
   show($("chosen"), !!f.source);
   show($("rest"), !!f.source);
+  paintPhase();
 }
 document.addEventListener("input", paint);
 document.addEventListener("change", paint);
@@ -140,8 +156,11 @@ function useManualModel(on) {
 function fillModels(models, saved) {
   const sel = $("model-pick");
   const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  // Graded, the same words Settings uses. A file name is not something anybody can
+  // weigh against anything.
   sel.innerHTML = models.map(m =>
-    `<option value="${esc(m.path)}">${esc(m.name)} · ${size(m.size)}</option>`)
+    `<option value="${esc(m.path)}">${esc(typeof qualityLabel === "function"
+      ? qualityLabel(m) : `${m.name} · ${size(m.size)}`)}</option>`)
     .join("") + `<option value="${OTHER}">${t("new.elsewhere")}</option>`;
   show($("model-hint"), !models.length);
   // Largest model is first and therefore preselected; a saved default wins.
@@ -201,14 +220,19 @@ $("choose-model").onclick = (e) => browse("file", "model", e.currentTarget);
 $("choose-dir").onclick = (e) => browse("folder", "out-dir", e.currentTarget);
 $("change-file").onclick = (e) => browse("files", "source", e.currentTarget);
 
-$("reset").onclick = () => {
+// The way back out of the flow, from any beat of it. Nothing is undone — the file
+// is on disk and the transcript is in the library — the surface just comes back.
+function leaveFlow() {
+  pin();
+  readFor = null;
   ["source", "model", "out-dir", "basename"].forEach(id => ($(id).value = ""));
   auto = { out_dir: "", basename: "" };
   extras = [];
   renderBatchNote();
   formError(null);
   paint();
-};
+}
+$("reset").onclick = leaveFlow;
 
 $("start").onclick = async () => {
   const body = form();
@@ -247,7 +271,7 @@ $("job-cancel").onclick = async () => {
   try { await api("/cancel", {}); } catch (err) { formError(err.detail); }
   await refresh();
 };
-$("job-again").onclick = () => { pinned = true; render(lastState); };
+$("job-again").onclick = () => { leaveFlow(); render(lastState); };
 
 const STAGE_KEYS = ["queued", "starting", "converting", "transcribing", "saving",
                     "completed", "cancelling", "cancelled", "failed"];
@@ -302,7 +326,69 @@ function renderJob(job) {
 }
 
 let lastState = null;
-let lastRun = null;  // which run the library was last drawn for
+let lastRun = null;   // which run the library was last drawn for
+let readFor = null;     // the finished job whose transcript is being read, if any
+let watched = null;     // the last job this page actually saw running
+
+// Both stories are one flow with two openings — record or choose a file, then
+// transcribe, then read it — and it runs as phases so that only the beat you are
+// on is on screen. Everything else, the library included, steps aside.
+//
+//   idle → ready → working → done, with recording in front of all of them.
+//
+// `pinned` is the way out: it says leave the finished job alone, I want the
+// surface back. Starting or resuming something clears it.
+function phaseOf(s) {
+  // A pin is against one particular job. When a different one turns up the pin has
+  // nothing left to hold: the second between queueing a recording and its job being
+  // picked up would otherwise show the previous transcription's result, and then
+  // the flow would follow the wrong run.
+  if (pinned && s.job && s.job.id !== pinnedPast) pinned = false;
+  if (typeof recIsLive !== "undefined" && recIsLive) return "recording";
+  if (s.job && !pinned) return s.job.status === "completed" ? "done" : "working";
+  return $("source").value.trim() ? "ready" : "idle";
+}
+
+// Leave the job that is on screen alone; the surface is wanted instead.
+function pin() {
+  pinned = true;
+  pinnedPast = lastState && lastState.job ? lastState.job.id : null;
+}
+
+// The end of the flow is the transcript itself, read against its audio — the same
+// reader the library opens, because there is no reason for two of them. It waits
+// for the run to reach the library rather than asking for it early: history is
+// written a moment after the job says completed, and a 404 here would be a flash
+// of red at the happiest moment in the app.
+function finish(job) {
+  // Only a job this page watched run. A transcription that had already finished
+  // before any of this started — one sitting in the state at load, or the previous
+  // one still there for the second between queueing a recording and that job being
+  // picked up — is not what anybody is waiting to read.
+  if (job.id !== watched || readFor) return;
+  if (typeof entries === "undefined" || !entries.some(e => e.id === job.id)) return;
+  readFor = job.id;
+  showEntry(job.id);
+}
+
+// Which beat is on screen. Called from the poll and again the moment anything the
+// phase depends on changes, so that choosing a file clears the surface then rather
+// than up to a second later.
+function paintPhase() {
+  const s = lastState;
+  if (!s) return {};
+  if (s.job && (s.job.status === "running" || s.job.status === "cancelling")) watched = s.job.id;
+  const at = phaseOf(s);
+  if (at === "done") finish(s.job);
+  // readFor is set before the transcript is fetched, so the job screen leaves in
+  // the same frame the reader is asked for rather than a second after it.
+  const reading = !$("reader").hidden || readFor !== null;
+  show($("screen-start"), !reading && (at === "idle" || at === "ready"));
+  show($("screen-job"), !reading && (at === "working" || at === "done"));
+  show($("resting"), !reading && at === "idle");
+  show($("notices"), !reading && at === "idle");
+  return { at, reading };
+}
 
 function renderQueue(rows) {
   show($("queue-box"), rows.length > 0);
@@ -353,20 +439,11 @@ function render(s) {
     paint();
   }
 
-  // Recording, then a running job, then the two ways in: whichever is happening
-  // owns the top of the surface. Drawn before the decision because it is what
-  // sets recIsLive.
+  // Drawn before the phase is decided, because it is what sets recIsLive.
   if (typeof renderRecording === "function") renderRecording(s.recording, s.orphan_recordings);
-  const recording = typeof recIsLive !== "undefined" && recIsLive;
 
-  // Stay on the compose screen once asked for it, even as queued jobs come and
-  // go — otherwise queueing more files while one runs is impossible. Starting or
-  // resuming something clears the pin and jumps back to the job screen.
-  const job = s.job;
-  const onJob = !!job && !pinned && !recording;
-  show($("screen-job"), onJob);
-  show($("screen-start"), !onJob && !recording);
-  if (onJob) renderJob(job);
+  const { at, reading } = paintPhase();
+  if (!reading && (at === "working" || at === "done")) renderJob(s.job);
   renderQueue(s.queue || []);
   renderResumable(s.resumable || []);
 

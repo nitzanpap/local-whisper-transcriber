@@ -8,6 +8,14 @@ evidence rather than a hunch.
 
 - [x] **Remove does nothing on a running transcription.** The button called `DELETE /api/queue/{id}`,
       which only ever removed jobs *waiting* their turn, so a job that had started refused silently.
+- [ ] **A macOS consent dialog freezes the whole app, silently.** `write_outputs` renames into the
+      output folder from the event loop, and a rename into a TCC-protected folder — `~/Documents`,
+      `~/Desktop`, `~/Downloads` — blocks in the kernel until the dialog is answered. Caught in the
+      act: `sample` on the backend showed the main thread parked in `os_rename` → `__rename` while
+      `/api/state` answered nothing at all, so the interface went dead mid-transcription with no
+      message. A freshly installed build re-prompts, so this is the first run after every release.
+      The file work belongs off the loop (`asyncio.to_thread`), and the wait deserves a sentence.
+
 - [ ] **API failures are easy to miss in the interface.** They reach `formError`, which is not
       always on screen. A failed request should be visible wherever the click was.
 - [ ] **A quiet channel sorts to the front of a transcript.** A channel carrying continuous sound

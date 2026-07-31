@@ -26,7 +26,6 @@ function esc(t) {
 }
 
 function renderEntries() {
-  show($("entries-box"), $("reader").hidden);
   $("entries").innerHTML = entries.length ? entries.map(e => `
     <button class="entry" data-entry="${esc(e.id)}">
       <span class="entry-name">${esc(e.name)}</span>
@@ -81,10 +80,14 @@ async function showEntry(id, seekMs) {
   }
 
   renderFacts(detail);
+  // The reader is the whole screen, whether it was reached by finishing a
+  // transcription or by picking one out of the list.
   show($("reader"), true);
-  show($("entries-box"), false);
-  show($("hits-box"), false);
+  show($("resting"), false);
+  show($("screen-start"), false);
+  show($("screen-job"), false);
   if (seekMs) seekTo(seekMs);
+  return true;
 }
 
 // What the run cost. Nobody needs it to read a transcript, which is why it is
@@ -160,8 +163,11 @@ $("player").addEventListener("timeupdate", () => {
 $("reader-close").onclick = () => {
   $("player").pause();
   show($("reader"), false);
-  show($("entries-box"), true);
   show($("hits-box"), $("hits").children.length > 0);
+  // Closing the transcript is also how the flow ends, so the finished job is let
+  // go of here — otherwise the next poll would open the reader on it again.
+  if (typeof leaveFlow === "function") leaveFlow();
+  show($("resting"), true);
 };
 
 $("reader-copy").onclick = async (e) => {
@@ -191,7 +197,6 @@ async function runSearch() {
   if (q.length < 2) {
     show($("hits-box"), false);
     $("search-status").textContent = "";
-    show($("entries-box"), $("reader").hidden);
     return;
   }
   let hits = [];

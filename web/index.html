@@ -32,6 +32,12 @@
 <!-- ============ the one surface ============ -->
 <div id="view-home">
 
+<!-- Things to tell you about before you have started anything: new recordings
+     found, a run that never finished, audio the app never wrote out, a permission
+     it still needs. All of them are about the surface, so none of them belongs on
+     top of a transcript being made or read. -->
+<div id="notices">
+
   <div class="note" id="pending" hidden>
     <h2 data-i18n="pending.title">New recordings</h2>
     <p id="pending-what"></p>
@@ -59,6 +65,8 @@
     <h2 data-i18n="rec.orphanTitle">Recording that was never saved</h2>
     <div id="rec-orphan-list"></div>
   </div>
+
+</div><!-- /notices -->
 
 <!-- ============ what do you want words from ============ -->
 <main id="screen-start">
@@ -126,12 +134,22 @@
     </div>
   </section>
 
+  <!-- The one question this step asks is whether to transcribe it. What it will be
+       transcribed with is a sentence you can read rather than four controls you
+       have to operate; the controls are one click away for whoever wants them. -->
   <div id="rest" hidden>
-    <section class="step reveal" id="rest-inner">
-      <span class="label" data-i18n="new.transcription">Transcription</span>
+    <p class="out" id="out-preview"></p>
+
+    <div class="actions">
+      <button class="solid" id="start" disabled><span data-i18n="new.start">Transcribe</span></button>
+      <button class="link" id="reset" data-i18n="new.other">Choose something else</button>
+    </div>
+
+    <details class="more" id="rest-more">
+      <summary data-i18n="new.changeHow">Change how</summary>
       <div class="grid two">
         <div class="field">
-          <label class="label" for="model-pick" data-i18n="new.model">whisper.cpp model</label>
+          <label class="label" for="model-pick" data-i18n="new.model">Quality</label>
           <div class="line" id="model-line">
             <select id="model-pick"></select>
           </div>
@@ -159,12 +177,8 @@
           </div>
         </div>
       </div>
-    </section>
 
-    <section class="step">
-      <span class="label" data-i18n="new.result">Result</span>
-      <p class="out" id="out-preview"></p>
-      <div class="chips" style="margin-top:1rem">
+      <div class="chips" style="margin-top:1.4rem">
         <label class="chip"><input type="checkbox" id="want-txt" checked><span data-i18n="new.txt">Transcript · txt</span></label>
         <label class="chip"><input type="checkbox" id="want-srt" checked><span data-i18n="new.srt">Subtitles · srt</span></label>
       </div>
@@ -193,12 +207,7 @@
           </div>
         </div>
       </details>
-    </section>
-
-    <div class="actions">
-      <button class="solid" id="start" disabled><span data-i18n="new.start">Start transcription</span></button>
-      <button class="link" id="reset" data-i18n="new.clear">Clear</button>
-    </div>
+    </details>
   </div>
 
   <div class="note" id="form-error" hidden tabindex="-1" role="alert">
@@ -263,11 +272,14 @@
   <div class="tape" id="rec-tape"><i></i></div>
 
   <div class="actions">
-    <button class="solid" id="rec-stop" data-i18n="rec.stop">Stop and transcribe</button>
+    <button class="solid" id="rec-stop" data-i18n="rec.stop">Stop</button>
     <button class="link danger" id="rec-throw" data-i18n="rec.throw">Stop and throw it away</button>
   </div>
 </main>
 
+<!-- A side that recorded nothing, said on the way out of the recording rather than
+     on the way into the transcript: this is the last moment anybody could still go
+     back and record it again. It outlives the recording state it came from. -->
 <div class="note" id="rec-done" hidden>
   <h2 id="rec-done-title"></h2>
   <p id="rec-done-what"></p>
@@ -295,6 +307,11 @@
 </section>
 
 <!-- ============ what you have already: the resting state ============ -->
+<!-- Everything here steps aside while a flow is running. A transcript being made is
+     one thing at a time — record, transcribe, read it — and a list of the other
+     forty underneath it is not one of those things. -->
+<div id="resting">
+
 <section class="step" id="search-box">
   <label class="label" for="q" data-i18n="lib.search">Search every transcript</label>
   <div class="line">
@@ -323,6 +340,10 @@
   </div>
 </details>
 
+</div><!-- /resting -->
+
+<!-- The last beat of both stories, and the only place a transcript is read: reached
+     by finishing a transcription, or by opening one from the list. -->
 <section id="reader" hidden>
   <div class="reader-head">
     <div>

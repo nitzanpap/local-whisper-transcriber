@@ -13,6 +13,8 @@ let recFound = null;   // the last device listing, so a language switch can redr
 // Whether a recording is running. app.js reads it to decide what owns the screen,
 // because recording outranks everything else that could be there.
 let recIsLive = false;
+let adopted = null;    // the saved recording that has already entered the flow
+let warning = null;    // what to say about it after its recording state is gone
 
 const longClock = (s) => {
   if (s == null || !isFinite(s)) return "0:00";
@@ -137,6 +139,8 @@ $("rec-throw").onclick = () => stopRecording(false);
 for (const id of ["rec-again", "rec-dismiss"]) {
   $(id).onclick = async () => {
     recError(null);
+    warning = null;
+    renderWarning();
     try { await api("/record/dismiss", {}); } catch { /* nothing to clear */ }
     await refresh();
   };
@@ -149,13 +153,10 @@ const RECORDING_LIVE = ["recording", "stopping", "saving"];
 function renderRecording(rec, orphans) {
   renderOrphans(orphans || []);
   const live = !!rec && RECORDING_LIVE.includes(rec.status);
-  const saved = !!rec && rec.status === "saved";
   recIsLive = live;
   show($("rec-live"), live);
-  // A note saying the last recording was saved belongs underneath the ways in,
-  // not in front of them: it is a confirmation, and it must not stand between
-  // anyone and the next recording.
-  show($("rec-done"), saved);
+  if (rec && rec.status === "saved") adopt(rec);
+  renderWarning();
 
   if (rec && rec.status === "failed") recError(rec.error);
 
@@ -191,20 +192,44 @@ function renderRecording(rec, orphans) {
     $("rec-throw").disabled = rec.status !== "recording";
   }
 
-  if (saved) {
-    $("rec-done-title").textContent = t("rec.savedTitle", { at: longClock(rec.seconds) });
-    // A side that recorded nothing is said here, on the notice that says the
-    // recording was saved, because that is the last moment anyone could still go
-    // back and record it again.
-    const quiet = (rec.quiet || []).map(side =>
-      side === "voice" ? t("rec.quietVoice") : t("rec.quietComputer"));
-    $("rec-done-what").textContent = [
-      rec.job_id ? t("rec.savedQueued", { path: rec.path })
-                 : t("rec.savedOnly", { path: rec.path }),
-      ...quiet,
-    ].join("\n\n");
-    $("rec-open").onclick = () => api("/reveal", { path: rec.path.replace(/\/[^/]*$/, "") }).catch(() => {});
+}
+
+// A recording that has been written out is a file like any other, so it goes
+// through the same door: it becomes the source, and the flow asks whether to
+// transcribe it. Unless the setting already answered, in which case a job is
+// running and the flow is a beat further on. Either way the recording is let go
+// of here, because a notice saying it was saved would stand in front of the very
+// screen that says the same thing better.
+function adopt(rec) {
+  if (adopted === rec.id) return;
+  adopted = rec.id;
+  // Kept because the recording state it came from is about to be cleared, and
+  // because a side that heard nothing is worth saying at the last moment anybody
+  // could still go back and record it again.
+  warning = {
+    at: longClock(rec.seconds),
+    folder: rec.path.replace(/\/[^/]*$/, ""),
+    quiet: (rec.quiet || []).map(side =>
+      side === "voice" ? t("rec.quietVoice") : t("rec.quietComputer")),
+  };
+  // Whether the finished job still sitting in the state gets the screen. It must
+  // not: the transcript of the last thing is not what somebody who just stopped
+  // recording is waiting to see. If this recording was queued, that job is the
+  // new one and the flow follows it.
+  pin();
+  if (!rec.job_id) {
+    $("source").value = rec.path;
+    inspect();
   }
+  api("/record/dismiss", {}).catch(() => {});
+}
+
+function renderWarning() {
+  show($("rec-done"), !!warning && warning.quiet.length > 0);
+  if (!warning || !warning.quiet.length) return;
+  $("rec-done-title").textContent = t("rec.savedTitle", { at: warning.at });
+  $("rec-done-what").textContent = warning.quiet.join("\n\n");
+  $("rec-open").onclick = () => api("/reveal", { path: warning.folder }).catch(() => {});
 }
 
 function renderOrphans(rows) {
