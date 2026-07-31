@@ -84,7 +84,8 @@ DIGITAL_SILENCE = -120.0
 SILENT_LUFS = -70.0
 
 # The helper's own meter, once a second, so the computer's side has one too.
-HELPER_LEVEL = re.compile(r"syscapture: level (-?\d+(?:\.\d+)?) frames (\d+)")
+# The helper captures both sides now, so it says which one it is speaking for.
+HELPER_LEVEL = re.compile(r"syscapture: (\w+) level (-?\d+(?:\.\d+)?) frames (\d+)")
 # Digital zero, which the helper reports as -120 and no real signal ever reaches.
 # Frames arriving with nothing in them at all is what a refused tap looks like;
 # frames not arriving is only a quiet machine.
@@ -744,15 +745,16 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
                 continue
             found = HELPER_LEVEL.search(line)
             if found:
-                # Kept out of the log, like ffmpeg's: a line a second would bury
-                # everything worth reading.
-                rec.setdefault("live", {})["computer"] = float(found.group(1))
+                # Kept out of the log, like ffmpeg's: ten lines a second would
+                # bury everything worth reading.
+                side, level = found.group(1), float(found.group(2))
+                rec.setdefault("live", {})[side] = level
                 # The helper only speaks when frames actually arrived, so this is
-                # the one honest record that sound ever reached the tap — its file
-                # now fills itself with silence either way. See captured_sources.
-                rec.setdefault("peak", {})["computer"] = float(found.group(1))
+                # the one honest record that sound ever reached it — its files now
+                # fill themselves with silence either way. See captured_sources.
+                rec.setdefault("peak", {})[side] = level
                 if isinstance(rec.get("ever"), set):
-                    rec["ever"].add("computer")
+                    rec["ever"].add(side)
                 continue
             rec["log"].append(line)
         await proc.wait()
@@ -760,8 +762,9 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
         if HELPER is proc:
             HELPER = None
         rec["helper_code"] = proc.returncode
-        rec.setdefault("live", {}).pop("computer", None)
-        rec.setdefault("peak", {}).pop("computer", None)
+        for side in ("voice", "computer"):
+            rec.setdefault("live", {}).pop(side, None)
+            rec.setdefault("peak", {}).pop(side, None)
 
 
 async def _until_mic_ready(rec: dict, timeout: float = 4.0) -> None:

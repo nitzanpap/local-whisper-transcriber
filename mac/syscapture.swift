@@ -80,8 +80,11 @@ func defaultOutputUID() -> String? {
 /// Nobody outside can tell those apart, which is why this reports both.
 final class Meter {
     private let lock = NSLock()
+    private let side: String
     private var frames = 0
     private var peak: Float = 0
+
+    init(_ side: String) { self.side = side }
 
     func add(_ samples: UnsafeBufferPointer<Int16>) {
         lock.lock()
@@ -100,8 +103,8 @@ final class Meter {
         lock.unlock()
         guard n > 0 else { return }   // no callbacks: the machine is playing nothing
         let db = loudest > 0 ? 20 * log10(loudest) : -120
-        FileHandle.standardError.write(Data(String(format: "syscapture: level %.1f frames %d\n",
-                                                   db, n).utf8))
+        FileHandle.standardError.write(Data(String(format: "syscapture: %@ level %.1f frames %d\n",
+                                                   side, db, n).utf8))
     }
 }
 
@@ -145,6 +148,11 @@ final class Sink {
         // Serialised because Core Audio may deliver on more than one thread, and
         // two half-written frames interleaved would be audible as noise.
         lock.lock()
+        // Whatever arrives before the clock starts is thrown away rather than
+        // written without a place in time. Both sides are started together and
+        // given second zero together, so both discard the same moment and neither
+        // ends up ahead of the other.
+        guard started != 0 else { lock.unlock(); return }
         catchUp()
         put(samples)
         written += samples.count
@@ -211,23 +219,227 @@ final class Sink {
     }
 }
 
-let args = Array(CommandLine.arguments.dropFirst())
-guard let target = args.first, !target.isEmpty else {
-    fail("no output path given", 2)
+// --- input devices -----------------------------------------------------------
+
+/// Every microphone this machine has, as (uid, name, isDefault).
+///
+/// By UID rather than by index. ffmpeg's device list is positional, and positions
+/// move when anything is plugged in or taken away — a stored `1` has already meant
+/// two different microphones on this machine. A UID belongs to the device.
+func inputDevices() -> [(uid: String, name: String, isDefault: Bool)] {
+    var addr = address(kAudioHardwarePropertyDevices)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject),
+                                         &addr, 0, nil, &size) == noErr else { return [] }
+    var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                     &addr, 0, nil, &size, &ids) == noErr else { return [] }
+
+    var defaultAddr = address(kAudioHardwarePropertyDefaultInputDevice)
+    var fallback = AudioDeviceID(0)
+    var one = UInt32(MemoryLayout<AudioDeviceID>.size)
+    _ = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                   &defaultAddr, 0, nil, &one, &fallback)
+
+    return ids.compactMap { id in
+        // Something with no input streams is an output, and not a microphone.
+        var streams = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioObjectPropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain)
+        var bytes: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &bytes) == noErr,
+              bytes > 0 else { return nil }
+        guard let uid = stringProperty(id, kAudioDevicePropertyDeviceUID),
+              let name = stringProperty(id, kAudioObjectPropertyName) else { return nil }
+        return (uid, name, id == fallback)
+    }
+}
+
+func stringProperty(_ id: AudioDeviceID, _ selector: AudioObjectPropertySelector) -> String? {
+    var addr = address(selector)
+    var value: CFString = "" as CFString
+    var size = UInt32(MemoryLayout<CFString>.size)
+    let status = withUnsafeMutablePointer(to: &value) {
+        AudioObjectGetPropertyData(id, &addr, 0, nil, &size, $0)
+    }
+    return status == noErr ? value as String : nil
+}
+
+func inputDevice(uid: String?) -> AudioDeviceID? {
+    var addr = address(kAudioHardwarePropertyDevices)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject),
+                                         &addr, 0, nil, &size) == noErr else { return nil }
+    var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                     &addr, 0, nil, &size, &ids) == noErr else { return nil }
+    if let uid, !uid.isEmpty {
+        return ids.first { stringProperty($0, kAudioDevicePropertyDeviceUID) == uid }
+    }
+    var defaultAddr = address(kAudioHardwarePropertyDefaultInputDevice)
+    var found = AudioDeviceID(0)
+    var one = UInt32(MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                     &defaultAddr, 0, nil, &one, &found) == noErr,
+          found != kAudioObjectUnknown else { return nil }
+    return found
+}
+
+// --- what was asked for ------------------------------------------------------
+
+var tapPath = ""
+var micPath = ""
+var micUID = ""
+var listing = false
+
+var pending = Array(CommandLine.arguments.dropFirst())
+while let flag = pending.first {
+    pending.removeFirst()
+    switch flag {
+    case "--list-inputs": listing = true
+    case "--tap": tapPath = pending.isEmpty ? "" : pending.removeFirst()
+    case "--mic": micPath = pending.isEmpty ? "" : pending.removeFirst()
+    case "--mic-device": micUID = pending.isEmpty ? "" : pending.removeFirst()
+    // The old shape, still meaningful: one bare path is where to put the tap.
+    default: if tapPath.isEmpty && !flag.hasPrefix("--") { tapPath = flag }
+    }
+}
+
+if listing {
+    for device in inputDevices() {
+        print("\(device.uid)\t\(device.name)\t\(device.isDefault ? "default" : "")")
+    }
+    exit(0)
+}
+if tapPath.isEmpty && micPath.isEmpty {
+    fail("nothing to record: give --tap and/or --mic a path", 2)
 }
 
 // EPIPE would otherwise kill the process before the write can be ignored.
 signal(SIGPIPE, SIG_IGN)
 
-// O_CREAT because the usual target is a plain file that does not exist yet;
-// without it this failed with ENOENT on every recording the app made and worked
-// only in the one place a FIFO had already been created. A FIFO still works:
-// opening one for writing blocks until the reader arrives, which is the handshake
-// that keeps the two ends from racing.
-let fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-if fd < 0 { fail("cannot write to \(target)", 2) }
-let sink = Sink(fd: fd)
-let meter = Meter()
+/// O_CREAT because the usual target is a plain file that does not exist yet;
+/// without it this failed with ENOENT on every recording the app made and worked
+/// only in the one place a FIFO had already been created. A FIFO still works:
+/// opening one for writing blocks until the reader arrives, which is the handshake
+/// that keeps the two ends from racing.
+func openSink(_ path: String) -> Sink {
+    let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+    if fd < 0 { fail("cannot write to \(path)", 2) }
+    return Sink(fd: fd)
+}
+
+let tapSink = tapPath.isEmpty ? nil : openSink(tapPath)
+let micSink = micPath.isEmpty ? nil : openSink(micPath)
+let meter = Meter("computer")
+let micMeter = Meter("voice")
+
+// --- the microphone ----------------------------------------------------------
+//
+// Taken through Core Audio rather than handed to ffmpeg, because ffmpeg's
+// avfoundation input loses samples. Measured on the same microphone at the same
+// moment: Core Audio delivered 47,509 frames a second against a nominal 48,000,
+// which is the ratio you would expect from the moment before the first buffer
+// arrives; ffmpeg's input delivered 0.86 of real time, steadily, and its own log
+// accounted for every packet it was given with no decode errors. The samples were
+// never reaching it. A recording made that way is an eighth short and drifts about
+// seven minutes an hour away from the other side of the same conversation.
+//
+// Capturing both sides here also means one process, one clock and one moment when
+// recording starts, so the two files line up by construction instead of being
+// two programs started in sequence and hoping.
+
+var micProc: AudioDeviceIOProcID?
+var micDevice = AudioDeviceID(kAudioObjectUnknown)
+
+func startMicrophone() -> Bool {
+    guard let sink = micSink else { return true }
+    guard let device = inputDevice(uid: micUID.isEmpty ? nil : micUID) else {
+        fail("no microphone called \(micUID.isEmpty ? "the default input" : micUID)", 2)
+    }
+    micDevice = device
+    var formatAddr = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyStreamFormat,
+        mScope: kAudioObjectPropertyScopeInput,
+        mElement: kAudioObjectPropertyElementMain)
+    var asbd = AudioStreamBasicDescription()
+    var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+    guard AudioObjectGetPropertyData(device, &formatAddr, 0, nil, &size, &asbd) == noErr,
+          let deviceFormat = AVAudioFormat(streamDescription: &asbd),
+          let out = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: OUT_RATE,
+                                  channels: 1, interleaved: true),
+          let converter = AVAudioConverter(from: deviceFormat, to: out) else {
+        fail("the microphone would not say what format it produces", 2)
+    }
+
+    let status = AudioDeviceCreateIOProcIDWithBlock(&micProc, device, nil) { _, input, _, _, _ in
+        guard !sink.gone else { return }
+        let incoming = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+        guard let first = incoming.first, first.mDataByteSize > 0 else { return }
+        let bytesPerFrame = deviceFormat.streamDescription.pointee.mBytesPerFrame
+        guard bytesPerFrame > 0 else { return }
+        let frames = AVAudioFrameCount(first.mDataByteSize / bytesPerFrame)
+        guard frames > 0,
+              let source = AVAudioPCMBuffer(pcmFormat: deviceFormat, bufferListNoCopy: input),
+              let converted = AVAudioPCMBuffer(
+                  pcmFormat: out,
+                  frameCapacity: AVAudioFrameCount(Double(frames) * OUT_RATE
+                                                   / deviceFormat.sampleRate) + 16)
+        else { return }
+        var handed = false
+        var error: NSError?
+        converter.convert(to: converted, error: &error) { _, outStatus in
+            if handed { outStatus.pointee = .noDataNow; return nil }
+            handed = true
+            outStatus.pointee = .haveData
+            return source
+        }
+        guard error == nil, converted.frameLength > 0,
+              let channel = converted.int16ChannelData else { return }
+        let samples = UnsafeBufferPointer(start: channel[0], count: Int(converted.frameLength))
+        micMeter.add(samples)
+        sink.write(samples)
+    }
+    if status != noErr || micProc == nil {
+        fail("macOS would not start reading the microphone", DENIED)
+    }
+    if AudioDeviceStart(device, micProc) != noErr {
+        fail("macOS would not start the microphone", DENIED)
+    }
+    return true
+}
+
+func stopMicrophone() {
+    if let proc = micProc, micDevice != kAudioObjectUnknown {
+        AudioDeviceStop(micDevice, proc)
+        AudioDeviceDestroyIOProcID(micDevice, proc)
+        micProc = nil
+    }
+}
+
+// The microphone first, and the tap afterwards. Creating the aggregate device that
+// carries a tap reconfigures the audio HAL, and a capture opened after that never
+// delivers a sample — measured both ways round, twice, with permissions
+// uninvolved. The order is the whole reason this is not two independent programs.
+_ = startMicrophone()
+
+if tapSink == nil {
+    // A microphone on its own: no tap, no aggregate device, nothing else to build.
+    let alone = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "syscapture.mic"))
+    alone.schedule(deadline: .now() + 0.1, repeating: 0.1)
+    alone.setEventHandler {
+        micMeter.report()
+        micSink?.idle()
+    }
+    alone.resume()
+    micSink?.begin()
+    waitForStop(micSink)
+    stopMicrophone()
+    micSink?.idle()
+    exit(0)
+}
+let sink = tapSink!
 
 guard let outputUID = defaultOutputUID() else {
     fail("no default output device to tap", 2)
@@ -342,49 +554,69 @@ if AudioDeviceStart(device, ioProc) != noErr {
 }
 // Second zero, from the moment the device is actually running.
 sink.begin()
+/// Park until somebody stops us, or until the far end goes away.
+///
+/// Stopping is the normal end of a recording, so it exits 0: whatever reached the
+/// far end before the signal is the recording.
+func waitForStop(_ watching: Sink?) {
+    // Signal sources have to outlive the scope that made them or they stop firing.
+    let queue = DispatchQueue(label: "syscapture.signal")
+    var sources: [DispatchSourceSignal] = []
+    let stop = DispatchSemaphore(value: 0)
+    for sig in [SIGINT, SIGTERM] {
+        signal(sig, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
+        source.setEventHandler { stop.signal() }
+        source.resume()
+        sources.append(source)
+    }
+    // The reader going away ends it too, and nothing else would notice. On its own
+    // queue: this loop never returns until it is over, and parked on the same serial
+    // queue as the signal sources it starved them — the helper then ignored SIGINT
+    // and SIGTERM alike and had to be killed.
+    if let watching {
+        DispatchQueue.global(qos: .utility).async {
+            while !watching.gone { Thread.sleep(forTimeInterval: 0.25) }
+            stop.signal()
+        }
+    }
+    stop.wait()
+    _ = sources
+}
 
-// Once a second, whatever it is hearing, and whatever it did not. Its own queue:
-// this must keep reporting while the main thread is parked waiting to be stopped.
+// Both meters and both sinks, on one timer. Ten times a second rather than once:
+// a needle fed one number a second does not look like a slow needle, it looks like
+// a broken one — and the level this reports has always been a peak over the window,
+// so a shorter window is simply a truer picture of a voice rather than an average
+// of one. Its own queue: this must keep reporting while the main thread is parked
+// waiting to be stopped.
 let reporting = DispatchQueue(label: "syscapture.meter")
-// Ten times a second rather than once. A needle fed one number a second does not
-// look like a slow needle, it looks like a broken one — and the level this reports
-// has always been a peak over the window, so a shorter window is simply a truer
-// picture of a voice rather than an average of one.
 let ticker = DispatchSource.makeTimerSource(queue: reporting)
 ticker.schedule(deadline: .now() + 0.1, repeating: 0.1)
 ticker.setEventHandler {
     meter.report()
     sink.idle()
+    if let mic = micSink {
+        micMeter.report()
+        mic.idle()
+    }
 }
 ticker.resume()
 
-// Stopping is the normal end of a recording, so it exits 0: whatever reached the
-// far end before the signal is the recording. Signal sources have to outlive the
-// scope that made them or they stop firing.
-let queue = DispatchQueue(label: "syscapture.signal")
-var sources: [DispatchSourceSignal] = []
-let stop = DispatchSemaphore(value: 0)
-for sig in [SIGINT, SIGTERM] {
-    signal(sig, SIG_IGN)
-    let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
-    source.setEventHandler { stop.signal() }
-    source.resume()
-    sources.append(source)
-}
-// The reader going away ends it too, and nothing else would notice. On its own
-// queue: this loop never returns until it is over, and parked on the same serial
-// queue as the signal sources it starved them — the helper then ignored SIGINT and
-// SIGTERM alike and had to be killed.
-DispatchQueue.global(qos: .utility).async {
-    while !sink.gone { Thread.sleep(forTimeInterval: 0.25) }
-    stop.signal()
-}
-stop.wait()
+// Second zero, for both sides at the same instant. Everything either of them wrote
+// before this moment was dropped, so neither begins ahead of the other — which is
+// what replaces the 2.84 seconds the two captures used to be apart when they were
+// two programs started one after the other.
+sink.begin()
+micSink?.begin()
+
+waitForStop(sink)
 
 tearDown(ioProc)
+stopMicrophone()
 // The last stretch of quiet counts as much as the first. Without this a meeting
 // that ends on a pause comes out shorter than it was, and the other channel — which
 // kept running until the same signal — is left hanging past the end of this one.
 sink.idle()
-close(fd)
+micSink?.idle()
 exit(0)

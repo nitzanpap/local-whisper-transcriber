@@ -792,8 +792,11 @@ async def main() -> None:
           await record._until_audio_arrives(hearing_zeros, timeout=0.3) == [],
           "warned about a working tap")
     # The helper's meter line, which is also what gives that side a level bar at last.
-    heard = record.HELPER_LEVEL.search("syscapture: level -23.4 frames 48000")
-    check("the helper's own meter is read", heard is not None and float(heard.group(1)) == -23.4)
+    # It names the side now that one process captures both of them.
+    heard = record.HELPER_LEVEL.search("syscapture: computer level -23.4 frames 48000")
+    check("the helper's own meter is read",
+          heard is not None and heard.group(1) == "computer"
+          and float(heard.group(2)) == -23.4)
     for leftover in ("voice.wav", "computer.wav", "computer.pcm"):
         (TMP / leftover).unlink(missing_ok=True)
 
@@ -1186,6 +1189,18 @@ async def main() -> None:
             raise AssertionError(f"FAIL: accepted {why}")
         except app.HTTPException as exc:
             check(f"refuses {why}", exc.status_code == 400)
+
+    # The helper captures both sides now and says which one each level belongs to.
+    # The parser read group(1) as the level when that was the only thing on the
+    # line, so a labelled line would have handed it a side name to float().
+    both = {"log": deque(maxlen=8), "ever": set()}
+    for raw in ("syscapture: voice level -31.2 frames 4800",
+                "syscapture: computer level -20.7 frames 4800"):
+        found = record.HELPER_LEVEL.search(raw)
+        assert found, raw
+        both.setdefault("peak", {})[found.group(1)] = float(found.group(2))
+    check("each side's level lands under its own name",
+          both["peak"] == {"voice": -31.2, "computer": -20.7}, str(both["peak"]))
 
     print("one line for the menu bar")
     record.RECORDING = None
