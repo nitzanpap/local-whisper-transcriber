@@ -509,23 +509,14 @@ async def start(voice: str, computer: str) -> dict:
     RECORDING = rec
     _checkpoint(rec)
     TASK = asyncio.create_task(_run(rec))
-    missing = await _until_audio_arrives(rec)
+    await _until_audio_arrives(rec)
     if rec["status"] == "failed":
         raise Failed(rec["error"]["code"], rec["error"]["message"])
-    if missing:
-        # Thrown away rather than kept. A few seconds of half a recording is worth
-        # nothing, and keeping it would leave an unfinished transcription behind to
-        # be tidied up — which is how this was found out about in the first place.
-        # A short grace: this capture is producing nothing, so there is no file
-        # being finished off and nothing to lose by insisting quickly.
-        ask_to_stop(rec, keep=False, grace=1.0)
-        # Given a moment to actually be over, so that fixing the permission and
-        # pressing record again is not answered with "already recording".
-        try:
-            await asyncio.wait_for(asyncio.shield(TASK), timeout=2.0)
-        except (TimeoutError, asyncio.CancelledError):
-            pass
-        raise _nothing_arriving(missing)
+    # A side that is not arriving is said on the recording screen and left there,
+    # rather than ending the recording. Killing it was too strong: a recording that
+    # has nothing to hear yet is a perfectly ordinary thing — somebody presses
+    # record before the meeting starts — and being thrown out for it is worse than
+    # being told. The warning clears itself the moment audio turns up.
     # Remember the choice by name, so the next recording is one decision lighter and
     # still points at the same device after something is plugged in or unplugged.
     try:
@@ -655,15 +646,33 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
         rec["helper_code"] = proc.returncode
 
 
+async def _until_mic_ready(rec: dict, timeout: float = 4.0) -> None:
+    """Hold the tap back until the microphone is actually delivering.
+
+    Order is not a detail here, it is the whole thing. Creating the aggregate
+    device that carries a Core Audio process tap reconfigures the audio HAL, and an
+    AVFoundation capture session opened after that never delivers a single sample —
+    the device opens, ffmpeg prints no start timestamp, and not one frame arrives.
+    Measured outside the app, twice, both ways round: microphone first and it keeps
+    running while the tap is created; tap first and the microphone yields zero
+    frames for as long as you care to wait.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if rec["status"] != "recording" or _side_arriving(rec, "voice"):
+            return
+        await asyncio.sleep(0.05)
+
+
 async def _run(rec: dict) -> None:
     """One recording, start to finish: capture, then save what was captured."""
     global PROC
-    if rec.get("helper") is not None and not await _start_helper(rec):
-        return
     commands = capture_commands(rec)
     if not commands:
         # The computer's audio and nothing else: the helper is the whole capture,
-        # so there is no ffmpeg to wait on.
+        # so there is no ffmpeg to wait on and nothing to be disturbed by the tap.
+        if rec.get("helper") is not None and not await _start_helper(rec):
+            return
         asyncio.create_task(_watch_disk(rec))
         await _await_helper(rec)
         return await _finish(rec)
@@ -682,6 +691,11 @@ async def _run(rec: dict) -> None:
     PROC = procs[0]
     PROCS.clear()
     PROCS.extend(procs)
+    # Only now, and only once the microphone is live. See _until_mic_ready.
+    if rec.get("helper") is not None:
+        await _until_mic_ready(rec)
+        if not await _start_helper(rec):
+            return
     asyncio.create_task(_watch_disk(rec))
     try:
         # Labelled in the order capture_commands built them: the voice first, then a
@@ -791,6 +805,11 @@ async def _finish(rec: dict) -> None:
     # it stopped is still a recording, and still worth keeping.
     await _save(rec)
 
+
+# How long a capture is allowed to take to produce its first audio before the
+# recording screen says out loud that it is producing none. Long enough to cover an
+# ordinary start, short enough that nobody talks for a minute into nothing.
+SETTLING = 4.0
 
 # A channel quieter than this carried nothing worth transcribing. Chosen well below
 # a quiet voice — a whisper at arm's length measures around -40 — so that only
@@ -1068,6 +1087,13 @@ def public() -> dict | None:
         "levels": rec.get("levels") or {}, "quiet": rec.get("quiet") or [],
         # What each source is hearing right now, in LUFS, while it records.
         "live": rec.get("live") or {},
+        # Sides that were asked for and are producing nothing at all. Given a few
+        # seconds' grace first, so that the ordinary lag of a capture starting is
+        # not announced as a fault to somebody who has only just pressed record.
+        "not_arriving": [side for side in _asked_for(rec)
+                         if not _side_arriving(rec, side)]
+        if rec["status"] == "recording" and time.time() - rec["started_at"] > SETTLING
+        else [],
         "log": list(rec["log"]),
     }
 

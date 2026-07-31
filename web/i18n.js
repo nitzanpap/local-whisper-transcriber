@@ -46,6 +46,13 @@ const STRINGS = {
     "rec.startHint": "A meeting, a call, anything playing on this Mac.",
     "rec.refresh": "Look again",
     "rec.openSettings": "Open the setting",
+    "rec.nothingTitle": "Nothing is arriving",
+    "rec.notArriving.voice": "Your microphone is not producing any audio. It is still " +
+      "recording, so if this is a quiet moment it will sort itself out — but if it stays, " +
+      "check that macOS has allowed the microphone and that the right input is selected.",
+    "rec.notArriving.computer": "Your computer's audio is not being captured. macOS asks " +
+      "for this separately, and a refusal is silent: the recording runs perfectly and keeps " +
+      "nothing. If this stays, allow it and start again.",
     "rec.stop": "Stop",
     "rec.throw": "Stop and throw it away",
     "rec.throwConfirm": "Stop recording and delete what was recorded? This cannot be undone.",
@@ -255,6 +262,11 @@ const STRINGS = {
     "rec.startHint": "פגישה, שיחה, כל דבר שמתנגן במחשב הזה.",
     "rec.refresh": "לבדוק שוב",
     "rec.openSettings": "לפתוח את ההגדרה",
+    "rec.nothingTitle": "לא מגיע כלום",
+    "rec.notArriving.voice": "המיקרופון לא מפיק שום אודיו. ההקלטה עדיין רצה, אז אם זה רק " +
+      "רגע שקט זה יסתדר — אבל אם זה נשאר, בדקו שיש הרשאת מיקרופון ושנבחר הקלט הנכון.",
+    "rec.notArriving.computer": "האודיו של המחשב לא נקלט. ‏macOS מבקש על זה הרשאה בנפרד, " +
+      "וסירוב הוא שקט: ההקלטה רצה מצוין ולא שומרת כלום. אם זה נשאר, אשרו והתחילו מחדש.",
     "rec.stop": "עצירה",
     "rec.throw": "עצירה ומחיקה",
     "rec.throwConfirm": "לעצור את ההקלטה ולמחוק את מה שהוקלט? אין דרך לשחזר.",

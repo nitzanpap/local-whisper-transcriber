@@ -194,6 +194,15 @@ function renderRecording(rec, orphans) {
       const loudest = Math.max(...Object.values(live));
       $("rec-tape").querySelector("i").style.width = width(loudest) + "%";
     }
+    // A side that is producing nothing, while it is still worth knowing. It goes
+    // away by itself when audio starts arriving, because then it is no longer true.
+    const dead = rec.not_arriving || [];
+    show($("rec-nothing"), dead.length > 0);
+    if (dead.length) {
+      $("rec-nothing-what").textContent = dead.map(side => t("rec.notArriving." + side)).join("\n\n");
+      const pane = dead[0] === "voice" ? "microphone" : "audio";
+      $("rec-nothing-fix").onclick = () => api("/privacy/" + pane, {}).catch(() => {});
+    }
     $("rec-stop").disabled = rec.status !== "recording";
     $("rec-throw").disabled = rec.status !== "recording";
   }

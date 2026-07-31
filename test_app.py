@@ -10,6 +10,7 @@
 import asyncio
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -649,6 +650,42 @@ async def main() -> None:
     # application asks, and the first screen stays quiet.
     check("and nothing is asked for before anything has happened",
           got["advice"] == [], str(got["advice"]))
+
+    # The order is the bug that broke every two-source recording. Creating the
+    # aggregate device that carries a Core Audio process tap reconfigures the audio
+    # HAL, and an AVFoundation capture opened afterwards never delivers one sample —
+    # measured both ways round outside the app: microphone first and it keeps
+    # running, tap first and it yields zero frames for as long as you wait. So the
+    # helper must not be started until the captures are up.
+    print("the microphone is opened before the tap, never after")
+    seen = {}
+    real_helper, real_sysaudio = record._start_helper, record.system_audio
+
+    async def watching(rec: dict) -> bool:
+        seen["captures_up"] = len(record.PROCS)
+        return False  # far enough: what is being checked has already happened
+
+    async def pretend() -> dict:
+        return {"helper": Path("/x/syscapture")}
+
+    record._start_helper, record.system_audio = watching, pretend
+    config.save_settings({"recording_folder": str(TMP / "order"), "default_model_path": model})
+    try:
+        await record.start("0", record.SYSTEM_AUDIO)
+        await record.TASK
+    except Exception:  # noqa: BLE001 — the fake helper refuses on purpose
+        pass
+    finally:
+        record._start_helper, record.system_audio = real_helper, real_sysaudio
+        # Put the module back as it was found. Refusing at the tap leaves the
+        # recording half-built, and everything after this answered "a recording is
+        # already running" — which is the check breaking the suite, not the code.
+        record.RECORDING, record.TASK = None, None
+        record.PROCS.clear()
+        for stray in config.WORK_DIR.glob(f"{config.RECORDING_PREFIX}*"):
+            shutil.rmtree(stray, ignore_errors=True)
+    check("the captures were already running when the tap was asked for",
+          seen.get("captures_up", 0) > 0, str(seen))
 
     print("recording, then transcribing both speakers apart")
     recordings = TMP / "recordings"

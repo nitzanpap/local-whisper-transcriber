@@ -314,6 +314,18 @@
 
   <div class="tape" id="rec-tape"><i></i></div>
 
+  <!-- Said while there is still time to do something about it, and taken away again
+       the moment audio turns up. A recording with nothing to hear yet is ordinary;
+       one that will never hear anything is not, and only this can tell you which
+       you are in before the meeting is over. -->
+  <div class="note" id="rec-nothing" hidden>
+    <h2 data-i18n="rec.nothingTitle">Nothing is arriving</h2>
+    <p id="rec-nothing-what"></p>
+    <div class="actions">
+      <button id="rec-nothing-fix" data-i18n="rec.openSettings">Open the setting</button>
+    </div>
+  </div>
+
   <div class="actions">
     <button class="solid" id="rec-stop" data-i18n="rec.stop">Stop</button>
     <button class="link danger" id="rec-throw" data-i18n="rec.throw">Stop and throw it away</button>
