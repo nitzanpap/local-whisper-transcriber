@@ -133,9 +133,17 @@ async def run_job(job: dict) -> None:
         job["track"] = None
         stage(job, "saving")
         job["percent"] = 100.0
-        write_outputs(job, work, merge_tracks(transcribed))
+        # Off the loop, both of them. The output folder is usually somewhere macOS
+        # guards — Documents, Desktop, Downloads — and a move into one of those
+        # blocks in the kernel until a consent dialog is answered. A freshly
+        # installed build asks on its first run, so this is not a rare path. With
+        # the move on the event loop the whole app went dead while it waited: the
+        # poll stopped answering, the progress froze at the last number it had, and
+        # nothing anywhere said that a dialog was open behind the window. Caught by
+        # sampling the backend and finding the main thread parked in os_rename.
+        await asyncio.to_thread(write_outputs, job, work, merge_tracks(transcribed))
         if job["want_txt"]:
-            job["preview"] = read_preview(Path(job["outputs"]["txt"]))
+            job["preview"] = await asyncio.to_thread(read_preview, Path(job["outputs"]["txt"]))
         job["status"], job["stage"] = "completed", "completed"
     except Cancelled:
         job["status"], job["stage"] = "cancelled", "cancelled"

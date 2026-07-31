@@ -8,7 +8,7 @@ evidence rather than a hunch.
 
 - [x] **Remove does nothing on a running transcription.** The button called `DELETE /api/queue/{id}`,
       which only ever removed jobs *waiting* their turn, so a job that had started refused silently.
-- [ ] **A macOS consent dialog freezes the whole app, silently.** `write_outputs` renames into the
+- [x] **A macOS consent dialog freezes the whole app, silently.** `write_outputs` renames into the
       output folder from the event loop, and a rename into a TCC-protected folder — `~/Documents`,
       `~/Desktop`, `~/Downloads` — blocks in the kernel until the dialog is answered. Caught in the
       act: `sample` on the backend showed the main thread parked in `os_rename` → `__rename` while

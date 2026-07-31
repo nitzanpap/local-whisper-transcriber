@@ -147,6 +147,30 @@ async def main() -> None:
     check("source untouched", Path(src).read_bytes() == b"not really audio")
     check("history recorded", len(jobs.history()) == 1)
 
+    print("a slow write does not stop the app")
+    # A move into ~/Documents blocks in the kernel until macOS gets an answer from a
+    # consent dialog, which took the whole backend down with it: the poll stopped
+    # answering and the interface went dead mid-transcription. Standing in for that
+    # dialog with a blocking sleep, and counting whether anything else on the event
+    # loop still got a turn while it lasted.
+    real_write = jobs.write_outputs
+    jobs.write_outputs = lambda *a, **k: (time.sleep(0.4), real_write(*a, **k))[1]
+    turns = 0
+
+    async def still_answering() -> None:
+        nonlocal turns
+        while True:
+            turns += 1
+            await asyncio.sleep(0.02)
+
+    poll = asyncio.create_task(still_answering())
+    stalled = jobs.make_job(src, model, str(out), "stalled")
+    await jobs.run_job(stalled)
+    poll.cancel()
+    jobs.write_outputs = real_write
+    check("the loop kept running while the write waited", turns > 5, f"{turns} turns")
+    check("and the write still happened", (out / "stalled.txt").exists())
+
     print("collision detection")
     body = app.StartIn(source=src, model=model, out_dir=str(out), basename="meeting-transcript")
     check("existing files reported", len(app.collisions(body)["existing"]) == 2)

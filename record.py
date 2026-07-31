@@ -844,7 +844,11 @@ async def _save(rec: dict) -> None:
 
     final = _unique(Path(rec["folder"]) / f"{rec['basename']}.m4a")
     try:
-        shutil.move(str(staged), str(final))
+        # Off the loop: the recordings folder can be anywhere, including the folders
+        # macOS guards, and a move into one of those blocks until a consent dialog
+        # is answered. On the loop that would take the whole app down with it, in
+        # the seconds right after somebody pressed Stop.
+        await asyncio.to_thread(shutil.move, str(staged), str(final))
     except OSError as exc:
         return _failed(rec, "insufficient_permissions",
                        f"The recording could not be moved to {final}: {exc.strerror or exc}")
