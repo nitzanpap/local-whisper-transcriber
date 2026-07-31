@@ -399,6 +399,42 @@ def transcript(entry_id: str) -> dict:
     return found
 
 
+@app.post("/api/transcripts/{entry_id}/save")
+def save_transcript(entry_id: str) -> dict:
+    """A copy of the text, wherever somebody wants it.
+
+    The files are already on disk beside the recording and always were, but "open
+    the folder" is an instruction to go and look rather than a way of taking
+    something away. This puts it where it is wanted, once, and says where it went.
+
+    The text is what is saved, because the reader is showing text and a question
+    about formats is one nobody should be asked to answer. Subtitles are one button
+    along, in the folder.
+    """
+    detail = library.detail(safe_id(entry_id))
+    if detail is None:
+        raise HTTPException(404, {"code": "not_found", "message": "That transcript is gone."})
+    text = "\n".join(c["text"] for c in detail["cues"]) if detail["cues"] else detail["text"]
+    if not text.strip():
+        raise HTTPException(400, {"code": "no_speech_found",
+                                  "message": "There is no text in that transcript to save."})
+    picked = run_picker("save", "Save the transcript as",
+                        f"{Path(detail['name']).stem}.txt")
+    if picked.get("reason"):
+        raise HTTPException(400, {"code": "internal_error", "message": picked["reason"]})
+    if not picked.get("path"):
+        return {"path": ""}          # cancelled, which is not a failure
+    out = Path(picked["path"])
+    if out.suffix.lower() != ".txt":
+        out = out.with_suffix(".txt")
+    try:
+        out.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(400, {"code": "insufficient_permissions",
+                                  "message": f"It could not be saved there: {exc.strerror or exc}"})
+    return {"path": str(out)}
+
+
 @app.get("/api/media/{entry_id}")
 def media(entry_id: str) -> FileResponse:
     """Stream the source audio for playback. FileResponse answers Range with 206,

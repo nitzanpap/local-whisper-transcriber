@@ -142,7 +142,10 @@ const STRINGS = {
     "job.leave": "You can leave this. It keeps going whether or not anybody is watching, and " +
       "the transcript will be waiting in your list when it is done.",
     "job.cancel": "Cancel transcription", "job.again": "Transcribe another file",
-    "job.copy": "Copy transcript", "job.copied": "Copied",
+    "job.copy": "Copy text", "job.copied": "Copied",
+    "job.save": "Save a copy…",
+    "job.savedTo": "Saved to {path}",
+    "job.saveCancelled": "Nothing was saved.",
     "job.openFolder": "Open folder", "job.log": "Process log",
     "job.details": "Technical details",
     "job.lost": "Lost contact with the app's backend. Reopen the app and start again.",
@@ -374,7 +377,10 @@ const STRINGS = {
     "job.leave": "אפשר לעזוב את המסך. זה ממשיך גם כשאף אחד לא מסתכל, והתמליל יחכה ברשימה " +
       "כשזה ייגמר.",
     "job.cancel": "ביטול התמלול", "job.again": "תמלול קובץ נוסף",
-    "job.copy": "העתקת התמליל", "job.copied": "הועתק",
+    "job.copy": "העתקת הטקסט", "job.copied": "הועתק",
+    "job.save": "שמירת עותק…",
+    "job.savedTo": "‏נשמר אל {path}",
+    "job.saveCancelled": "לא נשמר דבר.",
     "job.openFolder": "פתיחת התיקייה", "job.log": "יומן התהליך",
     "job.details": "פרטים טכניים",
     "job.lost": "אבד הקשר לשרת של האפליקציה. פתחו אותה מחדש והתחילו שוב.",

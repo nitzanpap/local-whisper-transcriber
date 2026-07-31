@@ -62,6 +62,10 @@ evidence rather than a hunch.
 
 ## Product and design
 
+- [ ] **Export is text only.** *Save a copy* writes the transcript's text, because asking which
+      of two formats is a question §5a says not to ask. Somebody who wants the `.srt` has *Open
+      folder* beside it, which is a worse answer than it sounds if the folder is not obvious.
+
 - [ ] **Settings is noisy and flat.** No grouping, no progressive disclosure, everything at one
       weight. The common path should be nearly empty and customisation deliberately reachable.
 - [ ] **Typography hierarchy is weak** — small where it should lead, and the primary action does not

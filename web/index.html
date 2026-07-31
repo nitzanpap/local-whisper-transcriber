@@ -37,6 +37,9 @@
   </symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.2-4.2"/></symbol>
   <symbol id="i-again" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M21 3.5V9h-5.5"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24">
+    <path d="M12 3v12"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+  </symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></symbol>
 </svg>
@@ -321,12 +324,12 @@
 
   <div id="job-result" hidden>
     <div id="job-files"></div>
-    <div class="actions" style="margin-top:1.25rem">
-      <button class="glyph" id="job-copy" data-i18n-title="job.copy">
-        <svg class="icon"><use href="#i-copy"></use></svg>
+    <div class="actions take" style="margin-top:1.25rem">
+      <button class="solid" id="job-copy">
+        <svg class="icon"><use href="#i-copy"></use></svg><span data-i18n="job.copy">Copy text</span>
       </button>
-      <button class="glyph" id="job-reveal" data-i18n-title="job.openFolder">
-        <svg class="icon"><use href="#i-folder"></use></svg>
+      <button id="job-reveal">
+        <svg class="icon"><use href="#i-folder"></use></svg><span data-i18n="job.openFolder">Open folder</span>
       </button>
     </div>
     <div class="sheet" id="job-preview" tabindex="0" aria-label="Transcript preview"></div>
@@ -464,14 +467,22 @@
   </div>
   <audio id="player" controls preload="metadata"></audio>
   <p class="hint" id="player-note" hidden></p>
-  <div class="actions">
-    <button class="glyph" id="reader-copy" data-i18n-title="job.copy">
-      <svg class="icon"><use href="#i-copy"></use></svg>
+  <!-- The third beat, and the only place the app hands anything back. §5a puts copy
+       and export in "high return, low cost — make these loud", and a mark with no
+       word beside it is not loud. The marks stay where the mark is the vocabulary;
+       the payoff gets said. -->
+  <div class="actions take">
+    <button class="solid" id="reader-copy">
+      <svg class="icon"><use href="#i-copy"></use></svg><span data-i18n="job.copy">Copy text</span>
     </button>
-    <button class="glyph" id="reader-reveal" data-i18n-title="job.openFolder">
-      <svg class="icon"><use href="#i-folder"></use></svg>
+    <button id="reader-save">
+      <svg class="icon"><use href="#i-save"></use></svg><span data-i18n="job.save">Save a copy…</span>
+    </button>
+    <button id="reader-reveal">
+      <svg class="icon"><use href="#i-folder"></use></svg><span data-i18n="job.openFolder">Open folder</span>
     </button>
   </div>
+  <p class="hint" id="reader-saved" hidden aria-live="polite"></p>
   <details class="tight">
     <summary data-i18n="lib.details">How this was made</summary>
     <dl class="facts" id="reader-facts"></dl>

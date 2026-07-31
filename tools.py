@@ -189,20 +189,29 @@ def kill_process_group() -> None:
 BACKUP_NAME = "local-whisper-transcriber-settings.json"
 
 
-def picker_command(kind: str) -> tuple[list[str] | None, str]:
-    """The native file/folder/save picker for this OS, or (None, why not)."""
+def picker_command(kind: str, prompt: str = "", name: str = "") -> tuple[list[str] | None, str]:
+    """The native file/folder/save picker for this OS, or (None, why not).
+
+    `prompt` and `name` are for the Save panel, which is used for more than one
+    thing now: a settings backup, and a copy of a transcript put wherever somebody
+    wants it. Quotes are stripped rather than escaped — these end up inside an
+    AppleScript string literal, and a transcript is named after a file somebody else
+    chose the name of.
+    """
     folder = kind == "folder"
     many = kind == "files"
     saving = kind == "save"
-    prompt = ("Save your settings as" if saving else
-              "Choose the output folder" if folder else "Choose audio or video files")
+    clean = lambda text: text.replace('"', "").replace("\\", "")
+    prompt = clean(prompt) or ("Save your settings as" if saving else
+                               "Choose the output folder" if folder else
+                               "Choose audio or video files")
     if sys.platform == "darwin":
         if saving:
             # `choose file name` is the Save panel: the user picks the place, so
             # afterwards the app can say exactly where the file went.
             return ["osascript", "-e", "activate", "-e",
                     f'POSIX path of (choose file name with prompt "{prompt}" '
-                    f'default name "{BACKUP_NAME}")'], ""
+                    f'default name "{clean(name) or BACKUP_NAME}")'], ""
         verb = "choose folder" if folder else "choose file"
         script = (
             'set picked to {verb} with prompt "{prompt}"{multi}\n'
@@ -225,9 +234,9 @@ def picker_command(kind: str) -> tuple[list[str] | None, str]:
     return None, "No native picker available on this system; paste the path instead."
 
 
-def run_picker(kind: str) -> dict:
+def run_picker(kind: str, prompt: str = "", name: str = "") -> dict:
     """Open the picker and return the chosen paths."""
-    cmd, reason = picker_command(kind)
+    cmd, reason = picker_command(kind, prompt, name)
     if cmd is None:
         return {"path": None, "paths": [], "reason": reason}
     try:

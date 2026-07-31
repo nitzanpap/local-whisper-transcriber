@@ -345,6 +345,18 @@ async def main() -> None:
     check("resumed srt keeps absolute times", "00:00:04,000 --> 00:01:06,500" in srt)
     check("no longer offered", not [r for r in jobs.resumable() if r["id"] == job["id"]])
 
+    print("taking the transcript away")
+    # The save panel is shared with the settings backup now, so it has to be told
+    # what it is saving. Names come from files somebody else chose the name of, and
+    # they land inside an AppleScript string literal.
+    cmd, _ = tools.picker_command("save", "Save the transcript as", 'a "quoted" name.txt')
+    script = " ".join(cmd)
+    check("the save panel is told what it is saving", "Save the transcript as" in script, script)
+    check("and a quote in a file name cannot break out of the script",
+          script.count('"') % 2 == 0 and 'quoted' in script, script)
+    check("the settings backup still gets its own default",
+          tools.BACKUP_NAME in " ".join(tools.picker_command("save")[0]))
+
     print("library")
     entries = library.entries()
     check("lists what was transcribed", len(entries) >= 2, str(len(entries)))

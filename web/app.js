@@ -150,10 +150,14 @@ function formError(detail) {
 // for a moment, then back. Without this, copying gave no sign at all that it had.
 function flashCopied(button) {
   const use = button.querySelector("use");
+  const label = button.querySelector("span");
+  const said = label && label.textContent;
   use.setAttribute("href", "#i-check");
+  if (label) label.textContent = t("job.copied");
   button.classList.add("done");
   setTimeout(() => {
     use.setAttribute("href", "#i-copy");
+    if (label) label.textContent = said;
     button.classList.remove("done");
   }, 1400);
 }

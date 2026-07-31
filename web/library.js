@@ -177,6 +177,32 @@ $("reader-copy").onclick = async (e) => {
   flashCopied(e.currentTarget);
 };
 
+// Opening a transcript is a fresh answer to "where did it go", so the last one goes.
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-entry]")) show($("reader-saved"), false);
+});
+
+// The one that takes it away. The picker takes a moment to open, so the button says
+// so — a dead-looking button is how somebody ends up opening two save panels.
+$("reader-save").onclick = async (e) => {
+  const button = e.currentTarget;
+  const label = button.querySelector("span");
+  const said = label.textContent;
+  button.disabled = true;
+  label.textContent = t("picker.opening");
+  show($("reader-saved"), false);
+  try {
+    const { path } = await api("/transcripts/" + openEntry.id + "/save", {});
+    $("reader-saved").textContent = path ? t("job.savedTo", { path }) : t("job.saveCancelled");
+    show($("reader-saved"), true);
+  } catch (err) {
+    formError(err.detail);
+  } finally {
+    button.disabled = false;
+    label.textContent = said;
+  }
+};
+
 $("reader-reveal").onclick = () => {
   const dir = (openEntry.txt || openEntry.srt || "").replace(/\/[^/]*$/, "");
   if (dir) api("/reveal", { path: dir }).catch(() => {});
