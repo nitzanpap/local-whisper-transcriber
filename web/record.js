@@ -156,7 +156,9 @@ function recError(detail) {
   show($("rec-allow"), !!(detail && detail.pane));
   if (!detail) return;
   $("rec-error-msg").textContent = detail.message;
-  $("rec-error-code").textContent = (detail.code || "").replace(/_/g, " ");
+  const code = (detail.code || "").replace(/_/g, " ");
+  $("rec-error-code").textContent = code;
+  show($("rec-error-more"), !!code);
   // The pane, opened rather than described. Somebody who has just been told a
   // recording captured nothing should not then have to go and find the switch.
   if (detail.pane) {

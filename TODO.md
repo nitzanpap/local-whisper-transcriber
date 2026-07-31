@@ -72,7 +72,8 @@ evidence rather than a hunch.
       dominate the screen it is on.
 - [ ] **The detected language is never shown.** A transcript that came out wrong gives no clue why.
 - [ ] **"VAD found no speech" and "whisper recognised nothing" read identically** despite needing
-      different remedies.
+      different remedies. Both now arrive as sentences with the code folded away, but they are
+      still the same sentence, and the remedies are not the same.
 - [ ] **README screenshots.** Four slots are marked in `docs/`; they cannot be captured from a
       process without screen-recording permission.
 

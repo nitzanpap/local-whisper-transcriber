@@ -7,9 +7,11 @@
     uv run --script test_app.py
 """
 
+import ast
 import asyncio
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -350,6 +352,55 @@ async def main() -> None:
     # so a value with no control left keeps standing. A field removed from the page
     # but left in the save list would send a blank and wipe it — which is the one
     # way this change could have destroyed something.
+    # §8 step 5: every failure the app knows about is a sentence about what happened
+    # and what to do. This pins the standard rather than the wording — "Bad run id."
+    # and "Not a folder: /x" pass no reading of it — so the next fragment fails here
+    # rather than reaching somebody mid-meeting.
+    #
+    # Parsed rather than matched. The first version of this check used a regular
+    # expression, and every message written across two source lines came back cut in
+    # half and was reported as a fragment: eight of its fourteen findings were its
+    # own doing. The syntax tree joins those the way Python does.
+    print("every error is a sentence")
+
+    def said(node: ast.AST) -> str | None:
+        """The message a Failed or HTTPException carries, placeholders and all."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.JoinedStr):
+            return "".join(part.value if isinstance(part, ast.Constant) else "something"
+                           for part in node.values)
+        return None
+
+    def messages(tree: ast.AST) -> list[str]:
+        out = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            if node.func.id == "Failed" and len(node.args) > 1:
+                text = said(node.args[1])
+                if text:
+                    out.append(text)
+            if node.func.id == "HTTPException":
+                for arg in node.args:
+                    if isinstance(arg, ast.Dict):
+                        for key, value in zip(arg.keys, arg.values):
+                            if getattr(key, "value", "") == "message" and said(value):
+                                out.append(said(value))
+        return out
+
+    fragments = []
+    for name in ("app.py", "record.py", "jobs.py", "transcribe.py", "tools.py", "watch.py"):
+        for text in messages(ast.parse(Path(name).read_text(encoding="utf-8"))):
+            words = text.split()
+            opens = text.lstrip()[:1]
+            if not text.rstrip().endswith((".", "?", "!")) or len(words) < 4 or not (
+                    opens.isupper() or opens in "{" or words[0].startswith(
+                        ("something", "ffmpeg", "ffprobe", "whisper"))):
+                fragments.append(f"{name}: {text[:64]}")
+    check("no error is a fragment or a label", not fragments,
+          "\n      " + "\n      ".join(fragments))
+
     print("what leaves the screen does not leave the settings")
     config.save_settings({"record_max_minutes": 45, "vad_model_path": "/models/silero.bin",
                           "default_language": "he"})

@@ -465,9 +465,10 @@ async def start(voice: str, computer: str) -> dict:
         folder.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise Failed("insufficient_permissions",
-                     f"Recordings cannot be written to {folder}: {exc.strerror or exc}")
+                     f"The recordings folder {folder} could not be made "
+                     f"({exc.strerror or exc}). Choose another one in Settings.")
     if not os.access(folder, os.W_OK):
-        raise Failed("insufficient_permissions", f"Recordings folder is not writable: {folder}")
+        raise Failed("insufficient_permissions", f"Recordings cannot be written to {folder}. Choose another folder in Settings.")
 
     # The master WAV costs about 700 MB an hour, so a nearly full disk is worth
     # saying out loud before an hour of a meeting goes missing.

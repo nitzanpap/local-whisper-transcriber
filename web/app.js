@@ -141,8 +141,13 @@ function formError(detail) {
   show($("form-error"), !!detail);
   if (!detail) return;
   $("form-error-msg").textContent = detail.message;
-  $("form-error-details").textContent = detail.details || "";
-  show($("form-error-details"), !!detail.details);
+  // The code belongs with the log, not beside the sentence. It was being printed in
+  // the open — "capture not arriving" under a paragraph explaining the same thing in
+  // English — which is the machine talking over the app.
+  const technical = [(detail.code || "").replace(/_/g, " "), detail.details || ""]
+    .filter(Boolean).join("\n\n");
+  $("form-error-details").textContent = technical;
+  show($("form-error-more"), !!technical);
   $("form-error").focus();
 }
 

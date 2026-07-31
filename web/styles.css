@@ -268,6 +268,11 @@ button.danger:hover { color: var(--accent); border-color: var(--accent); }
         padding-inline-start: .9rem; margin: 1.5rem 0; }
 .note h2 { font: 400 1.15rem/1.3 var(--display); }
 .note p { color: var(--ink-soft); font-size: .92rem; margin-top: .25rem; }
+/* The machine's own word for it, kept because it is worth searching for and given
+   the size of a footnote because that is what it is. */
+.code { font: 500 .68rem/1.6 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+        color: var(--ink-soft); }
+
 pre.tech { font: 400 .78rem/1.6 var(--mono); background: var(--rule-soft); padding: .8rem; border-radius: 3px; overflow: auto; max-height: 14rem; white-space: pre-wrap; margin-top: .6rem; }
 /* Instructions, not log output: cutting these off at 14rem hides the step that
    matters and makes the reader scroll a box to find it. */

@@ -279,9 +279,15 @@
     </details>
   </div>
 
+  <!-- The sentence, and then a door. What the machine said is worth keeping and is
+       never worth leading with: §4's whole complaint about failure here was that it
+       arrives as a process log. -->
   <div class="note" id="form-error" hidden tabindex="-1" role="alert">
     <h2 id="form-error-msg"></h2>
-    <pre class="tech" id="form-error-details" hidden></pre>
+    <details class="tight" id="form-error-more" hidden>
+      <summary data-i18n="job.details">Technical details</summary>
+      <pre class="tech" id="form-error-details"></pre>
+    </details>
   </div>
 </main>
 
@@ -318,8 +324,11 @@
 
   <div class="note" id="job-error" hidden tabindex="-1" role="alert">
     <h2 id="job-error-msg"></h2>
-    <p id="job-error-code"></p>
-    <details class="tight"><summary data-i18n="job.details">Technical details</summary><pre class="tech" id="job-error-details"></pre></details>
+    <details class="tight">
+      <summary data-i18n="job.details">Technical details</summary>
+      <p class="code" id="job-error-code"></p>
+      <pre class="tech" id="job-error-details"></pre>
+    </details>
   </div>
 
   <div id="job-result" hidden>
@@ -396,7 +405,10 @@
 
 <div class="note" id="rec-error" hidden tabindex="-1" role="alert">
   <h2 id="rec-error-msg"></h2>
-  <p id="rec-error-code"></p>
+  <details class="tight" id="rec-error-more" hidden>
+    <summary data-i18n="job.details">Technical details</summary>
+    <p class="code" id="rec-error-code"></p>
+  </details>
   <div class="actions">
     <button class="solid" id="rec-allow" hidden data-i18n="rec.openSettings">Open the setting</button>
     <button class="glyph" id="rec-dismiss" data-i18n-title="rec.clear">

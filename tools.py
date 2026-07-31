@@ -107,7 +107,9 @@ async def capture(cmd: list[str], timeout: float = 60) -> tuple[int, str]:
         out, _ = await asyncio.wait_for(p.communicate(), timeout)
     except asyncio.TimeoutError:
         p.kill()
-        raise Failed("internal_error", f"{Path(cmd[0]).name} timed out")
+        raise Failed("internal_error",
+                     f"{Path(cmd[0]).name} was still running after {timeout:.0f} seconds "
+                     "and was stopped. Something it needed is probably not answering.")
     return p.returncode, out.decode("utf-8", "replace").strip()
 
 
@@ -157,7 +159,15 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
     if job["status"] == "cancelling":
         raise Cancelled()
     if code != 0:
-        raise Failed(error_code, f"{Path(cmd[0]).name} exited with code {code}")
+        # The last thing it said, which is nearly always the actual reason — a process
+        # exiting with 1 tells nobody anything on its own. Ahead of the code, and in
+        # the middle of the sentence rather than trailing off it.
+        last = next((line.strip().rstrip(".") for line in reversed(list(job["log"])[-12:])
+                     if line.strip() and not line.startswith("$")), "")
+        raise Failed(error_code,
+                     f"{Path(cmd[0]).name} stopped with an error, so the transcription "
+                     f"could not finish. The last thing it said was: {last or 'nothing'}. "
+                     "There is more in the process log below.")
 
 
 async def watch_memory(pid: int, job: dict, every: float = 2.0) -> None:
@@ -243,8 +253,8 @@ def run_picker(kind: str, prompt: str = "", name: str = "") -> dict:
         # A picker nobody answers must not hold the request open forever.
         done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
-        return {"path": None, "paths": [], "reason": "The file picker timed out. Paste the path instead."}
+        return {"path": None, "paths": [], "reason": "The file picker was left open too long and gave up. Paste the path in instead."}
     if done.returncode != 0 and "-128" not in done.stderr:  # -128 is the user cancelling
-        raise Failed("internal_error", "The file picker could not be opened. Paste the path instead.")
+        raise Failed("internal_error", "The file picker would not open. Paste the path in instead.")
     paths = [line for line in done.stdout.splitlines() if line.strip()]
     return {"path": paths[0] if paths else None, "paths": paths, "reason": ""}

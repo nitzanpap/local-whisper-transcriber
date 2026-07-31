@@ -125,13 +125,13 @@ def resolve_file(raw: str, what: str, code: str) -> Path:
         raise HTTPException(400, {"code": code, "message": f"{what} must be an absolute path."})
     path = path.resolve()
     if not path.is_file():
-        raise HTTPException(400, {"code": code, "message": f"{what} does not exist: {path}"})
+        raise HTTPException(400, {"code": code, "message": f"{what} was not found at {path}."})
     return path
 
 
 def safe_id(job_id: str) -> str:
     if Path(job_id).name != job_id:
-        raise HTTPException(400, {"code": "invalid_input_path", "message": "Bad run id."})
+        raise HTTPException(400, {"code": "invalid_input_path", "message": "That is not a run this app knows about."})
     return job_id
 
 
@@ -178,7 +178,7 @@ async def inspect(body: PathIn) -> dict:
     seconds = await duration_seconds(path)
     if seconds is None:
         raise HTTPException(400, {"code": "media_probe_failed",
-                                  "message": "ffprobe could not read a duration from this file."})
+                                  "message": "This file could not be read as audio or video. If it plays elsewhere, it may be a format this copy of ffmpeg was not built for."})
     basename = f"{path.stem}{TRANSCRIPT_SUFFIX}"
     out_dir = Path(watch.output_folder_for(path))
     existing = [
@@ -207,14 +207,15 @@ async def start(body: StartIn) -> dict:
     model = resolve_file(body.model, "The model file", "model_not_found")
     out_dir = Path(body.out_dir).expanduser().resolve()
     if not out_dir.is_dir():
-        raise HTTPException(400, {"code": "invalid_input_path", "message": f"Output folder does not exist: {out_dir}"})
+        raise HTTPException(400, {"code": "invalid_input_path", "message": f"The folder {out_dir} does not exist, so there is nowhere to write the transcript."})
     if not os.access(out_dir, os.W_OK):
-        raise HTTPException(400, {"code": "insufficient_permissions", "message": f"Output folder is not writable: {out_dir}"})
+        raise HTTPException(400, {"code": "insufficient_permissions", "message": f"The folder {out_dir} cannot be written to. Choose another, or change its permissions "
+                                  "in Finder."})
     if not (body.want_txt or body.want_srt):
         raise HTTPException(400, {"code": "invalid_input_path", "message": "Choose at least one output format."})
     basename = Path(body.basename).name  # no traversal via the basename field
     if not basename:
-        raise HTTPException(400, {"code": "invalid_input_path", "message": "Output name is required."})
+        raise HTTPException(400, {"code": "invalid_input_path", "message": "The transcript needs a name to be saved under."})
 
     existing = collisions(body.model_copy(update={"basename": basename, "out_dir": str(out_dir)}))["existing"]
     if existing and not body.overwrite:
@@ -224,7 +225,7 @@ async def start(body: StartIn) -> dict:
     for name in BINARIES:
         if not environment()[name]["ok"]:
             raise HTTPException(400, {"code": "dependency_not_found",
-                                      "message": f"{name} was not found. Check Settings."})
+                                      "message": f"{name} is not installed, or this app cannot find it. Its location can be set under Settings, Advanced, Expert."})
 
     queued = jobs.make_job(
         str(source), str(model), str(out_dir), basename,
@@ -269,7 +270,7 @@ async def resume(job_id: str) -> dict:
         raise HTTPException(409, {"code": "internal_error", "message": "That run is already queued."})
     job = jobs.load_job(job_id)
     if job is None:
-        raise HTTPException(404, {"code": "invalid_input_path", "message": "That run is no longer on disk."})
+        raise HTTPException(404, {"code": "invalid_input_path", "message": "That run's working files have been cleared, so there is nothing left to resume from."})
     resolve_file(job["source"], "The media file", "invalid_input_path")
     resolve_file(job["model"], "The model file", "model_not_found")
     jobs.enqueue(job)
@@ -285,7 +286,7 @@ def discard(job_id: str) -> dict:
 @app.post("/api/cancel")
 def cancel() -> dict:
     if jobs.JOB is None or jobs.JOB["status"] != "running":
-        raise HTTPException(409, {"code": "cancellation_failed", "message": "No transcription is running."})
+        raise HTTPException(409, {"code": "cancellation_failed", "message": "Nothing is being transcribed, so there is nothing to cancel."})
     jobs.JOB["status"] = "cancelling"
     jobs.JOB["stage"] = "cancelling"
     kill_process_group()
@@ -305,7 +306,8 @@ async def record_devices() -> dict:
     """What can be recorded from, and what to install if the answer is not enough."""
     if not environment()["ffmpeg"]["ok"]:
         raise HTTPException(400, {"code": "dependency_not_found",
-                                  "message": "ffmpeg was not found. Check Settings."})
+                                  "message": "ffmpeg is not installed, or this app cannot find it. Nothing can be recorded or "
+                                  "transcribed without it."})
     try:
         return await record.devices()
     except Failed as exc:
@@ -395,7 +397,7 @@ def transcripts() -> dict:
 def transcript(entry_id: str) -> dict:
     found = library.detail(safe_id(entry_id))
     if found is None:
-        raise HTTPException(404, {"code": "invalid_input_path", "message": "No such transcript."})
+        raise HTTPException(404, {"code": "invalid_input_path", "message": "That transcript is not in your library."})
     return found
 
 
@@ -413,7 +415,7 @@ def save_transcript(entry_id: str) -> dict:
     """
     detail = library.detail(safe_id(entry_id))
     if detail is None:
-        raise HTTPException(404, {"code": "not_found", "message": "That transcript is gone."})
+        raise HTTPException(404, {"code": "not_found", "message": "That transcript is not in your library any more."})
     text = "\n".join(c["text"] for c in detail["cues"]) if detail["cues"] else detail["text"]
     if not text.strip():
         raise HTTPException(400, {"code": "no_speech_found",
@@ -431,7 +433,7 @@ def save_transcript(entry_id: str) -> dict:
         out.write_text(text, encoding="utf-8")
     except OSError as exc:
         raise HTTPException(400, {"code": "insufficient_permissions",
-                                  "message": f"It could not be saved there: {exc.strerror or exc}"})
+                                  "message": f"It could not be saved there ({exc.strerror or exc}). Try somewhere else."})
     return {"path": str(out)}
 
 
@@ -442,7 +444,7 @@ def media(entry_id: str) -> FileResponse:
     path = library.media_path(safe_id(entry_id))
     if path is None:
         raise HTTPException(404, {"code": "invalid_input_path",
-                                  "message": "The original recording is no longer where it was."})
+                                  "message": "The original recording is not where it was left, so there is nothing to play."})
     return FileResponse(path)
 
 
@@ -469,7 +471,7 @@ async def queue_pending() -> dict:
 async def queue_folder(body: FolderIn) -> dict:
     folder = Path(body.path).expanduser()
     if not folder.is_dir():
-        raise HTTPException(400, {"code": "invalid_input_path", "message": f"Not a folder: {folder}"})
+        raise HTTPException(400, {"code": "invalid_input_path", "message": f"{folder} is not a folder."})
     return await watch.queue_folder(folder, dry_run=body.dry_run)
 
 
@@ -480,7 +482,7 @@ async def queue_folder(body: FolderIn) -> dict:
 def reveal(body: PathIn) -> dict:
     path = Path(body.path).expanduser().resolve()
     if not path.exists():
-        raise HTTPException(400, {"code": "invalid_input_path", "message": "That folder no longer exists."})
+        raise HTTPException(400, {"code": "invalid_input_path", "message": "That folder does not exist any more."})
     opener = {"darwin": "open", "win32": "explorer"}.get(sys.platform, "xdg-open")
     subprocess.Popen([opener, str(path)])
     return {"ok": True}
@@ -538,7 +540,7 @@ def export_settings(body: BackupIn) -> dict:
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except OSError as exc:
         raise HTTPException(400, {"code": "insufficient_permissions",
-                                  "message": f"Could not write there: {exc.strerror or exc}"})
+                                  "message": f"The settings could not be written there ({exc.strerror or exc}). Try somewhere else."})
     return {"path": str(path)}
 
 
