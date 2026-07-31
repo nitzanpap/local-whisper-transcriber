@@ -28,6 +28,12 @@ There is a second, smaller audience: the person who wants the machinery, because
 quality or debugging a recording. They are real and worth serving — but serving them on the same
 screen as everybody else is what went wrong.
 
+**Decided: the app is designed for the stranger.** Including when the stranger and the author
+disagree. The consequence is worth accepting in advance rather than relitigating each time it bites:
+controls the author personally likes will be moved behind something, renamed away from what they
+are, or decided by the app outright. That is the cost of the thing being usable by somebody who did
+not build it, and it is being paid deliberately.
+
 ## 2a. The two pains it was built to end
 
 Worth recording, because the app drifted from them and they are the test for every decision.
@@ -65,9 +71,20 @@ sent. There is nothing to capture; it starts at beat two. *Import, transcribe, t
 They converge after the first beat, which is the strongest argument yet that Record and Transcribe
 should not be two destinations. They are one story with two openings.
 
-Beat three is currently the weakest. The app writes files and stops. Copying is a button on one
-screen; export is scattered; summarising does not exist. If beat three is where the value is
-actually collected, it deserves as much design as the other two.
+Beat three is the weakest and also the least important, and those are not in tension. It needs to
+stop being scattered — one obvious way to copy, one to export, from wherever a transcript is — and
+that is all it needs for now. **Summarising is explicitly not a priority.** It is the part most
+easily bolted on later and the part least missed today.
+
+The order of investment is: recording, transcription, then everything after. Beat three earns a
+tidy-up, not a project.
+
+**And recording is not finished being defined.** It is treated here as a single verb — press it,
+audio arrives — and it is very likely more than that. Which sources, what happens when one dies,
+what a long meeting needs, what the app should do while it waits, what feedback belongs on screen
+during forty minutes of silence. This document does not settle any of that, and should not be read
+as though it has. Expect a round of discovery on recording alone once the structure below is in
+place.
 
 ## 5a. Cost against benefit, for everything
 
@@ -260,11 +277,16 @@ glowing. Lean into that. It is already 70% there and the remaining 30% is subtra
 In order, because each makes the next easier:
 
 1. **Collapse Record and Transcribe into one surface**, with the library as the resting state. This
-   is the structural change; everything else is easier afterwards.
-2. **Recording as a full-screen mode.** Small change, disproportionate effect on how the app feels.
-3. **Design the wait.** The longest part of the experience, currently the least designed.
-4. **Rewrite every error as a sentence**, with details collapsed.
-5. **Reduce settings to three questions** and infer the rest.
+   is the structural change; everything else is easier afterwards, and it follows directly from the
+   two stories converging after their first beat.
+2. **Reduce settings by the cost-and-return rule.** Mechanical, already decided in §5a, and it makes
+   every screen after it cheaper to think about.
+3. **Recording as a full-screen mode.** Small change, disproportionate effect on how the app feels.
+4. **Design the wait.** The longest part of the experience, currently the least designed.
+5. **Rewrite every error as a sentence**, with details collapsed.
+6. **Tidy beat three** — one way to copy, one to export, reachable from anywhere a transcript is.
+
+Then stop and reopen recording as its own discovery, before building further on it.
 
 ## 9. What this document is not
 
