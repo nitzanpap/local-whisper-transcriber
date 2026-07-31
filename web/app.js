@@ -329,6 +329,7 @@ let lastState = null;
 let lastRun = null;   // which run the library was last drawn for
 let readFor = null;     // the finished job whose transcript is being read, if any
 let watched = null;     // the last job this page actually saw running
+let readTries = 0;      // failed attempts to open that job's transcript
 
 // Both stories are one flow with two openings — record or choose a file, then
 // transcribe, then read it — and it runs as phases so that only the beat you are
@@ -365,10 +366,15 @@ function finish(job) {
   // before any of this started — one sitting in the state at load, or the previous
   // one still there for the second between queueing a recording and that job being
   // picked up — is not what anybody is waiting to read.
-  if (job.id !== watched || readFor) return;
+  if (job.id !== watched || readFor || readTries >= 3) return;
   if (typeof entries === "undefined" || !entries.some(e => e.id === job.id)) return;
   readFor = job.id;
-  showEntry(job.id);
+  // Let go of the claim if the transcript could not be fetched, so the next poll
+  // tries again. Keeping it cost a real transcription: the backend stalled for a
+  // minute on a macOS consent dialog, this request died with it, and the flow spent
+  // the rest of the session believing it had already moved on — a finished job
+  // screen that never became the transcript it had just written.
+  showEntry(job.id).then(ok => { if (!ok) { readFor = null; readTries += 1; } });
 }
 
 // Which beat is on screen. Called from the poll and again the moment anything the
@@ -377,7 +383,10 @@ function finish(job) {
 function paintPhase() {
   const s = lastState;
   if (!s) return {};
-  if (s.job && (s.job.status === "running" || s.job.status === "cancelling")) watched = s.job.id;
+  if (s.job && (s.job.status === "running" || s.job.status === "cancelling") && watched !== s.job.id) {
+    watched = s.job.id;
+    readTries = 0;
+  }
   const at = phaseOf(s);
   if (at === "done") finish(s.job);
   // readFor is set before the transcript is fetched, so the job screen leaves in
