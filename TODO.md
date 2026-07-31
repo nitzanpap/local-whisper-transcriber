@@ -13,8 +13,11 @@ evidence rather than a hunch.
       `~/Desktop`, `~/Downloads` — blocks in the kernel until the dialog is answered. Caught in the
       act: `sample` on the backend showed the main thread parked in `os_rename` → `__rename` while
       `/api/state` answered nothing at all, so the interface went dead mid-transcription with no
-      message. A freshly installed build re-prompts, so this is the first run after every release.
-      The file work belongs off the loop (`asyncio.to_thread`), and the wait deserves a sentence.
+      message. An ad-hoc signed build re-prompts after every install, so it is the first run of
+      every release rather than a rare path. Both moves into user-chosen folders now run in a
+      thread, and the stage already said *Writing transcript*, which is true instead of frozen.
+      Confirmed under a real block: `/api/state` answered in 10 ms while the rename sat in a
+      worker thread and the main thread waited in `kevent`.
 
 - [ ] **API failures are easy to miss in the interface.** They reach `formError`, which is not
       always on screen. A failed request should be visible wherever the click was.
