@@ -7,6 +7,40 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+
+<!-- Drawn once, used by reference. Only the handful of marks that are read rather
+     than deciphered: a globe, a gear, an arrow back, copy, a folder, a magnifier,
+     go-round-again, and a cross to dismiss. Anything whose meaning somebody would
+     have to guess at is still a word. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-globe" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>
+    <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>
+  </symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="3.2"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33
+             1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06
+             a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+             A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06
+             a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51
+             1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9
+             a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24">
+    <rect x="9" y="9" width="11" height="11" rx="2"/>
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+  </symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24">
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+  </symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.2-4.2"/></symbol>
+  <symbol id="i-again" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M21 3.5V9h-5.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></symbol>
+</svg>
+
 <div class="wrap">
 
 <header>
@@ -14,16 +48,19 @@
   <div class="masthead">
     <p class="kicker" data-i18n="kicker">Audio in, transcript out · nothing leaves this computer</p>
     <div class="head-right">
+      <!-- The globe is the whole control. Which language it is currently in is
+           written across every other word on the screen. -->
       <div id="lang-switch">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>
-          <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>
-        </svg>
-        <select id="lang" aria-label="Interface language"></select>
+        <svg class="icon"><use href="#i-globe"></use></svg>
+        <select id="lang" data-i18n-title="nav.language" aria-label="Interface language"></select>
       </div>
       <!-- Not a peer of the work. Settings is opened once and then never again, and
            a tab beside the thing you came to do says the opposite. -->
-      <a class="tab" href="#/settings" id="to-settings" data-i18n="nav.settings">Settings</a>
+      <a class="tab" href="#/settings" id="to-settings" data-i18n-title="nav.settings">
+        <svg class="icon"><use href="#i-gear"></use></svg>
+      </a>
+      <!-- A green dot is the whole message when everything is where it should be.
+           Words are what a problem gets, and only a problem. -->
       <p class="pill" id="env" aria-live="polite"></p>
     </div>
   </div>
@@ -101,7 +138,9 @@
               </div>
             </div>
             <div class="actions" style="margin-top:1.1rem">
-              <button class="link" id="rec-refresh" data-i18n="rec.refresh">Look again</button>
+              <button class="glyph" id="rec-refresh" data-i18n-title="rec.refresh">
+                <svg class="icon"><use href="#i-again"></use></svg>
+              </button>
             </div>
           </details>
         </div>
@@ -240,8 +279,12 @@
   <div id="job-result" hidden>
     <div id="job-files"></div>
     <div class="actions" style="margin-top:1.25rem">
-      <button id="job-reveal" data-i18n="job.openFolder">Open folder</button>
-      <button id="job-copy" data-i18n="job.copy">Copy transcript</button>
+      <button class="glyph" id="job-copy" data-i18n-title="job.copy">
+        <svg class="icon"><use href="#i-copy"></use></svg>
+      </button>
+      <button class="glyph" id="job-reveal" data-i18n-title="job.openFolder">
+        <svg class="icon"><use href="#i-folder"></use></svg>
+      </button>
     </div>
     <div class="sheet" id="job-preview" tabindex="0" aria-label="Transcript preview"></div>
   </div>
@@ -284,15 +327,21 @@
   <h2 id="rec-done-title"></h2>
   <p id="rec-done-what"></p>
   <div class="actions">
-    <button id="rec-open" data-i18n="job.openFolder">Open folder</button>
-    <button class="link" id="rec-again" data-i18n="rec.clear">Dismiss</button>
+    <button class="glyph" id="rec-open" data-i18n-title="job.openFolder">
+      <svg class="icon"><use href="#i-folder"></use></svg>
+    </button>
+    <button class="glyph" id="rec-again" data-i18n-title="rec.clear">
+      <svg class="icon"><use href="#i-close"></use></svg>
+    </button>
   </div>
 </div>
 
 <div class="note" id="rec-error" hidden tabindex="-1" role="alert">
   <h2 id="rec-error-msg"></h2>
   <p id="rec-error-code"></p>
-  <div class="actions"><button class="link" id="rec-dismiss" data-i18n="rec.clear">Dismiss</button></div>
+  <div class="actions"><button class="glyph" id="rec-dismiss" data-i18n-title="rec.clear">
+    <svg class="icon"><use href="#i-close"></use></svg>
+  </button></div>
 </div>
 
 <details class="tight" style="margin-top:1.5rem" id="rec-log-box" hidden>
@@ -312,10 +361,11 @@
      forty underneath it is not one of those things. -->
 <div id="resting">
 
-<section class="step" id="search-box">
-  <label class="label" for="q" data-i18n="lib.search">Search every transcript</label>
-  <div class="line">
-    <input type="text" id="q" spellcheck="false" data-i18n-placeholder="lib.searchPlaceholder" placeholder="a word or phrase">
+<section id="search-box">
+  <div class="line seek">
+    <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+    <input type="text" id="q" spellcheck="false" data-i18n-title="lib.search"
+           data-i18n-placeholder="lib.searchPlaceholder" placeholder="a word or phrase">
   </div>
   <p class="hint" id="search-status" aria-live="polite"></p>
 </section>
@@ -350,13 +400,19 @@
       <h2 id="reader-name"></h2>
       <p class="meta" id="reader-meta"></p>
     </div>
-    <button class="link" id="reader-close" data-i18n="lib.back">Back to list</button>
+    <button class="glyph" id="reader-close" data-i18n-title="lib.back">
+      <svg class="icon mirror"><use href="#i-back"></use></svg>
+    </button>
   </div>
   <audio id="player" controls preload="metadata"></audio>
   <p class="hint" id="player-note" hidden></p>
   <div class="actions">
-    <button id="reader-copy" data-i18n="job.copy">Copy transcript</button>
-    <button id="reader-reveal" data-i18n="job.openFolder">Open folder</button>
+    <button class="glyph" id="reader-copy" data-i18n-title="job.copy">
+      <svg class="icon"><use href="#i-copy"></use></svg>
+    </button>
+    <button class="glyph" id="reader-reveal" data-i18n-title="job.openFolder">
+      <svg class="icon"><use href="#i-folder"></use></svg>
+    </button>
   </div>
   <details class="tight">
     <summary data-i18n="lib.details">How this was made</summary>

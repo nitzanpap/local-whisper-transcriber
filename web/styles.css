@@ -56,7 +56,8 @@ h1 em { font-style: normal; color: var(--accent); }
 .masthead { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem 1.5rem; flex-wrap: wrap; margin-top: .7rem; }
 .kicker { color: var(--ink-soft); display: flex; align-items: center; gap: .45rem; }
 .pill { color: var(--ink-soft); display: flex; align-items: center; gap: .4rem; white-space: nowrap; }
-.pill::before { content: ""; width: .42rem; height: .42rem; border-radius: 50%; background: var(--good); }
+.pill::before { content: ""; width: .42rem; height: .42rem; border-radius: 50%; background: var(--good); flex: none; }
+.pill:empty { gap: 0; }
 .pill.bad { color: var(--accent); }
 .pill.bad::before { background: var(--accent); }
 
@@ -105,6 +106,13 @@ section { margin-bottom: 2.75rem; }
 }
 #rec-plan b { color: var(--ink); }
 #rec-sources { margin-top: 1.2rem; }
+/* The magnifier is the label. A heading over a single search box was a line of type
+   saying what the box in front of it plainly is. */
+.seek { gap: .7rem; padding-bottom: .15rem; }
+.seek .icon { color: var(--ink-soft); }
+.seek:focus-within .icon { color: var(--accent); }
+#search-box { margin-bottom: 1.6rem; }
+
 .paste { display: flex; align-items: baseline; gap: .75rem; margin-top: .9rem; }
 .paste label { color: var(--ink-soft); flex: none; }
 .paste .line { flex: 1; }
@@ -267,11 +275,30 @@ pre.tech.steps { max-height: none; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
 
+/* --- marks instead of words -------------------------------------------------- */
+/* Kept out of the flow rather than display:none, which stops <use> resolving. */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.icon {
+  width: 1.15rem; height: 1.15rem; flex: none; display: block;
+  fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* An arrow means "the way I came from", and in Hebrew that is the other way. */
+[dir="rtl"] .icon.mirror { transform: scaleX(-1); }
+/* A mark with no word beside it has to be a target worth aiming at, and it has to
+   say what it is on hover — every one of these carries a translated title. */
+.glyph {
+  border: 0; border-radius: 3px; padding: .45rem; color: var(--ink-soft);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.glyph:hover:not(:disabled) { color: var(--accent); border-color: transparent; }
+.glyph:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.glyph.done { color: var(--accent); }
+
 /* --- the way out and back --------------------------------------------------- */
 .tab {
-  font: 500 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
-  color: var(--ink-soft); text-decoration: none; padding-bottom: .2rem;
-  border-bottom: 2px solid transparent; white-space: nowrap;
+  color: var(--ink-soft); text-decoration: none; display: block;
+  padding-bottom: .2rem; border-bottom: 2px solid transparent;
 }
 .tab:hover { color: var(--ink); }
 .tab.here { color: var(--ink); border-bottom-color: var(--accent); }
@@ -330,15 +357,6 @@ textarea:focus { outline: none; border-color: var(--ink); }
 
 /* --- interface language ----------------------------------------------------- */
 .head-right { display: flex; align-items: center; gap: 1rem; }
-#lang-switch { display: flex; border: 1px solid var(--rule); border-radius: 2px; overflow: hidden; }
-#lang-switch button {
-  border: 0; border-radius: 0; padding: .3rem .55rem; font-size: .68rem;
-  color: var(--ink-soft); background: none;
-}
-#lang-switch button + button { border-inline-start: 1px solid var(--rule); }
-#lang-switch button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
-#lang-switch button:hover:not([aria-pressed="true"]) { color: var(--ink); }
-
 /* The caret sits on the side the text ends on. */
 [dir="rtl"] select {
   background-position: left .1rem center;
@@ -351,18 +369,15 @@ textarea:focus { outline: none; border-color: var(--ink); }
 }
 
 /* --- globe language menu ----------------------------------------------------- */
-#lang-switch { display: flex; align-items: center; gap: .3rem; color: var(--ink-soft); }
-#lang-switch:hover { color: var(--ink); }
-#lang-switch svg {
-  width: 1rem; height: 1rem; flex: none;
-  fill: none; stroke: currentColor; stroke-width: 1.5;
-}
+/* The real select is still there, still a select, still reachable by keyboard and
+   by a screen reader. It is simply laid over the globe and made invisible, because
+   naming the language you are already reading is a word that buys nothing. */
+#lang-switch { position: relative; color: var(--ink-soft); padding: .45rem; }
+#lang-switch:hover { color: var(--accent); }
 #lang-switch select {
-  font: 500 .68rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
-  color: inherit; padding: .2rem 1.1rem .2rem 0; cursor: pointer; width: auto;
-  background-size: .5rem;
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; padding: 0; background: none;
 }
-[dir="rtl"] #lang-switch select { padding: .2rem 0 .2rem 1.1rem; }
 
 /* --- how a transcript was made ---------------------------------------------- */
 .facts {

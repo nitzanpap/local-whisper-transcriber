@@ -4,7 +4,7 @@
 
 const STRINGS = {
   en: {
-    "nav.settings": "Settings", "nav.back": "Back",
+    "nav.settings": "Settings", "nav.back": "Back", "nav.language": "Interface language",
     "kicker": "Audio in, transcript out · nothing leaves this computer",
     "start.what": "What do you want words from?",
     "env.ready": "ffmpeg + whisper-cli ready",
@@ -215,7 +215,7 @@ const STRINGS = {
   },
 
   he: {
-    "nav.settings": "הגדרות", "nav.back": "חזרה",
+    "nav.settings": "הגדרות", "nav.back": "חזרה", "nav.language": "שפת הממשק",
     "kicker": "הקלטה נכנסת, תמליל יוצא · שום דבר לא יוצא מהמחשב הזה",
     "start.what": "ממה תרצו טקסט?",
     "env.ready": "ffmpeg ו‑whisper‑cli מוכנים",
@@ -434,6 +434,12 @@ function applyTranslations(root) {
   }
   for (const el of (root || document).querySelectorAll("[data-i18n-placeholder]")) {
     el.placeholder = t(el.dataset.i18nPlaceholder);
+  }
+  // A mark on its own still has to be able to say what it is — on hover for anyone
+  // pointing at it, and to a screen reader, which has nothing else to go on.
+  for (const el of (root || document).querySelectorAll("[data-i18n-title]")) {
+    el.title = t(el.dataset.i18nTitle);
+    el.setAttribute("aria-label", el.title);
   }
   document.documentElement.lang = LANG;
   document.documentElement.dir = RTL_UI.has(LANG) ? "rtl" : "ltr";

@@ -146,6 +146,18 @@ function formError(detail) {
   $("form-error").focus();
 }
 
+// A mark cannot change its wording to say it worked, so it changes its mark: a tick
+// for a moment, then back. Without this, copying gave no sign at all that it had.
+function flashCopied(button) {
+  const use = button.querySelector("use");
+  use.setAttribute("href", "#i-check");
+  button.classList.add("done");
+  setTimeout(() => {
+    use.setAttribute("href", "#i-copy");
+    button.classList.remove("done");
+  }, 1400);
+}
+
 const OTHER = "__other__";
 
 function useManualModel(on) {
@@ -319,8 +331,7 @@ function renderJob(job) {
     $("job-reveal").onclick = () => api("/reveal", { path: job.out_dir }).catch(() => {});
     $("job-copy").onclick = async (e) => {
       await navigator.clipboard.writeText(job.preview);
-      e.target.textContent = t("job.copied");
-      setTimeout(() => (e.target.textContent = t("job.copy")), 1400);
+      flashCopied(e.currentTarget);
     };
   }
 }
@@ -436,9 +447,12 @@ document.addEventListener("click", async (e) => {
 
 function render(s) {
   lastState = s;
+  // A dot is enough to say everything is where it should be, and a dot is all it
+  // says. Something missing is worth a sentence; nothing missing is worth none.
   const missing = Object.entries(s.environment).filter(([, v]) => !v.ok).map(([k]) => k);
   $("env").className = missing.length ? "pill bad" : "pill";
-  $("env").textContent = missing.length ? t("env.missing", { names: missing.join(", ") }) : t("env.ready");
+  $("env").title = missing.length ? t("env.missing", { names: missing.join(", ") }) : t("env.ready");
+  $("env").textContent = missing.length ? $("env").title : "";
 
   if (!bootstrapped) {
     bootstrapped = true;
@@ -537,10 +551,14 @@ function routeChanged() {
   // second tab competing with the work. The key rather than the text, so that
   // switching interface language does not put it back to "Settings".
   const link = $("to-settings");
-  link.href = view === "settings" ? "#/" : "#/settings";
-  link.dataset.i18n = view === "settings" ? "nav.back" : "nav.settings";
-  link.textContent = t(link.dataset.i18n);
-  link.classList.toggle("here", view === "settings");
+  const away = view === "settings";
+  link.href = away ? "#/" : "#/settings";
+  link.dataset.i18nTitle = away ? "nav.back" : "nav.settings";
+  link.title = t(link.dataset.i18nTitle);
+  link.setAttribute("aria-label", link.title);
+  link.querySelector("use").setAttribute("href", away ? "#i-back" : "#i-gear");
+  link.querySelector(".icon").classList.toggle("mirror", away);
+  link.classList.toggle("here", away);
   if (view === "settings" && typeof openSettings === "function") openSettings();
 }
 

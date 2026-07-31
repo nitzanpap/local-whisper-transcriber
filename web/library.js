@@ -174,8 +174,7 @@ $("reader-copy").onclick = async (e) => {
   const text = openEntry.cues.length
     ? openEntry.cues.map(c => c.text).join("\n") : openEntry.text;
   await navigator.clipboard.writeText(text);
-  e.target.textContent = t("job.copied");
-  setTimeout(() => (e.target.textContent = t("job.copy")), 1400);
+  flashCopied(e.currentTarget);
 };
 
 $("reader-reveal").onclick = () => {
