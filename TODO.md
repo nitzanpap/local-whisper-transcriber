@@ -50,6 +50,12 @@ evidence rather than a hunch.
       signature invalidated by running the app — shipped because CI never builds or opens a bundle.
 - [ ] **No automated end-to-end run.** The suite fakes both binaries. Driving `jobs.run_job` over a
       real recording is a handful of lines and would have caught the ordering fault immediately.
+- [ ] **The two sides arrive at very different levels.** A Core Audio tap takes the stream
+      before the hardware volume, so the computer's side is near full scale whatever the
+      speakers are set to, while the microphone is at whatever the room gives: measured
+      -20.7 dB against -31.2 dB in the same recording. Each channel is transcribed on its own
+      so it may not matter, but a quiet voice channel is the one VAD gives up on.
+
 - [ ] **The computer's side has no live meter.** It is written by the helper rather than ffmpeg, so
       nothing measures it in passing. The helper would have to report its own level.
 
