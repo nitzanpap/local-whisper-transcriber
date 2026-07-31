@@ -1,16 +1,18 @@
 "use strict";
-// The Record view. Two dropdowns, one button, and a plain account of what is
-// missing when the machine cannot do what is being asked of it.
+// Recording: one button, two dropdowns folded away behind it, and a plain
+// account of what is missing when the machine cannot do what is being asked.
 //
-// Devices are fetched when this view opens and when asked again — never on the
-// one-second poll, because listing them spawns ffmpeg. Everything else on this
-// screen is drawn from the state the whole page already polls.
+// Devices are fetched once when the app opens and when asked again — never on
+// the one-second poll, because listing them spawns ffmpeg. Everything else here
+// is drawn from the state the whole page already polls.
 
 const NONE = "";
 
 let recDevices = [];
-let recLoaded = false;
 let recFound = null;   // the last device listing, so a language switch can redraw it
+// Whether a recording is running. app.js reads it to decide what owns the screen,
+// because recording outranks everything else that could be there.
+let recIsLive = false;
 
 const longClock = (s) => {
   if (s == null || !isFinite(s)) return "0:00";
@@ -42,18 +44,12 @@ function recOptions(select, devices, chosen, preferLoopback) {
   select.value = guess ? guess.id : NONE;
 }
 
-async function openRecord() {
-  if (recLoaded) return recPlan();
-  await loadDevices();
-}
-
 async function loadDevices(button) {
   if (button) button.disabled = true;
   try {
     const found = await api("/record/devices");
     recDevices = found.devices || [];
     recFound = found;
-    recLoaded = true;
     recOptions($("rec-voice"), recDevices, found.voice, false);
     recOptions($("rec-computer"), recDevices, found.computer, true);
     $("rec-plan").dataset.folder = found.folder || "";
@@ -154,12 +150,12 @@ function renderRecording(rec, orphans) {
   renderOrphans(orphans || []);
   const live = !!rec && RECORDING_LIVE.includes(rec.status);
   const saved = !!rec && rec.status === "saved";
+  recIsLive = live;
   show($("rec-live"), live);
+  // A note saying the last recording was saved belongs underneath the ways in,
+  // not in front of them: it is a confirmation, and it must not stand between
+  // anyone and the next recording.
   show($("rec-done"), saved);
-  // The sources stay on screen whenever nothing is being recorded. A note saying
-  // the last one was saved belongs underneath them, not in front of them: it is
-  // a confirmation, and it must not stand between anyone and the next recording.
-  show($("rec-idle"), !live);
 
   if (rec && rec.status === "failed") recError(rec.error);
 
@@ -253,4 +249,6 @@ function redrawRecord() {
   recPlan();
 }
 
-if (currentView() === "record") openRecord();  // deep link straight to #/record
+// Recording is one of the two things the first screen offers, so the devices are
+// listed as the app opens rather than when a tab is chosen. There is no tab.
+loadDevices();

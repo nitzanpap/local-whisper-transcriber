@@ -90,9 +90,11 @@ function paint() {
   $("start").disabled = !(f.source && f.model && f.out_dir && f.basename && exts.length);
   $("start").firstChild.textContent = extras.length
     ? t("new.startMany", { n: extras.length + 1 }) : t("new.start");
-  show($("choose-file"), !f.source);
-  show($("paste-row"), !f.source);
-  show($("file-card"), !!f.source);
+  // A file has been chosen, so the question "what do you want words from?" has
+  // been answered and both ways in leave. Recording included: one subject per
+  // screen, and Clear brings it back.
+  show($("ways"), !f.source);
+  show($("chosen"), !!f.source);
   show($("rest"), !!f.source);
 }
 document.addEventListener("input", paint);
@@ -300,6 +302,7 @@ function renderJob(job) {
 }
 
 let lastState = null;
+let historyCount = null;  // how many runs the library was last drawn for
 
 function renderQueue(rows) {
   show($("queue-box"), rows.length > 0);
@@ -350,18 +353,30 @@ function render(s) {
     paint();
   }
 
+  // Recording, then a running job, then the two ways in: whichever is happening
+  // owns the top of the surface. Drawn before the decision because it is what
+  // sets recIsLive.
+  if (typeof renderRecording === "function") renderRecording(s.recording, s.orphan_recordings);
+  const recording = typeof recIsLive !== "undefined" && recIsLive;
+
   // Stay on the compose screen once asked for it, even as queued jobs come and
   // go — otherwise queueing more files while one runs is impossible. Starting or
   // resuming something clears the pin and jumps back to the job screen.
   const job = s.job;
-  const onJob = !!job && !pinned;
+  const onJob = !!job && !pinned && !recording;
   show($("screen-job"), onJob);
-  show($("screen-new"), !onJob);
+  show($("screen-start"), !onJob && !recording);
   if (onJob) renderJob(job);
   renderQueue(s.queue || []);
   renderResumable(s.resumable || []);
-  if (typeof renderRecording === "function") renderRecording(s.recording, s.orphan_recordings);
 
+  // The library is the resting state, so a finished transcript has to land in it
+  // without anybody navigating anywhere. History changing is the cheapest tell,
+  // and it also covers the first paint.
+  if (s.history.length !== historyCount) {
+    historyCount = s.history.length;
+    if (typeof openLibrary === "function") openLibrary();
+  }
   show($("history-box"), s.history.length > 0);
   if ($("history")) $("history").innerHTML = s.history.map(r => `
     <tr><td>${r.source.split("/").pop().replace(/</g, "&lt;")}</td>
@@ -415,24 +430,27 @@ $("pending-go").onclick = async () => {
 
 // --- views -------------------------------------------------------------------
 
-const VIEWS = ["record", "transcribe", "library", "settings"];
+// Record, Transcribe and Library were three destinations for one story: get words
+// out of audio, arriving by two doors and leaving by a third. They are one surface
+// now, and settings is the only other place there is.
+const VIEWS = ["home", "settings"];
 
 function currentView() {
   const name = (location.hash.match(/^#\/(\w+)/) || [])[1];
-  return VIEWS.includes(name) ? name : "transcribe";
+  return VIEWS.includes(name) ? name : "home";
 }
 
 function routeChanged() {
   const view = currentView();
   for (const name of VIEWS) show($("view-" + name), name === view);
-  for (const link of document.querySelectorAll("nav a")) {
-    link.classList.toggle("here", link.dataset.view === view);
-    link.setAttribute("aria-current", link.dataset.view === view ? "page" : "false");
-  }
-  // Each view loads its own data when it becomes visible, so switching to it is
-  // never stale and hidden views cost nothing.
-  if (view === "record" && typeof openRecord === "function") openRecord();
-  if (view === "library" && typeof openLibrary === "function") openLibrary();
+  // The same link goes and comes back, so there is never a dead end and never a
+  // second tab competing with the work. The key rather than the text, so that
+  // switching interface language does not put it back to "Settings".
+  const link = $("to-settings");
+  link.href = view === "settings" ? "#/" : "#/settings";
+  link.dataset.i18n = view === "settings" ? "nav.back" : "nav.settings";
+  link.textContent = t(link.dataset.i18n);
+  link.classList.toggle("here", view === "settings");
   if (view === "settings" && typeof openSettings === "function") openSettings();
 }
 

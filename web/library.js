@@ -1,5 +1,7 @@
 "use strict";
-// The Library view: every finished transcript, searchable, read alongside its audio.
+// The library: every finished transcript, searchable, read alongside its audio.
+// It is not a place you go to — it sits under the two ways in and is what the app
+// shows when nothing is happening, because it is what the app is for.
 
 let entries = [];
 let openEntry = null;
@@ -208,8 +210,6 @@ async function runSearch() {
       <span class="hit-text">${esc(h.text)}</span>
     </button>`).join("");
 }
-
-if (currentView() === "library") openLibrary();  // deep link straight to #/library
 
 // --- one delegated click handler for entries, hits and cues ------------------
 

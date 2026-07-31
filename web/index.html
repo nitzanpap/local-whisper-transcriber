@@ -12,12 +12,7 @@
 <header>
   <h1>Local Whisper <em>Transcriber</em></h1>
   <div class="masthead">
-    <nav aria-label="Views">
-      <a href="#/record" data-view="record" data-i18n="nav.record">Record</a>
-      <a href="#/transcribe" data-view="transcribe" data-i18n="nav.transcribe">Transcribe</a>
-      <a href="#/library" data-view="library" data-i18n="nav.library">Library</a>
-      <a href="#/settings" data-view="settings" data-i18n="nav.settings">Settings</a>
-    </nav>
+    <p class="kicker" data-i18n="kicker">Audio in, transcript out · nothing leaves this computer</p>
     <div class="head-right">
       <div id="lang-switch">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -26,15 +21,16 @@
         </svg>
         <select id="lang" aria-label="Interface language"></select>
       </div>
+      <!-- Not a peer of the work. Settings is opened once and then never again, and
+           a tab beside the thing you came to do says the opposite. -->
+      <a class="tab" href="#/settings" id="to-settings" data-i18n="nav.settings">Settings</a>
       <p class="pill" id="env" aria-live="polite"></p>
     </div>
   </div>
 </header>
 
-<div id="view-transcribe">
-
-<!-- ============ compose ============ -->
-<main id="screen-new">
+<!-- ============ the one surface ============ -->
+<div id="view-home">
 
   <div class="note" id="pending" hidden>
     <h2 data-i18n="pending.title">New recordings</h2>
@@ -50,17 +46,70 @@
     <div id="resumable-list"></div>
   </div>
 
-  <section class="step">
-    <span class="label" id="lbl-file" data-i18n="new.source">Source</span>
-    <button class="invite" id="choose-file" hidden>
-      <b data-i18n="new.choose">Choose an audio or video file</b>
-      <span data-i18n="new.chooseHint">MP3, WAV, M4A, MP4, MOV — anything your ffmpeg reads.</span>
-    </button>
-    <div class="paste" id="paste-row" hidden>
-      <label class="label" for="source" data-i18n="new.paste">or paste a path</label>
-      <div class="line"><input type="text" id="source" spellcheck="false" placeholder="/Users/you/Documents/recording.m4a"></div>
+  <div class="note" id="rec-advice" hidden>
+    <h2 id="rec-advice-title"></h2>
+    <p id="rec-advice-what"></p>
+    <details class="tight" id="rec-advice-how" hidden>
+      <summary data-i18n="rec.howTo">How to set that up</summary>
+      <pre class="tech steps" id="rec-advice-steps"></pre>
+    </details>
+  </div>
+
+  <div class="note" id="rec-orphans" hidden>
+    <h2 data-i18n="rec.orphanTitle">Recording that was never saved</h2>
+    <div id="rec-orphan-list"></div>
+  </div>
+
+<!-- ============ what do you want words from ============ -->
+<main id="screen-start">
+
+  <section class="step" id="ways">
+    <span class="label" data-i18n="start.what">What do you want words from?</span>
+    <div class="grid even">
+      <div id="way-record">
+        <button class="invite primary" id="rec-start" disabled>
+          <b data-i18n="rec.start">Record</b>
+          <span data-i18n="rec.startHint">A meeting, a call, anything playing on this Mac.</span>
+        </button>
+        <p class="out" id="rec-plan"></p>
+        <!-- Which device carries which side is the author's control, not the
+             stranger's: it is guessed here and correct nearly always, and asking
+             it on the first screen made the app's opening question a question
+             about plumbing. -->
+        <details class="more" id="rec-sources">
+          <summary data-i18n="rec.sources">What to record</summary>
+          <div class="grid">
+            <div class="field">
+              <label class="label" for="rec-voice" data-i18n="rec.voice">Your voice</label>
+              <div class="line"><select id="rec-voice"></select></div>
+            </div>
+            <div class="field">
+              <label class="label" for="rec-computer" data-i18n="rec.computer">Your computer's audio</label>
+              <div class="line"><select id="rec-computer"></select></div>
+            </div>
+          </div>
+          <div class="actions" style="margin-top:1.1rem">
+            <button class="link" id="rec-refresh" data-i18n="rec.refresh">Look again</button>
+          </div>
+        </details>
+      </div>
+
+      <div id="way-file">
+        <button class="invite" id="choose-file">
+          <b data-i18n="new.choose">Choose an audio or video file</b>
+          <span data-i18n="new.chooseHint">MP3, WAV, M4A, MP4, MOV — anything your ffmpeg reads.</span>
+        </button>
+        <div class="paste" id="paste-row">
+          <label class="label" for="source" data-i18n="new.paste">or paste a path</label>
+          <div class="line"><input type="text" id="source" spellcheck="false" placeholder="/Users/you/Documents/recording.m4a"></div>
+        </div>
+      </div>
     </div>
-    <div class="file" id="file-card" hidden>
+  </section>
+
+  <section class="step" id="chosen" hidden>
+    <span class="label" id="lbl-file" data-i18n="new.source">Source</span>
+    <div class="file" id="file-card">
       <div class="file-top">
         <span class="file-name" id="file-name"></span>
         <button class="link" id="change-file" data-i18n="new.change">Change</button>
@@ -192,146 +241,103 @@
   </details>
 </main>
 
+<!-- ============ recording ============ -->
+<main id="rec-live" hidden>
+  <p class="meta" id="rec-live-meta"></p>
+
+  <div class="readout" style="margin-top:1.25rem">
+    <div>
+      <p class="count" id="rec-clock">0:00</p>
+      <p class="stage" id="rec-status" role="status"></p>
+    </div>
+    <p class="clock"><b id="rec-size">0 MB</b><span data-i18n="rec.recorded">recorded</span></p>
+  </div>
+
+  <div class="tape" id="rec-tape"><i></i></div>
+
+  <div class="actions">
+    <button class="solid" id="rec-stop" data-i18n="rec.stop">Stop and transcribe</button>
+    <button class="link danger" id="rec-throw" data-i18n="rec.throw">Stop and throw it away</button>
+  </div>
+</main>
+
+<div class="note" id="rec-done" hidden>
+  <h2 id="rec-done-title"></h2>
+  <p id="rec-done-what"></p>
+  <div class="actions">
+    <button id="rec-open" data-i18n="job.openFolder">Open folder</button>
+    <button class="link" id="rec-again" data-i18n="rec.clear">Dismiss</button>
+  </div>
+</div>
+
+<div class="note" id="rec-error" hidden tabindex="-1" role="alert">
+  <h2 id="rec-error-msg"></h2>
+  <p id="rec-error-code"></p>
+  <div class="actions"><button class="link" id="rec-dismiss" data-i18n="rec.clear">Dismiss</button></div>
+</div>
+
+<details class="tight" style="margin-top:1.5rem" id="rec-log-box" hidden>
+  <summary data-i18n="job.log">Process log</summary>
+  <pre class="tech" id="rec-log"></pre>
+</details>
+
 <!-- ============ queue (visible while composing and while running) ============ -->
 <section class="step" id="queue-box" hidden style="margin-top:2.5rem">
   <span class="label" data-i18n="job.waiting">Waiting</span>
   <div id="queue-list"></div>
 </section>
 
-</div><!-- /view-transcribe -->
-
-<!-- ============ record ============ -->
-<div id="view-record" hidden>
-
-  <div class="note" id="rec-advice" hidden>
-    <h2 id="rec-advice-title"></h2>
-    <p id="rec-advice-what"></p>
-    <details class="tight" id="rec-advice-how" hidden>
-      <summary data-i18n="rec.howTo">How to set that up</summary>
-      <pre class="tech steps" id="rec-advice-steps"></pre>
-    </details>
+<!-- ============ what you have already: the resting state ============ -->
+<section class="step" id="search-box">
+  <label class="label" for="q" data-i18n="lib.search">Search every transcript</label>
+  <div class="line">
+    <input type="text" id="q" spellcheck="false" data-i18n-placeholder="lib.searchPlaceholder" placeholder="a word or phrase">
   </div>
+  <p class="hint" id="search-status" aria-live="polite"></p>
+</section>
 
-  <div class="note" id="rec-orphans" hidden>
-    <h2 data-i18n="rec.orphanTitle">Recording that was never saved</h2>
-    <div id="rec-orphan-list"></div>
+<section class="step" id="hits-box" hidden>
+  <span class="label" data-i18n="lib.matches">Matches</span>
+  <div id="hits"></div>
+</section>
+
+<section class="step" id="entries-box">
+  <span class="label" data-i18n="lib.transcripts">Transcripts</span>
+  <div id="entries"></div>
+</section>
+
+<details class="tight" id="history-box" hidden>
+  <summary data-i18n="job.recent">Recent activity</summary>
+  <div class="scroller">
+    <table class="history">
+      <thead><tr><th data-i18n="th.file">File</th><th data-i18n="th.status">Status</th><th data-i18n="th.lang">Lang</th><th data-i18n="th.finished">Finished</th></tr></thead>
+      <tbody id="history"></tbody>
+    </table>
   </div>
+</details>
 
-  <main id="rec-idle">
-    <section class="step">
-      <span class="label" data-i18n="rec.sources">What to record</span>
-      <div class="grid even">
-        <div class="field">
-          <label class="label" for="rec-voice" data-i18n="rec.voice">Your voice</label>
-          <div class="line"><select id="rec-voice"></select></div>
-          <p class="hint" data-i18n="rec.voiceHint">Your microphone.</p>
-        </div>
-        <div class="field">
-          <label class="label" for="rec-computer" data-i18n="rec.computer">Your computer's audio</label>
-          <div class="line"><select id="rec-computer"></select></div>
-          <p class="hint" data-i18n="rec.computerHint">Everyone else in the meeting, and anything playing.</p>
-        </div>
-      </div>
-      <p class="out" id="rec-plan"></p>
-    </section>
-
-    <div class="actions">
-      <button class="solid" id="rec-start" disabled data-i18n="rec.start">Start recording</button>
-      <button class="link" id="rec-refresh" data-i18n="rec.refresh">Look again</button>
+<section id="reader" hidden>
+  <div class="reader-head">
+    <div>
+      <h2 id="reader-name"></h2>
+      <p class="meta" id="reader-meta"></p>
     </div>
-  </main>
-
-  <main id="rec-live" hidden>
-    <p class="meta" id="rec-live-meta"></p>
-
-    <div class="readout" style="margin-top:1.25rem">
-      <div>
-        <p class="count" id="rec-clock">0:00</p>
-        <p class="stage" id="rec-status" role="status"></p>
-      </div>
-      <p class="clock"><b id="rec-size">0 MB</b><span data-i18n="rec.recorded">recorded</span></p>
-    </div>
-
-    <div class="tape" id="rec-tape"><i></i></div>
-
-    <div class="actions">
-      <button class="solid" id="rec-stop" data-i18n="rec.stop">Stop and transcribe</button>
-      <button class="link danger" id="rec-throw" data-i18n="rec.throw">Stop and throw it away</button>
-    </div>
-  </main>
-
-  <div class="note" id="rec-done" hidden>
-    <h2 id="rec-done-title"></h2>
-    <p id="rec-done-what"></p>
-    <div class="actions">
-      <button id="rec-open" data-i18n="job.openFolder">Open folder</button>
-      <button class="link" id="rec-again" data-i18n="rec.clear">Dismiss</button>
-    </div>
+    <button class="link" id="reader-close" data-i18n="lib.back">Back to list</button>
   </div>
-
-  <div class="note" id="rec-error" hidden tabindex="-1" role="alert">
-    <h2 id="rec-error-msg"></h2>
-    <p id="rec-error-code"></p>
-    <div class="actions"><button class="link" id="rec-dismiss" data-i18n="rec.clear">Dismiss</button></div>
+  <audio id="player" controls preload="metadata"></audio>
+  <p class="hint" id="player-note" hidden></p>
+  <div class="actions">
+    <button id="reader-copy" data-i18n="job.copy">Copy transcript</button>
+    <button id="reader-reveal" data-i18n="job.openFolder">Open folder</button>
   </div>
-
-  <details class="tight" style="margin-top:1.5rem" id="rec-log-box" hidden>
-    <summary data-i18n="job.log">Process log</summary>
-    <pre class="tech" id="rec-log"></pre>
+  <details class="tight">
+    <summary data-i18n="lib.details">How this was made</summary>
+    <dl class="facts" id="reader-facts"></dl>
   </details>
-</div>
+  <div class="cues" id="cues" tabindex="0" aria-label="Transcript"></div>
+</section>
 
-<!-- ============ library ============ -->
-<div id="view-library" hidden>
-  <section class="step">
-    <label class="label" for="q" data-i18n="lib.search">Search every transcript</label>
-    <div class="line">
-      <input type="text" id="q" spellcheck="false" data-i18n-placeholder="lib.searchPlaceholder" placeholder="a word or phrase">
-    </div>
-    <p class="hint" id="search-status" aria-live="polite"></p>
-  </section>
-
-  <section class="step" id="hits-box" hidden>
-    <span class="label" data-i18n="lib.matches">Matches</span>
-    <div id="hits"></div>
-  </section>
-
-  <section class="step" id="entries-box">
-    <span class="label" data-i18n="lib.transcripts">Transcripts</span>
-    <div id="entries"></div>
-  </section>
-
-  <details class="tight" id="history-box" hidden>
-    <summary data-i18n="job.recent">Recent activity</summary>
-    <div class="scroller">
-      <table class="history">
-        <thead><tr><th data-i18n="th.file">File</th><th data-i18n="th.status">Status</th><th data-i18n="th.lang">Lang</th><th data-i18n="th.finished">Finished</th></tr></thead>
-        <tbody id="history"></tbody>
-      </table>
-    </div>
-  </details>
-
-  <section id="reader" hidden>
-    <div class="reader-head">
-      <div>
-        <h2 id="reader-name"></h2>
-        <p class="meta" id="reader-meta"></p>
-      </div>
-      <button class="link" id="reader-close" data-i18n="lib.back">Back to list</button>
-    </div>
-    <audio id="player" controls preload="metadata"></audio>
-    <p class="hint" id="player-note" hidden></p>
-    <div class="actions">
-      <button id="reader-copy" data-i18n="job.copy">Copy transcript</button>
-      <button id="reader-reveal" data-i18n="job.openFolder">Open folder</button>
-    </div>
-    <details class="tight">
-      <summary data-i18n="lib.details">How this was made</summary>
-      <dl class="facts" id="reader-facts"></dl>
-    </details>
-    <div class="cues" id="cues" tabindex="0" aria-label="Transcript"></div>
-  </section>
-</div>
+</div><!-- /view-home -->
 
 <!-- ============ settings ============ -->
 <div id="view-settings" hidden>

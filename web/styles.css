@@ -79,6 +79,19 @@ section { margin-bottom: 2rem; }
 .invite:hover { border-color: var(--ink); transform: translateY(-1px); }
 .invite b { display: block; font: 400 clamp(1.35rem, 3.6vw, 1.75rem)/1.15 var(--display); }
 .invite span { display: block; margin-top: .5rem; color: var(--ink-soft); font-size: .92rem; }
+/* Two ways in are not two equal ways in. Recording is the one the app was built
+   for, and side by side in identical boxes it read as a coin toss. */
+.invite.primary { border-color: var(--accent); }
+.invite.primary b { color: var(--accent); font-size: clamp(1.6rem, 4.2vw, 2.1rem); }
+/* Where the recording will land and who will be labelled what. A caption under the
+   button, not a second box competing with it: the filled panel .out draws for the
+   output preview reads as another thing to deal with here. */
+#rec-plan {
+  background: none; padding: .1rem 0; margin-top: .9rem;
+  font-size: .82rem; color: var(--ink-soft); word-break: normal;
+}
+#rec-plan b { color: var(--ink); }
+#rec-sources { margin-top: 1.2rem; }
 .paste { display: flex; align-items: baseline; gap: .75rem; margin-top: .9rem; }
 .paste label { color: var(--ink-soft); flex: none; }
 .paste .line { flex: 1; }
@@ -241,16 +254,15 @@ pre.tech.steps { max-height: none; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
 
-/* --- navigation ------------------------------------------------------------ */
-nav { display: flex; gap: 1.1rem; }
-nav a {
+/* --- the way out and back --------------------------------------------------- */
+.tab {
   font: 500 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
   color: var(--ink-soft); text-decoration: none; padding-bottom: .2rem;
-  border-bottom: 2px solid transparent;
+  border-bottom: 2px solid transparent; white-space: nowrap;
 }
-nav a:hover { color: var(--ink); }
-nav a.here { color: var(--ink); border-bottom-color: var(--accent); }
-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.tab:hover { color: var(--ink); }
+.tab.here { color: var(--ink); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* --- library --------------------------------------------------------------- */
 .entry {

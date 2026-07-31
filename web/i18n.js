@@ -4,9 +4,9 @@
 
 const STRINGS = {
   en: {
-    "nav.record": "Record",
-    "nav.transcribe": "Transcribe", "nav.library": "Library", "nav.settings": "Settings",
+    "nav.settings": "Settings", "nav.back": "Back",
     "kicker": "Audio in, transcript out · nothing leaves this computer",
+    "start.what": "What do you want words from?",
     "env.ready": "ffmpeg + whisper-cli ready",
     "env.missing": "missing {names}",
     "env.offline": "not running",
@@ -41,11 +41,10 @@ const STRINGS = {
     // Record
     "rec.sources": "What to record",
     "rec.voice": "Your voice",
-    "rec.voiceHint": "Your microphone. Kept in the left channel.",
     "rec.computer": "Your computer's audio",
-    "rec.computerHint": "Everyone else in the meeting, and anything playing. Kept in the right channel.",
     "rec.nothing": "Nothing",
-    "rec.start": "Start recording",
+    "rec.start": "Record",
+    "rec.startHint": "A meeting, a call, anything playing on this Mac.",
     "rec.refresh": "Look again",
     "rec.stop": "Stop and transcribe",
     "rec.throw": "Stop and throw it away",
@@ -130,7 +129,7 @@ const STRINGS = {
     "lib.searchPlaceholder": "a word or phrase",
     "lib.matches": "Matches",
     "lib.transcripts": "Transcripts",
-    "lib.empty": "Nothing transcribed yet. The Transcribe view is where that starts.",
+    "lib.empty": "Nothing transcribed yet. Record something, or choose a file.",
     "lib.back": "Back to list",
     "lib.moved": "recording moved",
     "lib.noMedia": "The original recording is no longer where it was, so there is nothing to play.",
@@ -166,7 +165,7 @@ const STRINGS = {
     "set.queuedN": "Queued {n}: {names}",
     "set.queuedNone": "Nothing new to transcribe there.",
     "set.recording": "Recording",
-    "set.recordingHint": "What the Record view does when you press the button. Your voice and " +
+    "set.recordingHint": "What happens when you press Record. Your voice and " +
       "your computer's audio are kept in separate channels of one file, which is what lets the " +
       "transcript say who said each line.",
     "set.recFolder": "Where recordings go",
@@ -219,9 +218,9 @@ const STRINGS = {
   },
 
   he: {
-    "nav.record": "הקלטה",
-    "nav.transcribe": "תמלול", "nav.library": "ספרייה", "nav.settings": "הגדרות",
+    "nav.settings": "הגדרות", "nav.back": "חזרה",
     "kicker": "הקלטה נכנסת, תמליל יוצא · שום דבר לא יוצא מהמחשב הזה",
+    "start.what": "ממה תרצו טקסט?",
     "env.ready": "ffmpeg ו‑whisper‑cli מוכנים",
     "env.missing": "חסר: {names}",
     "env.offline": "לא פועל",
@@ -254,11 +253,10 @@ const STRINGS = {
 
     "rec.sources": "מה להקליט",
     "rec.voice": "הקול שלכם",
-    "rec.voiceHint": "המיקרופון שלכם. נשמר בערוץ השמאלי.",
     "rec.computer": "האודיו של המחשב",
-    "rec.computerHint": "כל השאר בפגישה, וכל דבר שמתנגן. נשמר בערוץ הימני.",
     "rec.nothing": "כלום",
-    "rec.start": "התחלת הקלטה",
+    "rec.start": "להקליט",
+    "rec.startHint": "פגישה, שיחה, כל דבר שמתנגן במחשב הזה.",
     "rec.refresh": "לבדוק שוב",
     "rec.stop": "עצירה ותמלול",
     "rec.throw": "עצירה ומחיקה",
@@ -336,7 +334,7 @@ const STRINGS = {
     "lib.searchPlaceholder": "מילה או ביטוי",
     "lib.matches": "תוצאות",
     "lib.transcripts": "תמלילים",
-    "lib.empty": "עדיין לא תומלל דבר. מתחילים במסך התמלול.",
+    "lib.empty": "עדיין לא תומלל דבר. הקליטו משהו, או בחרו קובץ.",
     "lib.back": "חזרה לרשימה",
     "lib.moved": "ההקלטה הוזזה",
     "lib.noMedia": "ההקלטה המקורית כבר לא נמצאת במקומה, ואין מה להשמיע.",
@@ -370,7 +368,7 @@ const STRINGS = {
     "set.queuedN": "נוספו לתור {n}: {names}",
     "set.queuedNone": "אין שם שום דבר חדש לתמלל.",
     "set.recording": "הקלטה",
-    "set.recordingHint": "מה שמסך ההקלטה עושה כשלוחצים על הכפתור. הקול שלכם והאודיו של המחשב " +
+    "set.recordingHint": "מה שקורה כשלוחצים על ״להקליט״. הקול שלכם והאודיו של המחשב " +
       "נשמרים בערוצים נפרדים של אותו קובץ, וזה מה שמאפשר לתמליל לומר מי אמר כל שורה.",
     "set.recFolder": "לאן הולכות ההקלטות",
     "set.recLabelVoice": "איך לקרוא לכם בתמליל",
@@ -461,7 +459,7 @@ function setLanguage(lang) {
   // Anything drawn by script has to be drawn again in the new language.
   if (typeof lastState !== "undefined" && lastState) render(lastState);
   if (typeof openSettings === "function" && currentView() === "settings") openSettings();
-  if (typeof openLibrary === "function" && currentView() === "library") openLibrary();
+  if (typeof openLibrary === "function") openLibrary();  // always on screen now
   if (typeof redrawRecord === "function") redrawRecord();
 }
 
