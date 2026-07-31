@@ -1187,6 +1187,23 @@ async def main() -> None:
         except app.HTTPException as exc:
             check(f"refuses {why}", exc.status_code == 400)
 
+    print("one line for the menu bar")
+    record.RECORDING = None
+    jobs.JOB = None
+    check("nothing happening says so", record.glance() == "idle")
+    record.RECORDING = {"status": "recording", "started_at": time.time() - 42, "ended_at": None}
+    said = record.glance()
+    check("a recording gives its seconds", said.split()[0] == "recording"
+          and 41 <= int(said.split()[1]) <= 43, said)
+    record.RECORDING = None
+    jobs.JOB = {"status": "running", "percent": 63.4}
+    check("a transcription gives whole percent", record.glance() == "working 63", record.glance())
+    jobs.JOB = None
+    # The menu bar splits this on a space and reads the pieces positionally, so a
+    # line that ever grew a newline or a third word would quietly break it.
+    check("and it is always one short line", "\n" not in record.glance()
+          and len(record.glance().split()) <= 2, record.glance())
+
     print("a meter that can show a voice")
     meter_cmd = " ".join(record.capture_commands(rec)[0])
     check("loudness is still measured, since the checks are built on it",

@@ -45,3 +45,8 @@ jobs:
           for file in web/*.js; do
             node --check "$file"
           done
+
+      # The menu bar's own logic is tested by rebuild.sh rather than here. Its tests
+      # live in the desktop binary, so running them means building Tauri — minutes
+      # of webkit on a job that otherwise takes seconds, to check five pure
+      # functions. rebuild.sh has already compiled all of it by the time it asks.

@@ -61,6 +61,15 @@ node --check /tmp/lwt-all.js >/dev/null 2>&1 \
     || bad "the frontend files clash when loaded together — run: node --check /tmp/lwt-all.js"
 ok "the frontend parses, together and apart"
 
+# The menu bar's own logic. It lives here rather than in CI because running it
+# means building Tauri — minutes of webkit on a job that otherwise takes seconds,
+# to check a handful of pure functions. This script is about to compile all of it
+# anyway, so by the time it asks, the answer is nearly free.
+menubar_tests() { (cd desktop/src-tauri && cargo test --release) >/dev/null 2>&1; }
+working "checking the menu bar" menubar_tests \
+    && ok "the menu bar reads the backend correctly" \
+    || bad "the menu bar tests fail — run: cd desktop/src-tauri && cargo test"
+
 say "building"
 build_it() { (cd desktop && npm run build) >/tmp/lwt-build.log 2>&1; }
 working "compiling" build_it \

@@ -1394,6 +1394,45 @@ def dismiss() -> None:
         RECORDING = None
 
 
+def glance() -> str:
+    """The whole state of the app in one short line, for the menu bar.
+
+    Plain text rather than JSON, and that is the point: the thing reading it is a
+    Rust process that otherwise needs no HTTP client and no JSON parser to show a
+    clock in the menu bar. One line it can split on a space.
+
+        idle
+        recording 42
+        saving 128
+        working 63
+        ready
+
+    Seconds for a recording, whole percent for a transcription.
+    """
+    rec = RECORDING
+    if rec is not None and rec["status"] in LIVE:
+        seconds = int((rec["ended_at"] or time.time()) - rec["started_at"])
+        return f"{rec['status']} {seconds}"
+    import jobs  # here rather than at the top: jobs imports this module back
+    job = jobs.JOB
+    if job is not None and job["status"] in ("queued", "running", "cancelling"):
+        return f"working {int(job.get('percent') or 0)}"
+    return "idle"
+
+
+async def toggle() -> dict:
+    """Start recording what was chosen last time, or stop what is running.
+
+    One call with nothing to say, because the menu bar has nowhere to ask. The
+    devices come from the same place the interface fills its dropdowns from, so
+    the tray records exactly what the window would have recorded.
+    """
+    if RECORDING is not None and RECORDING["status"] == "recording":
+        return await stop(keep=True)
+    chosen = await devices()
+    return await start(chosen["voice"], chosen["computer"])
+
+
 def meters() -> dict:
     """Just the needles. Small on purpose: this is asked for many times a second.
 

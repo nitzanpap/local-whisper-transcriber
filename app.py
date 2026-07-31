@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -318,6 +318,21 @@ async def record_devices() -> dict:
 def record_meters() -> dict:
     """The needles alone, cheap enough to ask for fifteen times a second."""
     return record.meters()
+
+
+@app.get("/api/glance", response_class=PlainTextResponse)
+def glance() -> str:
+    """One line saying what the app is doing, for the menu bar to read."""
+    return record.glance()
+
+
+@app.post("/api/record/toggle")
+async def record_toggle() -> dict:
+    """Start or stop, with nothing to say. The menu bar has nowhere to ask."""
+    try:
+        return await record.toggle()
+    except Failed as exc:
+        raise HTTPException(400, {"code": exc.code, "message": exc.message, "details": ""})
 
 
 @app.post("/api/record/start")
