@@ -110,7 +110,34 @@ device in a listing is not a decision by the user.
 - **`silencedetect` jitters by about ±10 ms.** Fine for locating a gap, not for
   measuring an offset. Use several events and take the mean spacing.
 
-## 7. Verify the artefact you just made
+## 7. A request that waits on a human needs a human's patience
+
+*Transcribe a file* in the menu bar opened a picker, transcribed the chosen file
+correctly, and looked like a menu item that did nothing — because the reply never
+came back. The tray reads the backend over a hand-written socket with a twenty
+second timeout, which is right for every call that answers at once and hopeless
+for the one that answers when somebody has finished browsing. The socket gave up,
+the window was never shown, and the job ran to completion unseen.
+
+**Match the timeout to what is being waited for, not to the transport.** The
+backend gives that dialog five minutes, so the caller now waits five and a half.
+
+**And the symptom is worth remembering:** the work happened, correctly, with no
+sign of it. When something "does nothing", check whether it did everything and
+failed to say so — `/api/state` showed the finished job immediately.
+
+## 8. Build only what is used
+
+`tauri build` makes a `.app` and a `.dmg`. `rebuild.sh` installs the `.app` and has
+never once touched the disk image — but a DMG run that leaves its scratch volume
+mounted makes *every later build fail*, at a step nothing depends on, with an error
+that points at bundling rather than at a stray `/Volumes/dmg.XXXXXX`. It builds
+`--bundles app` now. `tauri build` still makes both for a real release.
+
+If a build fails in `bundle_dmg.sh`, look for a mounted volume first:
+`hdiutil info | grep image-path`, then `hdiutil detach /Volumes/dmg.XXXXXX -force`.
+
+## 9. Verify the artefact you just made
 
 A test reported a 52.9-second result for a 13.5-second recording. The recording
 was correct; `ls -t ~/Recordings` had picked up an *older* file because the new one
@@ -120,7 +147,7 @@ had not been written yet. The number was reported before it was checked.
 conclusion from it.** Waiting on a fixed `sleep` and then taking "the newest file"
 is not a check.
 
-## 8. A test that dies early hides everything behind it
+## 10. A test that dies early hides everything behind it
 
 The Linux CI job had been failing for many commits on `" ".join(None)` — the save
 panel test asked the machine it was running on, and a Linux box without zenity has
@@ -136,7 +163,7 @@ run on Linux at all**, and were hiding two real bugs.
   then a second run *with ffmpeg installed*, which is what GitHub's image actually
   has, surfaced a second fault the bare container could not.
 
-## 9. Encode the invariant, not the token
+## 11. Encode the invariant, not the token
 
 A check asserted `"aresample" not in cmd`, written after `aresample=async=1000`
 reconciling two live devices destroyed the quieter channel. It was right to exist
@@ -146,7 +173,7 @@ and is the one thing keeping the timeline honest.
 **Ban the dangerous use, not the word.** The check now allows `async=1`, fails on
 any stretching value, and says which use is which.
 
-## 10. This project's own tooling
+## 12. This project's own tooling
 
 - **The suite runs against fake `ffmpeg` and `whisper-cli` stubs.** `ffprobe` echoes
   `123.5` for every duration. Any check that needs real audio must locate the real
@@ -163,7 +190,7 @@ any stretching value, and says which use is which.
   point. This orphaned an `afplay` that kept playing and a recording that kept
   running. `bash -n` passes before and after and cannot see it.
 
-## 11. Things an agent working here cannot do
+## 13. Things an agent working here cannot do
 
 - **Screen capture and assistive access are both blocked.** `screencapture` fails
   with "could not create image from display", and System Events refuses with
@@ -180,7 +207,7 @@ any stretching value, and says which use is which.
   the menu can then only be reached by right-click, which on a trackpad means two
   fingers, and control-click does not reach it either.
 
-## 12. How to measure this app
+## 14. How to measure this app
 
 The methods that produced every real answer, so they can be reused:
 

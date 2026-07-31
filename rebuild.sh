@@ -71,7 +71,11 @@ working "checking the menu bar" menubar_tests \
     || bad "the menu bar tests fail — run: cd desktop/src-tauri && cargo test"
 
 say "building"
-build_it() { (cd desktop && npm run build) >/tmp/lwt-build.log 2>&1; }
+# Only the .app. This script installs that directly and never touches the disk
+# image, which doubles the build for nothing — and does worse than nothing: a run
+# that leaves its scratch image mounted makes every later build fail at a step no
+# part of this depends on. `tauri build` still makes both for a real release.
+build_it() { (cd desktop && npm run build -- --bundles app) >/tmp/lwt-build.log 2>&1; }
 working "compiling" build_it \
     || { tail -20 /tmp/lwt-build.log; bad "the build failed — full log in /tmp/lwt-build.log"; }
 [ -d "$BUILT" ] || bad "the build reported success but produced no bundle"

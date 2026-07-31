@@ -93,13 +93,20 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
 // no JSON parser, no shared state to keep in step with the window — whatever the
 // window would say, the menu bar says, because both are reading the same server.
 
+/// How long to wait on a reply. Most calls answer at once; the one that opens a
+/// file picker answers when somebody has finished browsing, which is a different
+/// order of time entirely — the backend gives that dialog five minutes, so this
+/// has to outlast it. At twenty seconds the reply never arrived, the window was
+/// never shown, and a transcription that had started correctly looked like a menu
+/// item that did nothing at all.
+const QUICK: Duration = Duration::from_secs(20);
+const PATIENT: Duration = Duration::from_secs(330);
+
 /// One request to the local server. Loopback and one line long, so it is written
 /// out by hand rather than dragging in an HTTP client for it.
-fn ask(method: &str, path: &str) -> Option<String> {
+fn ask(method: &str, path: &str, patience: Duration) -> Option<String> {
     let mut socket = TcpStream::connect(("127.0.0.1", PORT)).ok()?;
-    socket
-        .set_read_timeout(Some(Duration::from_secs(20)))
-        .ok()?;
+    socket.set_read_timeout(Some(patience)).ok()?;
     write!(
         socket,
         "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
@@ -297,12 +304,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             // for as long as that takes, which on a cold microphone is seconds.
             "toggle" => {
                 std::thread::spawn(|| {
-                    ask("POST", "/api/record/toggle");
+                    ask("POST", "/api/record/toggle", QUICK);
                 });
             }
             "pause" => {
                 std::thread::spawn(|| {
-                    ask("POST", "/api/record/pause");
+                    ask("POST", "/api/record/pause", QUICK);
                 });
             }
             // The picker sits there until somebody answers it, and the window is
@@ -310,10 +317,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "pick" => {
                 let app = app.clone();
                 std::thread::spawn(move || {
-                    if let Some(body) = ask("POST", "/api/transcribe/pick") {
-                        if body.contains("\"started\":true") {
-                            show_window(&app);
-                        }
+                    match ask("POST", "/api/transcribe/pick", PATIENT) {
+                        // Started, or refused for a reason worth reading — either
+                        // way the window is where it can be seen. Only a cancelled
+                        // picker leaves the screen alone, because somebody who
+                        // changed their mind has not asked for anything.
+                        Some(body) if body.contains("\"started\":true")
+                            || body.contains("\"detail\"") => show_window(&app),
+                        _ => {}
                     }
                 });
             }
@@ -331,7 +342,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let handle = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(1));
-        let line = ask("GET", "/api/glance").unwrap_or_default();
+        let line = ask("GET", "/api/glance", QUICK).unwrap_or_default();
         let now = read_glance(&line);
         if let Some(tray) = handle.tray_by_id("menubar") {
             let _ = tray.set_title(Some(now.title));
