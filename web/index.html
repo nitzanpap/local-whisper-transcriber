@@ -132,7 +132,10 @@
     <div class="grid even ways">
       <div id="way-record">
         <button class="invite primary" id="rec-start" disabled>
-          <b data-i18n="rec.start">Record</b>
+          <!-- The mark every recorder in the world uses, next to the word rather
+               than instead of it: it should be clear what this button is before
+               anybody has read a thing. -->
+          <b><span class="rec-dot" aria-hidden="true"></span><span data-i18n="rec.start">Record</span></b>
           <span data-i18n="rec.startHint">A meeting, a call, anything playing on this Mac.</span>
         </button>
         <div>
@@ -479,27 +482,29 @@
   </div>
   <audio id="player" controls preload="metadata"></audio>
   <p class="hint" id="player-note" hidden></p>
-  <!-- The third beat, and the only place the app hands anything back. §5a puts copy
-       and export in "high return, low cost — make these loud", and a mark with no
-       word beside it is not loud. The marks stay where the mark is the vocabulary;
-       the payoff gets said. -->
-  <div class="actions take">
-    <button class="solid" id="reader-copy">
-      <svg class="icon"><use href="#i-copy"></use></svg><span data-i18n="job.copy">Copy text</span>
-    </button>
-    <button id="reader-save">
-      <svg class="icon"><use href="#i-save"></use></svg><span data-i18n="job.save">Save a copy…</span>
-    </button>
-    <button id="reader-reveal">
-      <svg class="icon"><use href="#i-folder"></use></svg><span data-i18n="job.openFolder">Open folder</span>
-    </button>
-  </div>
-  <p class="hint" id="reader-saved" hidden aria-live="polite"></p>
   <details class="tight">
     <summary data-i18n="lib.details">How this was made</summary>
     <dl class="facts" id="reader-facts"></dl>
   </details>
-  <div class="cues" id="cues" tabindex="0" aria-label="Transcript"></div>
+
+  <!-- Attached to the transcript rather than floating above the page. Proximity does
+       the work the words were doing: a mark on the corner of the thing it acts on
+       needs no label to say what it acts on. -->
+  <div class="transcript">
+    <div class="tools">
+      <button class="glyph" id="reader-copy" data-i18n-title="job.copy">
+        <svg class="icon"><use href="#i-copy"></use></svg>
+      </button>
+      <button class="glyph" id="reader-save" data-i18n-title="job.save">
+        <svg class="icon"><use href="#i-save"></use></svg>
+      </button>
+      <button class="glyph" id="reader-reveal" data-i18n-title="job.openFolder">
+        <svg class="icon"><use href="#i-folder"></use></svg>
+      </button>
+    </div>
+    <div class="cues" id="cues" tabindex="0" aria-label="Transcript"></div>
+  </div>
+  <p class="hint" id="reader-saved" hidden aria-live="polite"></p>
 </section>
 
 </div><!-- /view-home -->

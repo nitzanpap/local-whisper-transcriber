@@ -106,12 +106,20 @@ function renderFacts(d) {
     ["fact.model", (d.model || "").split("/").pop() || unknown],
     ["fact.language", d.language || unknown],
     ["fact.silence", d.vad_model == null ? unknown : (d.vad_model ? t("fact.yes") : t("fact.no"))],
-    ["fact.vocabulary", d.vocabulary == null ? unknown : (d.vocabulary || "—")],
+    // A word list grows without limit and nobody reads it here; the first few say
+    // whether one was in force, which is the only question this panel answers.
+    ["fact.vocabulary", d.vocabulary == null ? unknown : shorten(d.vocabulary) || "—"],
     ["fact.args", (d.extra_args || []).join(" ") || "—"],
     ["fact.when", when(d.ended_at)],
   ];
   $("reader-facts").innerHTML = rows
     .map(([key, value]) => `<dt>${esc(t(key))}</dt><dd>${esc(value)}</dd>`).join("");
+}
+
+// Enough to recognise, never enough to fill the panel.
+function shorten(text, limit = 48) {
+  const said = String(text || "").trim();
+  return said.length <= limit ? said : said.slice(0, limit).replace(/[,\s]+\S*$/, "") + "…";
 }
 
 function stampOf(ms) {
@@ -186,10 +194,7 @@ document.addEventListener("click", (e) => {
 // so — a dead-looking button is how somebody ends up opening two save panels.
 $("reader-save").onclick = async (e) => {
   const button = e.currentTarget;
-  const label = button.querySelector("span");
-  const said = label.textContent;
   button.disabled = true;
-  label.textContent = t("picker.opening");
   show($("reader-saved"), false);
   try {
     const { path } = await api("/transcripts/" + openEntry.id + "/save", {});
@@ -199,7 +204,6 @@ $("reader-save").onclick = async (e) => {
     formError(err.detail);
   } finally {
     button.disabled = false;
-    label.textContent = said;
   }
 };
 

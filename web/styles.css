@@ -4,8 +4,15 @@
   /* Superclarendon and Avenir have no Hebrew glyphs at all, so Hebrew fell back
      to whatever the browser chose. Naming a Hebrew face after each Latin one
      lets the browser pick per glyph: Latin from the first, Hebrew from the next. */
-  --display: Superclarendon, "New Peninim MT", "Charter", Georgia, serif;
-  --sans: "Avenir Next", Avenir, Raanana, system-ui, sans-serif;
+  /* Hebrew is picked per glyph from the next family along, so the Hebrew face is
+     chosen as deliberately as the Latin one. New Peninim was the fallback and it is
+     a thin, low-contrast face that goes muddy at reading size — Hebrew has no
+     capitals and no ascenders to carry a line, so a heavier, more open face does
+     the work. Narkisim and Arial Hebrew ship with macOS; Frank Ruehl and David are
+     the serif companions when they are installed. */
+  --display: Superclarendon, "Frank Ruehl Libre", "FrankRuehl", "Charter", Georgia,
+             "Arial Hebrew", serif;
+  --sans: "Avenir Next", Avenir, "Arial Hebrew", "Narkisim", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Reading preferences, overridden from Settings. */
@@ -53,7 +60,7 @@ h1 {
 }
 h1 em { font-style: normal; color: var(--accent); }
 .kicker, .label, .pill, .meta, .num { font: 500 .68rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
-.masthead { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem 1.5rem; flex-wrap: wrap; margin-top: .7rem; }
+.masthead { display: flex; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; flex-wrap: wrap; margin-top: .7rem; }
 .kicker { color: var(--ink-soft); display: flex; align-items: center; gap: .45rem; }
 .pill { color: var(--ink-soft); display: flex; align-items: center; gap: .4rem; white-space: nowrap; }
 .pill::before { content: ""; width: .42rem; height: .42rem; border-radius: 50%; background: var(--good); flex: none; }
@@ -87,10 +94,17 @@ section { margin-bottom: 2.75rem; }
 }
 .invite:hover { border-color: var(--ink); transform: translateY(-1px); }
 .invite b { display: block; font: 400 clamp(1.35rem, 3.6vw, 1.75rem)/1.15 var(--display); }
-.invite span { display: block; margin-top: .5rem; color: var(--ink-soft); font-size: .92rem; }
+/* The direct child only: this is the hint under the heading, and a span nested
+   inside the heading — the word beside the record mark — was being shrunk to the
+   size of a caption by it. */
+.invite > span { display: block; margin-top: .5rem; color: var(--ink-soft); font-size: .92rem; }
 /* Two ways in are not two equal ways in. Recording is the one the app was built
    for, and side by side in identical boxes it read as a coin toss. */
 .invite.primary { border-color: var(--accent); }
+.invite.primary b { display: flex; align-items: center; gap: .6rem; }
+.rec-dot {
+  width: .62em; height: .62em; border-radius: 50%; background: var(--accent); flex: none;
+}
 .invite.primary b { color: var(--accent); font-size: clamp(1.6rem, 4.2vw, 2.1rem); }
 /* Both cells span the same two rows, so the invitations share a height whatever
    their wording does and so does everything hanging beneath them. */
@@ -323,12 +337,11 @@ pre.tech.steps { max-height: none; }
 .glyph.done { color: var(--accent); }
 
 /* --- the way out and back --------------------------------------------------- */
-.tab {
-  color: var(--ink-soft); text-decoration: none; display: block;
-  padding-bottom: .2rem; border-bottom: 2px solid transparent;
-}
+.tab { color: var(--ink-soft); text-decoration: none; border-radius: 3px; }
 .tab:hover { color: var(--ink); }
-.tab.here { color: var(--ink); border-bottom-color: var(--accent); }
+/* The active mark says so with its own colour rather than an underline, which was
+   what pushed it below the other two by two pixels. */
+.tab.here { color: var(--accent); }
 .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* --- library --------------------------------------------------------------- */
@@ -357,10 +370,20 @@ textarea:focus { outline: none; border-color: var(--ink); }
 .reader-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
 .reader-head h2 { font: 400 1.5rem/1.2 var(--display); word-break: break-word; }
 #player { width: 100%; margin: 1.2rem 0 .4rem; }
-.cues {
-  margin-top: 1.2rem; max-height: 60vh; overflow: auto;
-  border-top: 1px solid var(--rule-soft);
+/* The transcript and the three things you can do to it, as one object. */
+.transcript { position: relative; margin-top: 1.2rem; }
+.transcript .tools {
+  display: flex; justify-content: flex-end; gap: .1rem;
+  border-top: 1px solid var(--rule-soft); padding-top: .35rem;
 }
+.cues {
+  max-height: 60vh; overflow: auto;
+}
+/* Hebrew sits lower and denser than Latin at the same nominal size, so a transcript
+   set for one reads cramped in the other. A touch more line and a touch more size,
+   only where the page is actually in Hebrew. */
+[dir="rtl"] .cue, .cue[dir="rtl"] { font-size: calc(var(--reading-size) * 1.06); line-height: 1.85; }
+
 .cue {
   display: flex; gap: .8rem; align-items: baseline; padding: .45rem .5rem;
   border-radius: 3px; cursor: pointer; scroll-margin: 40vh;
@@ -383,7 +406,17 @@ textarea:focus { outline: none; border-color: var(--ink); }
 
 
 /* --- interface language ----------------------------------------------------- */
-.head-right { display: flex; align-items: center; gap: 1rem; }
+/* Three things of three different shapes — a padded div, an anchor with a bottom
+   border, and a paragraph with a dot before it — each sitting at its own height.
+   One box for all of them: same square, centred contents, and the row centred too.
+   The dot gets the same square as the marks so its middle is their middle. */
+.head-right { display: flex; align-items: center; gap: .35rem; }
+.head-right > * {
+  display: flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; padding: 0; flex: none;
+}
+.head-right .pill { width: auto; min-width: 2rem; gap: .4rem; }
+.head-right .pill:not(:empty) { padding-inline: .5rem; }
 /* The caret sits on the side the text ends on. */
 [dir="rtl"] select {
   background-position: left .1rem center;
@@ -399,7 +432,7 @@ textarea:focus { outline: none; border-color: var(--ink); }
 /* The real select is still there, still a select, still reachable by keyboard and
    by a screen reader. It is simply laid over the globe and made invisible, because
    naming the language you are already reading is a word that buys nothing. */
-#lang-switch { position: relative; color: var(--ink-soft); padding: .45rem; }
+#lang-switch { position: relative; color: var(--ink-soft); }
 #lang-switch:hover { color: var(--accent); }
 #lang-switch select {
   position: absolute; inset: 0; width: 100%; height: 100%;
