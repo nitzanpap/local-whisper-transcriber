@@ -155,5 +155,15 @@ person. Those are checked by measurement instead, written up in `RECORDING.md`, 
 the way to re-check them is in TRAPS §14: play a known signal and measure what
 comes back.
 
+### Checked against a real meeting
+
+Twenty-one minutes of real two-person conversation, 190 lines, transcribed in 141
+seconds: no line longer than the cap, none outside the recording, none of zero
+length, none overlapping the one above it. Median line 4.2 s.
+
+The two faults that run found — a line with no duration, and lines that overlapped
+— were invisible on a tidy fixture. **Build fixtures to prove the rule; run real
+recordings to find the rules you did not think of.**
+
 Nor does it check transcription *quality*. It uses words a model will always get
 right, on purpose: it is a test of the plumbing, not of whisper.
