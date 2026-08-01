@@ -32,7 +32,7 @@ import jobs
 import library
 import record
 import watch
-from config import (BINARIES, DEFAULT_EXTRA, Failed, HISTORY, TRANSCRIPT_SUFFIX,
+from config import (BINARIES, DEFAULT_EXTRA, Failed, HISTORY, TRANSCRIPT_SUFFIX, vad_model,
                     WEB_DIR, WORK_DIR, recording_config, save_settings, settings,
                     source_folders)
 from tools import environment, find_models, kill_process_group, run_picker
@@ -155,7 +155,11 @@ def state() -> dict:
     return {
         "environment": environment(),
         "settings": {"default_language": "auto", "default_extra_args": DEFAULT_EXTRA,
-                     "output_folder": "", **conf, "source_folders": source_folders()},
+                     "output_folder": "", **conf, "source_folders": source_folders(),
+                     # Whether there is a VAD model at all, from anywhere. One ships
+                     # with the app, so this is normally true and the page no longer
+                     # asks anybody to fetch one by hand.
+                     "vad_ready": bool(vad_model())},
         "models": find_models(str(Path(saved).parent) if saved else ""),
         "resumable": jobs.resumable(),
         "default_extra_args": DEFAULT_EXTRA,
@@ -231,7 +235,7 @@ async def start(body: StartIn) -> dict:
         str(source), str(model), str(out_dir), basename,
         language=body.language, want_txt=body.want_txt, want_srt=body.want_srt,
         keep_intermediates=body.keep_intermediates, extra_args=body.extra_args,
-        vad_model=settings().get("vad_model_path", ""),
+        vad_model=vad_model(),
         vocabulary=settings().get("vocabulary", ""),
         duration=await duration_seconds(source),
     )

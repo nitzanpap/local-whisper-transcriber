@@ -1288,6 +1288,27 @@ async def main() -> None:
     except record.Failed as exc:
         check("pausing nothing says so in a sentence", exc.message.endswith("."), exc.message)
 
+    print("the vad model ships with the app")
+    # Without one there is no fix at all: measured, word splitting on its own
+    # reproduces the same eleven-second spans. It used to be a curl command in
+    # settings for the user to run by hand, which made correct timestamps optional.
+    check("a model is bundled", config.BUNDLED_VAD.is_file(), str(config.BUNDLED_VAD))
+    check("and it is small enough to carry", config.BUNDLED_VAD.stat().st_size < 2_000_000,
+          str(config.BUNDLED_VAD.stat().st_size))
+    check("it goes where the app bundle already looks",
+          "mac" in config.BUNDLED_VAD.parts, str(config.BUNDLED_VAD))
+    config.save_settings({"vad_model_path": ""})
+    check("nothing chosen falls back to the bundled one",
+          config.vad_model() == str(config.BUNDLED_VAD), config.vad_model())
+    config.save_settings({"vad_model_path": "/nowhere/gone.bin"})
+    check("and so does a choice that has since been deleted",
+          config.vad_model() == str(config.BUNDLED_VAD), config.vad_model())
+    mine = TMP / "ggml-my-vad.bin"
+    mine.write_bytes(b"x")
+    config.save_settings({"vad_model_path": str(mine)})
+    check("a model somebody chose is still theirs", config.vad_model() == str(mine))
+    config.save_settings({"vad_model_path": ""})
+
     print("words are put back where they were said")
     # The exact shape of the fault, as measured: an 18-second file, "one" at 1.006 s
     # and "five" at 13.061 s on one channel. VAD found both to within 100 ms; whisper

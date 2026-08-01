@@ -8,6 +8,21 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 WEB_DIR = HERE / "web"
+
+# Shipped, not fetched. Without a VAD model every transcript comes back with
+# invented timestamps — measured, the same eleven-second spans that started all
+# this — and nothing about the result says so. It is 864 KB beside a model the
+# user already downloads in gigabytes, and settings used to hand them a curl
+# command to run by hand for it. See docs/PIPELINE.md.
+BUNDLED_VAD = HERE / "mac" / "models" / "ggml-silero-v5.1.2.bin"
+
+
+def vad_model() -> str:
+    """The VAD model to use: whatever was chosen, else the one we ship."""
+    chosen = settings().get("vad_model_path", "")
+    if chosen and Path(chosen).expanduser().is_file():
+        return str(Path(chosen).expanduser())
+    return str(BUNDLED_VAD) if BUNDLED_VAD.is_file() else ""
 DATA_DIR = Path(os.environ.get("LWT_DATA_DIR", Path.home() / ".local-whisper-transcriber"))
 WORK_DIR = DATA_DIR / "work"
 HISTORY = DATA_DIR / "history.jsonl"

@@ -73,7 +73,9 @@ async function openSettings() {
     ? t("set.modelFound")
     : t("set.modelMissing");
 
-  $("vad-help").textContent = conf.vad_model_path ? t("set.silenceReady") : VAD_DOWNLOAD;
+  // A model ships with the app, so this is normally ready without anybody doing
+  // anything. The download line is kept for a build that somehow has none.
+  $("vad-help").textContent = conf.vad_ready ? t("set.silenceReady") : VAD_DOWNLOAD;
   $("set-rec-auto").value = conf.record_auto_transcribe === true ? "on" : "off";
 
   $("set-reading-size").value = display("reading_size", "1.02rem");
