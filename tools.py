@@ -24,6 +24,9 @@ from config import BINARIES, CATALOGUE, Cancelled, Failed, settings
 BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/home/linuxbrew/.linuxbrew/bin")
 
 MODEL_DIRS = (
+    # Ours first, then everywhere a whisper.cpp user already keeps them. Nothing
+    # here moves anybody's files; a model is found wherever it happens to be.
+    Path.home() / "speech-models",
     Path.home() / "whisper-models",
     Path.home() / "models",
     Path.home() / ".cache" / "whisper",

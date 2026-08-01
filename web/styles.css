@@ -509,3 +509,51 @@ button[data-busy] { position: relative; }
 }
 .confirm-box > p { margin: 0 0 1.3rem; font-size: 1.02rem; line-height: 1.55; }
 .confirm-box .line { display: flex; align-items: center; gap: 1.2rem; }
+
+/* The models screen. Cards rather than rows: each one carries a name, a sentence,
+   two bars and a size, and a row cannot hold that without becoming a table nobody
+   reads. */
+.cards { display: grid; gap: .7rem; }
+.card {
+  border: 1px solid var(--rule); border-radius: 6px; padding: .9rem 1rem;
+  display: grid; gap: .7rem;
+}
+.card.here { border-color: var(--accent); }
+.card-head { display: flex; gap: 1.5rem; justify-content: space-between; align-items: flex-start; }
+.card h3 { font: 500 1rem/1.3 var(--display); margin: 0 0 .25rem; }
+.card h3 .tag {
+  font: 500 .62rem/1 var(--mono); letter-spacing: .07em; text-transform: uppercase;
+  border: 1px solid var(--rule); border-radius: 99px; padding: .22rem .45rem;
+  margin-inline-start: .5rem; vertical-align: .12em; color: var(--faint); font-style: normal;
+}
+.card h3 .tag.good { border-color: var(--accent); color: var(--accent); }
+.card h3 .tag.on { border-color: var(--ink); color: var(--ink); }
+.card p { margin: 0; color: var(--faint); font-size: .88rem; }
+/* Bars, not numbers. "88" invites a question nobody can answer; a bar next to
+   another bar answers the only one that matters, which is "compared to what". */
+.scores { display: grid; gap: .3rem; min-width: 9rem; }
+.score { display: flex; align-items: center; gap: .5rem; justify-content: flex-end; }
+.score span {
+  font: 500 .62rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint);
+}
+.score i { display: block; width: 5rem; height: .3rem; background: var(--rule); border-radius: 99px; }
+.score i b { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.card-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  border-top: 1px solid var(--rule); padding-top: .6rem;
+}
+.card-do { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.card-do .doing { font: 500 .72rem/1 var(--mono); color: var(--faint); }
+.tape.thin { width: 7rem; height: .3rem; background: var(--rule); border-radius: 99px; overflow: hidden; }
+.tape.thin b { display: block; height: 100%; background: var(--accent); transition: width .3s linear; }
+.link.warn { color: var(--faint); }
+.grey { font: 500 .72rem/1 var(--mono); color: var(--faint); }
+@media (max-width: 620px) {
+  .card-head { flex-direction: column; gap: .6rem; }
+  .score { justify-content: flex-start; }
+}
+
+/* An explanation, not an output. .out is a monospaced panel for paths and
+   commands, and a paragraph of prose set in it reads as a wall of code. */
+.hint.wide { max-width: 40rem; margin-bottom: 1.1rem; line-height: 1.55; }

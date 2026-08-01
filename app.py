@@ -329,6 +329,15 @@ def record_meters() -> dict:
     return record.meters()
 
 
+@app.post("/api/open-models-folder")
+def open_models_folder() -> dict:
+    """Show where models are kept, so they can be managed like any other files."""
+    model_store.HOME.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", str(model_store.HOME)])
+    return {"path": str(model_store.HOME)}
+
+
 @app.get("/api/models")
 def list_models() -> dict:
     """Every model in the catalogue, and whether it is here yet."""

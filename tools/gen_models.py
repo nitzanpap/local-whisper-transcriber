@@ -50,6 +50,21 @@ WANTED = [
         "description": "The most accurate, and the slowest by some way.",
         "speed": 40, "accuracy": 92, "languages": "many", "recommended": False,
     }),
+    ("ggml-large-v3-turbo-q5_0.bin", {
+        "name": "Large v3 Turbo, compressed",
+        "description": "Nearly Turbo, at a third of the disk and memory.",
+        "speed": 87, "accuracy": 85, "languages": "many", "recommended": False,
+    }),
+    ("ggml-small.en.bin", {
+        "name": "Small, English only",
+        "description": "Quick, and better than Small if you only ever record English.",
+        "speed": 93, "accuracy": 74, "languages": "en", "recommended": False,
+    }),
+    ("ggml-base.en.bin", {
+        "name": "Base, English only",
+        "description": "Fast and rough, tuned for English alone.",
+        "speed": 97, "accuracy": 60, "languages": "en", "recommended": False,
+    }),
     ("ggml-base.bin", {
         "name": "Base",
         "description": "Fast and rough. For a quick idea of what is on a recording.",

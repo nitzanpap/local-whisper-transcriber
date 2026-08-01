@@ -542,6 +542,36 @@
      by whether the model is there, and the maximum recording length, which §5a
      names as costing attention and returning nothing. Both still exist in the
      settings file, and the first has its real control under Expert. -->
+<!-- ============ models ============ -->
+<!-- Its own screen because it is a place you visit once and then rarely, and
+     because it has to hold a list rather than a row. Downloaded first, then what
+     could be had — the question here is "what can I use now", and only after that
+     "what else is there". -->
+<div id="view-models" hidden>
+  <section class="step">
+    <span class="label" data-i18n="models.title">Transcription models</span>
+    <p class="hint wide" data-i18n="models.what">A model is what turns sound into words. Bigger ones are
+      more accurate and slower. They are ordinary files kept in a folder of your own, so anything
+      you download here can be used by other tools too — and a model you already have is picked up
+      wherever it is.</p>
+    <div class="actions">
+      <button class="link" id="models-rescan" data-i18n="models.rescan">Look again</button>
+      <button class="link" id="models-folder" data-i18n="models.folder">Open the folder</button>
+    </div>
+  </section>
+
+  <section class="step">
+    <span class="label" data-i18n="models.have">On this computer</span>
+    <div id="models-have" class="cards"></div>
+    <p class="hint" id="models-none" data-i18n="models.noneYet" hidden>None yet. Take one from below.</p>
+  </section>
+
+  <section class="step">
+    <span class="label" data-i18n="models.available">Available</span>
+    <div id="models-available" class="cards"></div>
+  </section>
+</div>
+
 <div id="view-settings" hidden>
 
   <section class="step">
@@ -570,6 +600,7 @@
       <div class="line"><select id="set-quality"></select></div>
       <p class="hint" data-i18n="set.qualityHint">Bigger is more accurate and slower.</p>
       <p class="hint" id="model-help"></p>
+      <p class="hint"><a href="#/models" data-i18n="models.manage">Get or remove models</a></p>
     </div>
   </section>
 
@@ -744,6 +775,7 @@
 <script src="/app.js"></script>
 <script src="/record.js"></script>
 <script src="/library.js"></script>
+<script src="/models.js"></script>
 <script src="/settings.js"></script>
 
 <!-- Our own confirmation, because window.confirm does nothing in the webview the

@@ -530,6 +530,7 @@ function render(s) {
   if (!reading && (at === "working" || at === "done")) renderJob(s.job);
   renderQueue(s.queue || []);
   renderResumable(s.resumable || []);
+  if (currentView() === "models") renderModels(s);
 
   // The library is the resting state, so a finished transcript has to land in it
   // without anybody navigating anywhere. The newest run rather than how many there
@@ -598,7 +599,7 @@ $("pending-go").onclick = async () => {
 // Record, Transcribe and Library were three destinations for one story: get words
 // out of audio, arriving by two doors and leaving by a third. They are one surface
 // now, and settings is the only other place there is.
-const VIEWS = ["home", "settings"];
+const VIEWS = ["home", "settings", "models"];
 
 function currentView() {
   const name = (location.hash.match(/^#\/(\w+)/) || [])[1];
@@ -612,7 +613,7 @@ function routeChanged() {
   // second tab competing with the work. The key rather than the text, so that
   // switching interface language does not put it back to "Settings".
   const link = $("to-settings");
-  const away = view === "settings";
+  const away = view !== "home";
   link.href = away ? "#/" : "#/settings";
   link.dataset.i18nTitle = away ? "nav.back" : "nav.settings";
   link.title = t(link.dataset.i18nTitle);
@@ -621,6 +622,7 @@ function routeChanged() {
   link.querySelector(".icon").classList.toggle("mirror", away);
   link.classList.toggle("here", away);
   if (view === "settings" && typeof openSettings === "function") openSettings();
+  if (view === "models" && lastState) renderModels(lastState);
 }
 
 window.addEventListener("hashchange", routeChanged);

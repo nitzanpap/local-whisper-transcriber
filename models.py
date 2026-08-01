@@ -26,10 +26,15 @@ from pathlib import Path
 from config import Failed
 from tools import catalogue, find_models
 
-# Where a model goes when nothing says otherwise. First of the places already
-# searched, so a model fetched here is found by the same scan as one put there by
-# hand — see tools.MODEL_DIRS.
-HOME = Path.home() / "whisper-models"
+# Where a model goes when nothing says otherwise.
+#
+# Not "whisper-models", though that is still searched and always will be. The
+# engine behind this may not be whisper for ever — Parakeet and the rest are
+# better at some of this already — and a folder named after today's engine is a
+# migration waiting to happen. It is a plain visible folder rather than something
+# inside the app, so a model downloaded here can be used by whisper.cpp on the
+# command line, or by anything else, without being copied out.
+HOME = Path.home() / "speech-models"
 
 # What is happening right now, or None. One at a time on purpose: two gigabyte
 # downloads over one connection finish later than the same two in turn, and the
