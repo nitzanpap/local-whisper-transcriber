@@ -12,14 +12,31 @@ silence kept where it belongs and dropped where it was asked for, meters that sh
 a voice, and a menu bar item. `docs/TRAPS.md` says what was learned getting there
 and what not to repeat.
 
-1. **Re-test the transcript ordering fault before touching anything.** A quiet
-   channel comes back as one segment spanning the whole recording — measured at
-   `00:00.000 --> 00:22.040` for a sentence spoken around 15–21 s. This is the
-   complaint that started the whole recording effort, and every input to it has
-   since changed: the timeline is honest now, the channels are aligned, and the
-   microphone is no longer missing an eighth of its samples. It may behave
-   differently. Measure it on a real two-sided recording first, because if it is
-   still there the fix touches `record.py` and would collide with item 3.
+1. **Fix the timestamps a multi-track job produces.** Re-tested 2026-08-01 against a file built
+   to prove it: an 18 s stereo recording, left channel saying "one" at 1 s and "five" at 13 s,
+   right channel saying "three" at 7 s over a continuous quiet hum. Every word came back correct.
+   Every time was not:
+
+   | said | written |
+   |---|---|
+   | Me "one" at 1 s | `00:00 --> 00:12` |
+   | Them "three" at 7 s | `00:00 --> 00:18` — the whole recording |
+   | Me "five" at 13 s | `00:12 --> 00:21` — past the end of an 18 s file |
+
+   So the recording work did not touch this, which is what the re-test was for. The sorting is
+   correct given what it is handed; the timestamps are what is wrong. The order came out right
+   here only by accident — "three" spans everything and starts at zero, so it landed second — and
+   with any other arrangement it would not.
+
+   It is also not only the channel carrying continuous sound, which is how this was described
+   before: the clean channel was cut into 12 s and 9 s blocks with interpolated boundaries. VAD is
+   skipped for multi-track jobs on purpose (its segments span the silence it removes), and nothing
+   replaces it, so whisper is left to segment a track by itself and does it coarsely.
+
+   The fix stands as written: use silero VAD only to *locate* speech regions, then transcribe each
+   separately with `--offset-t`, so every segment carries a measured absolute time instead of an
+   interpolated one. VAD's own boundaries stay unused.
+
 2. **Measure the level gap between the two sides.** The tap takes the stream before
    the hardware volume, so the computer's side is near full scale whatever the
    speakers are set to, while the microphone gets whatever the room gives: -20.7 dB
