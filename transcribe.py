@@ -237,6 +237,25 @@ def parse_regions(path: Path) -> list[tuple[int, int]]:
     return sorted(out)
 
 
+def _coalesce(regions: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Join regions with no real silence between them.
+
+    A region boundary is only worth splitting a sentence at when somebody actually
+    stopped talking. VAD reports one per breath, so "Hello there" comes back as two
+    regions a few tens of milliseconds apart — and splitting there put "Hello" and
+    "there." on separate lines with separate timestamps. The boundaries that matter
+    are the ones with a pause in them, which is the same threshold a pause inside a
+    region has to clear.
+    """
+    out: list[tuple[int, int]] = []
+    for start, end in sorted(regions):
+        if out and start - out[-1][1] < GAP_MS:
+            out[-1] = (out[-1][0], max(out[-1][1], end))
+        else:
+            out.append((start, end))
+    return out
+
+
 def _region_for(regions: list[tuple[int, int]], at: int) -> int | None:
     """Which region a word starting at `at` belongs to."""
     best, best_gap = None, None
@@ -263,6 +282,7 @@ def regroup(words: list[tuple[int, int, str]],
     """
     if not regions:
         return words
+    regions = _coalesce(regions)
     out: list[tuple[int, int, str]] = []
     bucket: list[tuple[int, int, str]] = []
     where: int | None = None
@@ -285,6 +305,15 @@ def regroup(words: list[tuple[int, int, str]],
 
     for start, end, text in words:
         index = _region_for(regions, start)
+        if index is not None:
+            # Clamp to the region before deciding anything, because a word's end is
+            # not to be believed: whisper runs the last word of a sentence all the
+            # way to the first word of the next one, across the silence between. Left
+            # unclamped that made a two-word phrase look twelve seconds long, and the
+            # rule meant to break up a monologue split "Hello" from "there."
+            region_start, region_end = regions[index]
+            start = max(min(start, region_end), region_start)
+            end = min(max(end, start), region_end)
         if where is not None and (index != where
                                   or start - bucket[-1][1] >= GAP_MS
                                   or end - bucket[0][0] >= MAX_SPAN_MS):

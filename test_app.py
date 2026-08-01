@@ -1513,7 +1513,131 @@ async def main() -> None:
     check("bad paths rejected", True)
     check("basename traversal stripped", Path("../../etc/passwd").name == "passwd")
 
+    await the_whole_thing()
+
     print("\nall checks passed")
+
+
+async def the_whole_thing() -> None:
+    """One recording, end to end, against times that are known rather than assumed.
+
+    The whole product in one sentence: a word spoken by somebody at a moment appears
+    in the transcript, attributed to them, at that moment. Everything else — the
+    capture, the padding, the mixing, VAD, the model, the merge — is machinery in
+    service of it, and this is the only check that asks the question directly.
+
+    Everything above runs against fake binaries. This one needs the real ones and a
+    real model, so it says out loud when it cannot run instead of passing quietly.
+    """
+    print("a whole recording, from audio to transcript")
+    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    whisper = shutil.which("whisper-cli")
+    tools.find_models.cache_clear()
+    models = [m for m in tools.find_models() if "silero" not in m["path"].lower()]
+    vad = next((str(p) for p in (Path.home() / "whisper-models").glob("*silero*.bin")), "")
+    talker = shutil.which("say") if sys.platform == "darwin" else None
+    if not (ffmpeg and ffprobe and whisper and models and vad and talker):
+        missing = [name for name, got in (("ffmpeg", ffmpeg), ("ffprobe", ffprobe),
+                                          ("whisper-cli", whisper), ("a model", models),
+                                          ("a vad model", vad), ("say", talker)) if not got]
+        check(f"skipped: this machine has no {', '.join(missing)}", True)
+        return
+
+    async def run(cmd: list[str]) -> str:
+        done = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        out, _ = await done.communicate()
+        return out.decode("utf-8", "replace")
+
+    # Speech, not tones: macOS voice isolation removes a sine wave, and whisper has
+    # nothing to say about one either. See docs/TRAPS.md.
+    stage = TMP / "whole"
+    stage.mkdir(exist_ok=True)
+    # Phrases, not single words. With one word per utterance a transcript made of
+    # one segment per word is indistinguishable from one made of sentences, so the
+    # check could not tell whether the regrouping had happened at all — it passed
+    # with the regrouping removed.
+    said = {"hello there": (0, "Me", 1.0),
+            "good morning": (1, "Them", 7.0),
+            "thank you": (0, "Me", 13.0)}
+    for word in said:
+        await run([talker, "-o", str(stage / f"{word}.aiff"), "-r", "170", word])
+        await run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                   "-i", str(stage / f"{word}.aiff"),
+                   "-af", f"adelay={int(said[word][2] * 1000)}|{int(said[word][2] * 1000)},"
+                          "apad=whole_dur=18", "-ar", "48000", "-ac", "1",
+                   "-c:a", "pcm_s16le", str(stage / f"{word}.wav")])
+    for channel, words in ((0, ("hello there", "thank you")), (1, ("good morning",))):
+        inputs: list[str] = []
+        for word in words:
+            inputs += ["-i", str(stage / f"{word}.wav")]
+        mix = (f"[0:a][1:a]amix=inputs=2:normalize=0[o]" if len(words) > 1 else "[0:a]anull[o]")
+        await run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *inputs,
+                   "-filter_complex", mix, "-map", "[o]", "-c:a", "pcm_s16le",
+                   str(stage / f"ch{channel}.wav")])
+    source = stage / "meeting.m4a"
+    await run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+               "-i", str(stage / "ch0.wav"), "-i", str(stage / "ch1.wav"),
+               "-filter_complex", "[0:a][1:a]join=inputs=2:channel_layout=stereo[o]",
+               "-map", "[o]", "-c:a", "aac", "-b:a", "160k", str(source)])
+    check("the fixture is two channels of the length asked for",
+          "channels=2" in await run([ffprobe, "-v", "error", "-show_entries",
+                                     "stream=channels", "-of", "default=nw=1", str(source)]))
+
+    # What was really said, measured off the file rather than taken from the delays
+    # that were asked for — those drifted by up to 61 ms. TRAPS: verify the artefact.
+    truth = {}
+    for channel, words in ((0, ("hello there", "thank you")), (1, ("good morning",))):
+        found = await run([ffmpeg, "-v", "error", "-i", str(source), "-af",
+                           f"pan=mono|c0=c{channel},silencedetect=n=-45dB:d=0.15,"
+                           "ametadata=print:file=-", "-f", "null", "-"])
+        starts = [float(x) for x in re.findall(r"silence_end=([\d.]+)", found)]
+        for word, at in zip(sorted(words, key=lambda w: said[w][2]), starts):
+            truth[word] = at
+    check("every word was found in the fixture", len(truth) == 3, str(truth))
+
+    out = stage / "out"
+    out.mkdir(exist_ok=True)
+    was = dict(config.settings())
+    try:
+        # The smallest model present: find_models sorts largest first, and a 3 GB
+        # one turns a check into a coffee break.
+        config.save_settings({"ffmpeg_path": ffmpeg, "ffprobe_path": ffprobe,
+                              "whisper_cli_path": whisper})
+        job = jobs.make_job(str(source), models[-1]["path"], str(out), "whole",
+                            language="en", vad_model=vad,
+                            tracks=[{"channel": 0, "label": "Me"},
+                                    {"channel": 1, "label": "Them"}])
+        jobs.JOB = job
+        await jobs.run_job(job)
+    finally:
+        config.save_settings(was)
+        jobs.JOB = None
+    check("the run finished", job["status"] == "completed", str(job.get("error")))
+
+    lines = transcribe.parse_srt(out / "whole.srt")
+    check("every line is inside the recording",
+          all(0 <= start <= end <= 18_500 for start, end, _ in lines), str(lines))
+    # One line per thing somebody said. Without the regrouping this is one line per
+    # word, and every assertion below about "the phrase" fails on the first half of it.
+    check("a phrase is one line, not one line per word",
+          len(lines) == len(said), str([t for _, _, t in lines]))
+    for phrase, (_, who, _asked) in said.items():
+        first, last = phrase.split()[0], phrase.split()[-1]
+        hits = [(start, text) for start, _, text in lines if first in text.lower()]
+        check(f"{who} saying '{phrase}' is in the transcript once", len(hits) == 1, str(lines))
+        start, text = hits[0]
+        check(f"and all of it is on that one line", last in text.lower(), text)
+        check(f"and attributed to {who}", text.startswith(who + ":"), text)
+        # Half a second: the measured error of this design is under 60 ms, and the
+        # fault it replaces was out by eleven seconds.
+        check(f"and placed within half a second of {truth[phrase]:.2f}s",
+              abs(start / 1000 - truth[phrase]) <= 0.5,
+              f"{phrase}: transcript {start / 1000:.2f}s, said {truth[phrase]:.2f}s")
+    check("and the two speakers interleave rather than stacking",
+          [t.split(":")[0] for _, _, t in lines] == ["Me", "Them", "Me"],
+          str([t for _, _, t in lines]))
+
 
 
 def process_alive(pid: int) -> bool:
