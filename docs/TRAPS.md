@@ -229,7 +229,31 @@ were asked of this one: that it reported the same number of checks before and
 after the split — 424 both times — and that deleting the patch line made a check
 fail. It did.
 
-## 14. This project's own tooling
+## 14. Another app's loopback driver is not the computer's audio
+
+Teams installs `MSLoopbackDriverDevice_UID`, Zoom installs
+`zoom.us.zoomaudiodevice.001`. Both show up in the input listing, both answer to
+`is_loopback`, and neither carries anything unless that app is routing into it.
+
+The computer side's guess took the first loopback in the list. Our own tap is
+appended *last* in `devices.py`, whose comment says being last makes it "the
+computer side's first loopback" — true only on a machine with no other loopback
+driver on it, which stopped being the common case the day the owner installed
+Teams.
+
+What it produced, on 2026-08-02: a recording that looks right and is not. Voice
+channel −17.4 dB peak, computer channel −91.0 dB flat for the whole file, the job
+recording `tracks: [{channel: null}]`, and no error anywhere. An idle loopback
+driver is indistinguishable from a quiet room — entry 1 again, in a new costume.
+
+**Read what the app actually selected before diagnosing anything else.**
+`curl -s localhost:8765/api/record/devices` names both sides in one line. The
+first suspicion here was the audio grant, which had just been cleared by a
+rebuild and so was genuinely refused as well — two faults, and the loud one was
+not the one that made the recording. Splitting the file per channel with
+`volumedetect` is what separated them.
+
+## 15. This project's own tooling
 
 - **The suite runs against fake `ffmpeg` and `whisper-cli` stubs.** `ffprobe` echoes
   `123.5` for every duration. Any check that needs real audio must locate the real
@@ -246,7 +270,7 @@ fail. It did.
   point. This orphaned an `afplay` that kept playing and a recording that kept
   running. `bash -n` passes before and after and cannot see it.
 
-## 15. Things an agent working here cannot do
+## 16. Things an agent working here cannot do
 
 - **Screen capture and assistive access are both blocked.** `screencapture` fails
   with "could not create image from display", and System Events refuses with
@@ -263,7 +287,7 @@ fail. It did.
   the menu can then only be reached by right-click, which on a trackpad means two
   fingers, and control-click does not reach it either.
 
-## 16. How to measure this app
+## 17. How to measure this app
 
 The methods that produced every real answer, so they can be reused:
 
