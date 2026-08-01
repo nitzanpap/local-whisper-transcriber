@@ -267,7 +267,7 @@ def kill_process_group() -> None:
         PROC.terminate()  # Windows / no process groups
 
 
-BACKUP_NAME = "local-whisper-transcriber-settings.json"
+BACKUP_NAME = "rescribe-settings.json"
 
 
 def picker_command(kind: str, prompt: str = "", name: str = "") -> tuple[list[str] | None, str]:

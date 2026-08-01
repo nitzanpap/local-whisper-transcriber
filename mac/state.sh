@@ -32,7 +32,7 @@ echo "   The last line is the application macOS judges every permission against.
 # the output device rather than to applications on a display, so unlike the old
 # ScreenCaptureKit arrangement a command-line tone is captured perfectly well.
 say "the computer's audio, as this process hears it"
-H="$HOME/.local-whisper-transcriber/syscapture"
+H="$HOME/.rescribe/syscapture"
 if [ ! -x "$H" ]; then
     echo "   no helper built yet — start a recording once and it gets compiled"
 else
@@ -105,7 +105,7 @@ fi
 say "the app's own settings, which decide what a recording even attempts"
 python3 - <<'PY' 2>/dev/null || echo "   (settings unreadable)"
 import json, os
-p = os.path.expanduser("~/.local-whisper-transcriber/settings.json")
+p = os.path.expanduser("~/.rescribe/settings.json")
 try:
     s = json.load(open(p))
 except Exception as e:
@@ -123,7 +123,7 @@ for k in ("record_voice_device", "record_computer_device", "default_model_path",
 PY
 
 say "the installed app, if the packaged build is what is being tested"
-A="/Applications/Local Whisper Transcriber.app"
+A="/Applications/Rescribe.app"
 if [ -d "$A" ]; then
     printf '   signature : %s\n' "$(codesign --verify --deep --strict "$A" 2>&1 || echo 'INVALID — TCC will not honour its grants')"
     printf '   cdhash    : %s\n' "$(codesign -dvvv "$A" 2>&1 | sed -n 's/^CDHash=//p')"

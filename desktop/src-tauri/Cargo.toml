@@ -1,5 +1,5 @@
 [package]
-name = "local-whisper-transcriber"
+name = "rescribe"
 version = "0.1.0"
 edition = "2021"
 

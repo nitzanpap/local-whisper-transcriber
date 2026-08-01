@@ -1,4 +1,4 @@
-# Local Whisper Transcriber
+# Rescribe
 
 Record a meeting and turn it into a transcript, on your own machine. Press record, or pick a
 file, or point it at a folder and forget about it — and get a `.txt` and a `.srt` next to the
@@ -47,7 +47,7 @@ The app finds models in `~/whisper-models` by itself. Nothing to configure.
 cd desktop && npm install && npx tauri build
 ```
 
-That produces **`Local Whisper Transcriber.app`** in
+That produces **`Rescribe.app`** in
 `desktop/src-tauri/target/release/bundle/macos/` — drag it to `/Applications`. There is also
 a `.dmg` next to it if you want to move it to another Mac.
 
@@ -75,16 +75,16 @@ crashes — which also means it can transcribe on its own, spending GPU and memo
 are doing something else. Most people should not want this.
 
 ```bash
-sed "s|__DIR__|$PWD|g" launchagent.plist > ~/Library/LaunchAgents/com.local-whisper-transcriber.plist
-launchctl load ~/Library/LaunchAgents/com.local-whisper-transcriber.plist
+sed "s|__DIR__|$PWD|g" launchagent.plist > ~/Library/LaunchAgents/com.rescribe.plist
+launchctl load ~/Library/LaunchAgents/com.rescribe.plist
 ```
 
 ```bash
 launchctl list | grep whisper                                    # is it running?
-launchctl kickstart -k gui/$(id -u)/com.local-whisper-transcriber # restart it
-tail -f /tmp/local-whisper-transcriber.log                        # what is it doing?
-launchctl unload ~/Library/LaunchAgents/com.local-whisper-transcriber.plist  # stop it
-rm ~/Library/LaunchAgents/com.local-whisper-transcriber.plist     # and never again
+launchctl kickstart -k gui/$(id -u)/com.rescribe # restart it
+tail -f /tmp/rescribe.log                        # what is it doing?
+launchctl unload ~/Library/LaunchAgents/com.rescribe.plist  # stop it
+rm ~/Library/LaunchAgents/com.rescribe.plist     # and never again
 ```
 
 Idle it costs about 22 MB of memory and no measurable CPU; the GPU is only touched while a
@@ -121,7 +121,7 @@ a recording raises the prompt, and after allowing it you may have to start the a
 before it takes effect. Nothing is captured of your screen — only the audio.
 
 The helper that does this is `mac/syscapture.swift`, about a hundred lines against
-ScreenCaptureKit, compiled once on first use into `~/.local-whisper-transcriber/` by the Swift
+ScreenCaptureKit, compiled once on first use into `~/.rescribe/` by the Swift
 compiler that comes with Xcode's command line tools. If that compiler is missing the option
 simply is not offered, and the older advice below takes its place.
 
@@ -145,7 +145,7 @@ opens both devices itself and does the mixing in ffmpeg, which is also what lets
 in separate channels instead of summing them.
 
 First recording will ask for microphone permission. Inside the Mac app that prompt says
-*Local Whisper Transcriber*; run from a terminal, your terminal gets asked instead.
+*Rescribe*; run from a terminal, your terminal gets asked instead.
 
 A recording stops itself after three hours so a forgotten one cannot fill the disk, and while
 it runs the master is a WAV in scratch rather than the final `.m4a` — a WAV's header comes
@@ -243,7 +243,7 @@ recording make the result worse rather than better.
 ## 6. When something goes wrong
 
 **The page says "backend not reachable."** The server is not running. Start it (section 2),
-or `launchctl kickstart -k gui/$(id -u)/com.local-whisper-transcriber` if you use the agent.
+or `launchctl kickstart -k gui/$(id -u)/com.rescribe` if you use the agent.
 
 **A transcription was interrupted.** Nothing is lost. Each finished segment is written as it
 happens, so the page offers **Resume**, which restarts whisper where it stopped and skips
@@ -281,7 +281,7 @@ default.
 ## 7. Where things are
 
 ```
-~/.local-whisper-transcriber/
+~/.rescribe/
 ├── settings.json     your defaults
 ├── history.jsonl     every job that has run
 └── work/             scratch: converted audio, partial transcripts
@@ -294,7 +294,7 @@ audio that was recorded but never saved.
 Recordings go to `~/Recordings` unless you point Settings somewhere else. They are ordinary
 files in an ordinary folder, never inside the dot-directory above.
 
-`LWT_DATA_DIR` and `LWT_PORT` override the location and the port.
+`RESCRIBE_DATA_DIR` and `RESCRIBE_PORT` override the location and the port.
 
 ---
 

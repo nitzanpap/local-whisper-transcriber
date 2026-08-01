@@ -61,7 +61,7 @@ fn start_backend(app: &tauri::App) -> Result<Option<Child>, String> {
         .current_dir(&backend)
         // So the backend can stop itself if this app is force quit and never
         // gets the chance to kill it.
-        .env("LWT_PARENT_PID", std::process::id().to_string())
+        .env("RESCRIBE_PARENT_PID", std::process::id().to_string())
         // Python writes .pyc files next to the source it imports, and the source
         // here lives inside the app bundle — so simply running the app dropped a
         // __pycache__ into its own Resources and broke the code signature. codesign
@@ -194,13 +194,13 @@ fn main() {
                     let html = format!(
                         "<body style='font:16px/1.6 -apple-system;padding:3rem;color:#17140f'>\
                          <h1 style='font:400 1.4rem Superclarendon,Georgia,serif'>\
-                         Local Whisper Transcriber could not start</h1><p>{why}</p></body>"
+                         Rescribe could not start</h1><p>{why}</p></body>"
                     );
                     (None, format!("data:text/html,{}", urlencode(&html)))
                 }
             };
             match WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
-                .title("Local Whisper Transcriber")
+                .title("Rescribe")
                 .inner_size(1000.0, 820.0)
                 .min_inner_size(420.0, 480.0)
                 .build()
@@ -266,7 +266,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "Start recording", true, None::<&str>)?;
     let hold = MenuItem::with_id(app, "pause", "Pause", false, None::<&str>)?;
     let pick = MenuItem::with_id(app, "pick", "Transcribe a file…", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Open Local Whisper Transcriber", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Rescribe", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[

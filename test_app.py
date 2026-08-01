@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 TMP = Path(tempfile.mkdtemp(prefix="lwt-test-"))
-os.environ["LWT_DATA_DIR"] = str(TMP / "data")
+os.environ["RESCRIBE_DATA_DIR"] = str(TMP / "data")
 
 import app  # noqa: E402  (all of these must follow the env var)
 import config  # noqa: E402

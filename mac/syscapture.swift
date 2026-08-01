@@ -507,7 +507,7 @@ guard let outputUID = defaultOutputUID() else {
 // pid with kAudioHardwarePropertyTranslatePIDToProcessObject and pass it here.
 let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
 tapDescription.uuid = UUID()
-tapDescription.name = "Local Whisper Transcriber"
+tapDescription.name = "Rescribe"
 tapDescription.isPrivate = true          // never shown in Audio MIDI Setup
 tapDescription.muteBehavior = .unmuted   // the meeting must still come out of the speakers
 
@@ -533,7 +533,7 @@ guard AudioObjectGetPropertyData(tap, &formatAddr, 0, nil, &size, &asbd) == noEr
 // as a device anybody could pick by accident.
 let aggregateUID = UUID().uuidString
 let aggregate: [String: Any] = [
-    kAudioAggregateDeviceNameKey: "Local Whisper Transcriber",
+    kAudioAggregateDeviceNameKey: "Rescribe",
     kAudioAggregateDeviceUIDKey: aggregateUID,
     kAudioAggregateDeviceMainSubDeviceKey: outputUID,
     kAudioAggregateDeviceIsPrivateKey: true,

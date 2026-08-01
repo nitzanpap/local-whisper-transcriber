@@ -10,7 +10,7 @@
 set -u
 cd "$(dirname "$0")" || exit 1
 
-APP="Local Whisper Transcriber.app"
+APP="Rescribe.app"
 BUILT="desktop/src-tauri/target/release/bundle/macos/$APP"
 INSTALLED="/Applications/$APP"
 
@@ -122,7 +122,7 @@ done
 ok "the installed app is this working tree"
 
 # And then there is only one of it. Spotlight indexes the build directory too, so
-# leaving the bundle there put a second "Local Whisper Transcriber" in every search
+# leaving the bundle there put a second "Rescribe" in every search
 # — a different binary, with its own identity as far as macOS permissions are
 # concerned, one keystroke away from being opened instead of the real one.
 rm -rf "$BUILT"

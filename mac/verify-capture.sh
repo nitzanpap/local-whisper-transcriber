@@ -14,7 +14,7 @@
 
 set -u
 
-HELPER="${HELPER:-$HOME/.local-whisper-transcriber/syscapture}"
+HELPER="${HELPER:-$HOME/.rescribe/syscapture}"
 SECONDS_EACH="${SECONDS_EACH:-5}"
 
 # Rebuilt every run rather than reused. A stale binary here reported a crash from

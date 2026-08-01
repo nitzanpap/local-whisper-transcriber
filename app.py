@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["fastapi", "uvicorn"]
 # ///
-"""Local Whisper Transcriber: ffmpeg + whisper-cli behind a small local web UI.
+"""Rescribe: ffmpeg + whisper-cli behind a small local web UI.
 
 Run: uv run --script app.py   ->  http://127.0.0.1:8765
 
@@ -62,7 +62,7 @@ async def lifespan(_: FastAPI):
     jobs.restore_queue()  # pick the backlog back up after a restart
     # Nothing runs on a timer. Source folders are looked at when the app asks.
     background = []
-    parent = os.environ.get("LWT_PARENT_PID")
+    parent = os.environ.get("RESCRIBE_PARENT_PID")
     if parent and parent.isdigit():
         background.append(asyncio.create_task(follow_parent(int(parent))))
     yield
@@ -70,9 +70,10 @@ async def lifespan(_: FastAPI):
         task.cancel()
 
 
-BACKUP_KIND = "local-whisper-transcriber-settings"
+BACKUP_KIND = "rescribe-settings"
+BACKUP_KINDS = (BACKUP_KIND, "local-whisper-transcriber-settings")  # what we wrote before the rename
 
-app = FastAPI(title="Local Whisper Transcriber", lifespan=lifespan)
+app = FastAPI(title="Rescribe", lifespan=lifespan)
 
 
 # --- request models ----------------------------------------------------------
@@ -689,7 +690,7 @@ def import_settings(body: PathIn) -> dict:
     except (OSError, ValueError):
         raise HTTPException(400, {"code": "unsupported_media",
                                   "message": "That file is not settings — it is not even JSON."})
-    if not isinstance(payload, dict) or payload.get("kind") != BACKUP_KIND:
+    if not isinstance(payload, dict) or payload.get("kind") not in BACKUP_KINDS:
         raise HTTPException(400, {"code": "unsupported_media",
                                   "message": "That is a JSON file, but not one of ours."})
     put_settings(SettingsIn(**payload.get("settings", {})))  # same rules as saving by hand
@@ -725,4 +726,4 @@ if __name__ == "__main__":
     import uvicorn
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("LWT_PORT", 8765)))
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("RESCRIBE_PORT", 8765)))

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.local-whisper-transcriber</string>
+  <string>com.rescribe</string>
 
   <!-- uv resolves the dependencies declared inline in app.py, so there is no venv
        to create or keep in sync. Absolute path: launchd has no useful PATH. -->
@@ -34,8 +34,8 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/tmp/local-whisper-transcriber.log</string>
+  <string>/tmp/rescribe.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/local-whisper-transcriber.log</string>
+  <string>/tmp/rescribe.log</string>
 </dict>
 </plist>

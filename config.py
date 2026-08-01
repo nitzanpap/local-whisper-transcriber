@@ -28,7 +28,20 @@ def vad_model() -> str:
     if chosen and Path(chosen).expanduser().is_file():
         return str(Path(chosen).expanduser())
     return str(BUNDLED_VAD) if BUNDLED_VAD.is_file() else ""
-DATA_DIR = Path(os.environ.get("LWT_DATA_DIR", Path.home() / ".local-whisper-transcriber"))
+_CHOSEN_DIR = os.environ.get("RESCRIBE_DATA_DIR")
+DATA_DIR = Path(_CHOSEN_DIR or Path.home() / ".rescribe")
+
+# The app was called Local Whisper Transcriber until the rename. Somebody who used it
+# then has their settings, history and library under the old name; move them once — but
+# only into the default location. A directory somebody named themselves is theirs alone.
+# ponytail: delete this after a release or two — it only ever matters on first launch.
+_OLD_DIR = Path.home() / ".local-whisper-transcriber"
+if not _CHOSEN_DIR and not DATA_DIR.exists() and _OLD_DIR.is_dir():
+    try:
+        _OLD_DIR.rename(DATA_DIR)
+    except OSError:
+        pass  # a leftover old directory is not worth failing to start over
+
 WORK_DIR = DATA_DIR / "work"
 HISTORY = DATA_DIR / "history.jsonl"
 SETTINGS = DATA_DIR / "settings.json"

@@ -1,5 +1,5 @@
 {
-  "name": "local-whisper-transcriber-desktop",
+  "name": "rescribe-desktop",
   "private": true,
   "version": "0.1.0",
   "scripts": {
