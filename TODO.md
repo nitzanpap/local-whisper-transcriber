@@ -30,6 +30,51 @@ and what not to repeat.
    Deliberately held while recording behaviour was still moving; it has stopped
    moving, so this is the moment — but after item 1, not before.
 
+## From reading Handy
+
+Taken from its screens on 2026-08-01, ranked by what they would be worth here. The
+project is at ~/devel/tools/Handy; `docs/TRAPS.md` says what of its *code* is worth
+copying and what is not.
+
+- [ ] **Group settings, with a note on each row.** Ours is one flat list, which is
+      already on this list below as "noisy and flat". Theirs is APP / OUTPUT /
+      TRANSCRIPTION / HISTORY, each row a label on the left and one control on the
+      right, and an ⓘ beside every label carrying the sentence that would otherwise
+      be a hint under it. That last part is the trick: it explains everything and
+      clutters nothing.
+- [ ] **Keep only the last N recordings.** They have *Auto-Delete Recordings ·
+      Keep latest 5* and a *History Limit*. We measured a recording at 0.69 GB an
+      hour and have a disk guard that stops a recording when the disk is nearly
+      full — which is the emergency, not the policy. A meeting recorder that never
+      forgets fills a disk by design.
+- [ ] **"Default" as a device, not a device name.** Their microphone dropdown says
+      *Default*, so the choice survives plugging in a headset. Ours lists real
+      devices and guesses the default when nothing is remembered, so somebody who
+      picked one is stuck with it when it is gone. An explicit "Follow the system"
+      entry is a better answer than a guess. Relates to TRAPS §5.
+- [ ] **Custom words as chips, not a text field.** Ours is a free-text vocabulary
+      box; theirs is `Add a word` with a row of removable chips. Same feature,
+      obviously better, and a chip cannot be half-typed.
+- [ ] **Pick the model from the tray.** Their menu bar item carries a submenu of
+      downloaded models with a tick on the active one. Ours has the clock and the
+      recording controls; a model submenu is a small addition to `build_tray`.
+- [ ] **Copy the last transcript from the tray.** One click after a meeting, no
+      window. Fits our menu bar exactly.
+- [ ] **Say where the files are, in About.** App data and log directories, each
+      with an Open button. Every support question starts there, and ours are not
+      written down anywhere a user would look.
+- [ ] **Acknowledge what this is built on.** They credit ggml and transcribe.cpp by
+      name on the About screen. We ship a Silero VAD model and lean entirely on
+      whisper.cpp; that deserves saying, and shipping somebody's model makes it a
+      licence question rather than only a courtesy.
+- [ ] **Launch on startup, start hidden.** A meeting recorder that has to be
+      started before it can catch a meeting is asking to be forgotten. We have the
+      menu bar item to be quiet in already.
+
+Not worth copying: their overlay and paste settings (a dictation app pastes into
+whatever has focus; we write files), push-to-talk, and Experimental Features as a
+toggle.
+
 ## Bugs
 
 - [x] **Remove does nothing on a running transcription.** The button called `DELETE /api/queue/{id}`,
