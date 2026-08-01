@@ -55,6 +55,11 @@ RECORD_MAX_MINUTES = 180
 RECORD_LABELS = ("Me", "Them")
 RECORD_MAX_MINUTES_CEILING = 12 * 60
 
+# How many recordings to keep. Zero means all of them, and is the default: see the
+# note at the top of retention.py about why this one is not on out of the box.
+RECORD_KEEP = 0
+RECORD_KEEP_CEILING = 500
+
 
 def recording_config() -> dict:
     """The recording settings, resolved, with every value usable as it stands."""
@@ -67,6 +72,10 @@ def recording_config() -> dict:
         minutes = RECORD_MAX_MINUTES
     labels = ((conf.get("record_label_voice") or "").strip() or RECORD_LABELS[0],
               (conf.get("record_label_computer") or "").strip() or RECORD_LABELS[1])
+    try:
+        keep = max(0, min(int(conf.get("record_keep") or 0), RECORD_KEEP_CEILING))
+    except (TypeError, ValueError):
+        keep = RECORD_KEEP
     return {
         "folder": str(Path(folder).expanduser()) if folder else str(RECORD_FOLDER),
         "voice": conf.get("record_voice_device") or "",
@@ -80,6 +89,7 @@ def recording_config() -> dict:
         "transcribe": conf.get("record_auto_transcribe") is True,
         "max_seconds": minutes * 60,
         "max_minutes": minutes,
+        "keep": keep,
     }
 
 

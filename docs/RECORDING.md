@@ -186,6 +186,22 @@ measure.
 Measured: the master WAV costs 0.69 GB an hour. The cap is three hours, which is 2.07 GB. The disk
 guard stops a recording when less than 0.4 GB remains, which is about 35 minutes of headroom.
 
+The guard is the emergency. The policy is `retention.py`: keep the last N recordings and delete the
+rest once a new one is safely saved. At 0.69 GB an hour a recorder that never forgets fills a disk
+by design, so a limit is the only thing that stops the guard being reached eventually.
+
+It is off unless somebody turns it on. That is not timidity — an upgrade that quietly deleted
+meetings would be the one mistake here with no undo, and being on the settings screen afterwards
+would not undo it. Three rules make the deleting safe once it is on. Only names this app produces,
+so a file somebody put in `~/Recordings` themselves is never a candidate however old it is. Only
+the `.m4a`, so the transcript read out of it survives — the Library already draws an entry whose
+media has gone. And never a file that is the source of a queued or running job, which would fail
+the transcription with something unreadable about a missing file.
+
+It runs when a recording is saved rather than when the setting is changed, so the only deletion
+this app performs by itself happens once the thing being kept is already on disk, never while
+somebody is still deciding what to set.
+
 Those numbers are sound and the machinery around them works — a recording that runs out of room is
 stopped and kept rather than lost, and a recording whose process dies leaves an orphan that can be
 recovered. What is missing is smaller than it looks:

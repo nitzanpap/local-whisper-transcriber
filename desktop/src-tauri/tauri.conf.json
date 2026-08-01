@@ -29,6 +29,7 @@
       "../../models.py": "backend/models.py",
       "../../models.json": "backend/models.json",
       "../../record.py": "backend/record.py",
+      "../../retention.py": "backend/retention.py",
       "../../watch.py": "backend/watch.py",
       "../../web/": "backend/web/",
       "../../mac/": "backend/mac/"

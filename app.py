@@ -118,6 +118,7 @@ class SettingsIn(BaseModel):
     record_label_computer: str = ""
     record_auto_transcribe: bool | None = None
     record_max_minutes: int | None = None
+    record_keep: int | None = None
 
 
 def resolve_file(raw: str, what: str, code: str) -> Path:
@@ -639,7 +640,8 @@ def get_settings() -> dict:
             "record_label_voice": conf["labels"][0],
             "record_label_computer": conf["labels"][1],
             "record_auto_transcribe": conf["transcribe"],
-            "record_max_minutes": conf["max_minutes"]}
+            "record_max_minutes": conf["max_minutes"],
+            "record_keep": conf["keep"]}
 
 
 @app.put("/api/settings")

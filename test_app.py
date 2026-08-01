@@ -27,6 +27,7 @@ import config  # noqa: E402
 import jobs  # noqa: E402
 import library  # noqa: E402
 import record  # noqa: E402
+import retention  # noqa: E402
 import tools  # noqa: E402
 import transcribe  # noqa: E402
 import watch  # noqa: E402
@@ -1677,6 +1678,88 @@ async def main() -> None:
     jobs.sweep_work_dirs()
     check("stale scratch removed", not stale.exists())
     check("live scratch kept", fresh.exists())
+
+    print("keeping only the last few recordings")
+    # Deleting somebody's meetings is the one thing here with no undo, so this
+    # asks what must never happen rather than only what should.
+    shelf = TMP / "keeping"
+    shelf.mkdir(exist_ok=True)
+    made = []
+    for n, stamp in enumerate(["2026-07-28 09.15", "2026-07-29 11.00", "2026-07-30 14.30",
+                               "2026-07-31 16.45", "2026-08-01 10.05"]):
+        f = shelf / f"{stamp}.m4a"
+        f.write_bytes(b"audio")
+        os.utime(f, (1000 + n, 1000 + n))    # oldest first, in the order written
+        made.append(f)
+    theirs = [shelf / "holiday.m4a", shelf / "2026-07-28 09.15.txt",
+              shelf / "interview 2026-07-28 09.15.m4a", shelf / "notes.m4a"]
+    for f in theirs:
+        f.write_bytes(b"not ours")
+        os.utime(f, (1, 1))                  # older than everything, and still safe
+
+    check("keeping everything deletes nothing", retention.surplus(shelf, 0) == [])
+    check("fewer recordings than the limit deletes nothing", retention.surplus(shelf, 5) == [])
+    check("the surplus is the oldest ones",
+          [p.name for p in retention.surplus(shelf, 3)] ==
+          ["2026-07-29 11.00.m4a", "2026-07-28 09.15.m4a"])
+    check("a recording being transcribed is passed over",
+          [p.name for p in retention.surplus(shelf, 3, {str(shelf / "2026-07-28 09.15.m4a")})] ==
+          ["2026-07-29 11.00.m4a"])
+    gone = retention.prune(shelf, 3)
+    check("only the surplus went", sorted(gone) == ["2026-07-28 09.15.m4a", "2026-07-29 11.00.m4a"])
+    check("the newest are still here", all(f.exists() for f in made[2:]))
+    # The one that would be unforgivable: somebody's own files in the folder they
+    # chose. A name that merely contains a date is not a name this app produces.
+    check("nothing this app did not record was touched", all(f.exists() for f in theirs),
+          str([f.name for f in theirs if not f.exists()]))
+    check("a folder that is not there is not an error", retention.prune(TMP / "no-such", 1) == [])
+
+    # And that a real save actually calls it. Everything above would pass just as
+    # happily if the recorder never asked, which is the failure that leaves a
+    # setting on the screen doing nothing at all.
+    was_all = config.settings()
+    live_folder = TMP / "keeping-live"
+    live_folder.mkdir(exist_ok=True)
+    old = live_folder / "2020-01-01 08.00.m4a"
+    old.write_bytes(b"an old meeting")
+    not_ours = live_folder / "wedding.m4a"
+    not_ours.write_bytes(b"somebody's own file, in the folder they chose")
+    config.save_settings({"recording_folder": str(live_folder), "record_keep": 1,
+                          "record_auto_transcribe": False})
+    record.RECORDING = None
+    await record.start("0", "1")
+    await record.TASK
+    fresh = Path(record.public()["path"])
+    check("saving a recording clears the surplus", not old.exists())
+    check("and keeps the one just made", fresh.exists() and fresh.parent == live_folder, str(fresh))
+    check("and still leaves somebody else's file alone", not_ours.exists())
+    record.RECORDING = None
+    config.SETTINGS.write_text(json.dumps(was_all))
+
+    # And the setting that drives it, through the same resolver as the rest.
+    was = config.settings()
+    config.save_settings({"record_keep": 10})
+    check("the limit is read from settings", config.recording_config()["keep"] == 10)
+    config.save_settings({"record_keep": "nonsense"})
+    check("an unreadable limit keeps everything rather than deleting wildly",
+          config.recording_config()["keep"] == 0)
+    config.save_settings({"record_keep": -5})
+    check("a negative limit keeps everything too", config.recording_config()["keep"] == 0)
+    config.save_settings({"record_keep": 10_000})
+    check("an absurd limit is capped, not honoured",
+          config.recording_config()["keep"] == config.RECORD_KEEP_CEILING)
+    config.SETTINGS.write_text(json.dumps(was))
+    check("off unless asked for", config.recording_config()["keep"] == 0)
+
+    # Every recording this app has ever written matches, or the deleting is a
+    # no-op nobody would notice. Asked of the name-maker itself, not of a copy.
+    check("the pattern matches what this app actually names a recording",
+          retention.MINE.match(f"{record._stamp()}.m4a") is not None, record._stamp())
+    taken = shelf / f"{record._stamp()}.m4a"
+    taken.write_bytes(b"first one this minute")
+    second = record._unique(taken)
+    check("and the name a second recording in the same minute gets",
+          second != taken and retention.MINE.match(second.name) is not None, second.name)
 
     print("path validation")
     for bad in ("relative/path.mp3", str(TMP / "nope.mp3")):

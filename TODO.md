@@ -42,11 +42,14 @@ copying and what is not.
       right, and an ⓘ beside every label carrying the sentence that would otherwise
       be a hint under it. That last part is the trick: it explains everything and
       clutters nothing.
-- [ ] **Keep only the last N recordings.** They have *Auto-Delete Recordings ·
-      Keep latest 5* and a *History Limit*. We measured a recording at 0.69 GB an
-      hour and have a disk guard that stops a recording when the disk is nearly
-      full — which is the emergency, not the policy. A meeting recorder that never
-      forgets fills a disk by design.
+- [x] **Keep only the last N recordings.** Done 2026-08-01 in `retention.py`, run
+      once a recording is safely saved. Off by default, because an upgrade that
+      quietly deleted meetings somebody had not finished with would be
+      unforgivable. Only files matching the name this app gives a recording, so
+      somebody else's `wedding.m4a` in `~/Recordings` is never touched; only the
+      audio, so the transcript outlives it; and never the source of a job in the
+      queue. The checks include the wiring, not only the function — confirmed by
+      removing the call and watching them fail.
 - [ ] **"Default" as a device, not a device name.** Their microphone dropdown says
       *Default*, so the choice survives plugging in a headset. Ours lists real
       devices and guesses the default when nothing is remembered, so somebody who
@@ -92,12 +95,14 @@ toggle.
 
 - [ ] **API failures are easy to miss in the interface.** They reach `formError`, which is not
       always on screen. A failed request should be visible wherever the click was.
-- [ ] **A quiet channel sorts to the front of a transcript.** A channel carrying continuous sound
-      returns one segment spanning the recording — measured at `00:00.000 --> 00:22.040` for a
-      sentence spoken around 15–21 s. `silencedetect` finds no regions to trim to even at
-      peak-minus-25 dB, and `--max-len` splits it into times that are interpolated rather than
-      measured. Needs speech regions located properly and each transcribed with `--offset-t`, which
-      `whisper-cli` gives no way to do: it never reports where VAD found speech.
+- [x] **A quiet channel sorts to the front of a transcript.** A channel carrying continuous sound
+      returned one segment spanning the recording — measured at `00:00.000 --> 00:22.040` for a
+      sentence spoken around 15–21 s. This entry closed with the timestamp fix above and was left
+      ticked late. Its last line was also simply wrong, which is worth keeping as a caution: it
+      said `whisper-cli` "never reports where VAD found speech". It does — on stderr, as
+      `vad_segment_info` lines that this app had been discarding as log noise. Reading them is the
+      whole of `transcribe.regroup`. The fix was in the output we already had, not in a missing
+      feature.
 - [x] **The two captures lose their relative start offset.** Was 2.84 s, measured in a quiet room
       from speech played through the speakers exactly two seconds apart. Gone by construction rather
       than corrected: the helper captures both sides in one process and gives them second zero at

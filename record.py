@@ -31,6 +31,7 @@ from collections import deque
 from pathlib import Path
 
 import jobs
+import retention
 import watch
 from config import (DATA_DIR, DEFAULT_EXTRA, Failed, RECORDING_PREFIX, TRANSCRIPT_SUFFIX,
                     WORK_DIR, recording_config, save_settings, settings)
@@ -1293,6 +1294,19 @@ async def _save(rec: dict) -> None:
     rec["ended_at"] = time.time()
     if rec["transcribe"]:
         await enqueue(rec, final)
+    # Now, rather than on the settings screen. Saving a recording is the act that
+    # creates the surplus, so it is the moment to clear it — and it means the only
+    # deletion this app does by itself happens once the thing being kept is
+    # already safe, never while somebody is deciding what to set.
+    #
+    # Off the loop for the reason the move above is: the recordings folder can be
+    # one macOS guards, and unlink blocks until the consent dialog is answered.
+    keep = recording_config()["keep"]
+    if keep:
+        busy = {job["source"] for job in jobs.QUEUE}
+        gone = await asyncio.to_thread(retention.prune, Path(rec["folder"]), keep, busy)
+        if gone:
+            rec["log"].append(f"# keeping the last {keep}, so these went: " + ", ".join(gone))
     # The WAV has served its purpose; the .m4a is out of scratch and safe.
     shutil.rmtree(rec["work"], ignore_errors=True)
 

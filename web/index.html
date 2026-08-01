@@ -667,6 +667,22 @@
       </div>
     </div>
 
+    <div class="field">
+      <label class="label" for="set-rec-keep" data-i18n="set.recKeep">Recordings to keep</label>
+      <div class="line">
+        <select id="set-rec-keep">
+          <option value="0" data-i18n="set.recKeepAll">All of them</option>
+          <option value="5" data-i18n="set.recKeep5">The last 5</option>
+          <option value="10" data-i18n="set.recKeep10">The last 10</option>
+          <option value="20" data-i18n="set.recKeep20">The last 20</option>
+          <option value="50" data-i18n="set.recKeep50">The last 50</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint" data-i18n="set.recKeepHint">An hour of recording is about 0.7 GB. When a new recording is
+      saved, older ones past this many are deleted — the audio only, so their transcripts stay. Files this app
+      did not record are never touched.</p>
+
     <div class="field" style="margin-top:1.6rem">
       <label class="label" for="set-reading-size" data-i18n="set.reading">Transcript text</label>
       <div class="line">

@@ -77,6 +77,15 @@ async function openSettings() {
   // anything. The download line is kept for a build that somehow has none.
   $("vad-help").textContent = conf.vad_ready ? t("set.silenceReady") : VAD_DOWNLOAD;
   $("set-rec-auto").value = conf.record_auto_transcribe === true ? "on" : "off";
+  // A saved value the dropdown has no option for — set by hand in the settings
+  // file, or by a later version offering different steps — would silently become
+  // "All of them" and turn the deleting off. So it gets an option of its own.
+  const keep = String(conf.record_keep || 0);
+  const box = $("set-rec-keep");
+  if (![...box.options].some(o => o.value === keep)) {
+    box.add(new Option(t("set.recKeepN", { n: keep }), keep));
+  }
+  box.value = keep;
 
   $("set-reading-size").value = display("reading_size", "1.02rem");
   $("set-reading-face").value = display("reading_face", "var(--display)");
@@ -118,6 +127,7 @@ $("save-settings").onclick = async () => {
   // "Next to each recording" means no folder at all, not the last one typed.
   if ($("set-output-mode").value === "beside") body.output_folder = "";
   body.record_auto_transcribe = $("set-rec-auto").value === "on";
+  body.record_keep = Number($("set-rec-keep").value) || 0;
   try {
     await api("/settings", body, "PUT");
   } catch (err) {
