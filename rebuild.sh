@@ -86,7 +86,11 @@ ok "built"
 codesign --verify --deep --strict "$BUILT" 2>/dev/null \
     && ok "signature verifies" \
     || bad "the built app's signature does not verify"
-for f in record.py app.py web/index.html web/app.js; do
+# Every Python module and every file they read, not a hand-picked few: the
+# packaging list in tauri.conf.json is written out by name, so a new module is
+# missing from the bundle until somebody remembers to add it — and the app then
+# starts, fails to import, and serves nothing.
+for f in $(ls *.py | grep -v "^test_") models.json web/index.html web/app.js; do
     diff -q "$f" "$BUILT/Contents/Resources/backend/$f" >/dev/null 2>&1 \
         || bad "$f is missing from the bundle or differs from this working tree"
 done
@@ -111,7 +115,7 @@ codesign --verify --deep --strict "$INSTALLED" 2>/dev/null \
 # The same check the built bundle got, asked again of the copy that will actually
 # run. Everything up to here can pass while /Applications holds an older app: the
 # copy is the one step whose failure looks exactly like success.
-for f in record.py app.py web/index.html web/app.js; do
+for f in $(ls *.py | grep -v "^test_") models.json web/index.html web/app.js; do
     diff -q "$f" "$INSTALLED/Contents/Resources/backend/$f" >/dev/null 2>&1 \
         || bad "$INSTALLED is not this working tree — the copy did not take"
 done

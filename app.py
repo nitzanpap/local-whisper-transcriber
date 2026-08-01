@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 import jobs
 import library
+import models as model_store
 import record
 import watch
 from config import (BINARIES, DEFAULT_EXTRA, Failed, HISTORY, TRANSCRIPT_SUFFIX, vad_model,
@@ -161,6 +162,10 @@ def state() -> dict:
                      # asks anybody to fetch one by hand.
                      "vad_ready": bool(vad_model())},
         "models": find_models(str(Path(saved).parent) if saved else ""),
+        # What could be had, and how a fetch of one is going. In the same poll the
+        # page already makes every second rather than a channel of its own.
+        "catalogue": model_store.catalogued(),
+        "download": model_store.public(),
         "resumable": jobs.resumable(),
         "default_extra_args": DEFAULT_EXTRA,
         "job": public,
@@ -322,6 +327,39 @@ async def record_devices() -> dict:
 def record_meters() -> dict:
     """The needles alone, cheap enough to ask for fifteen times a second."""
     return record.meters()
+
+
+@app.get("/api/models")
+def list_models() -> dict:
+    """Every model in the catalogue, and whether it is here yet."""
+    return {"models": model_store.catalogued(), "download": model_store.public()}
+
+
+@app.post("/api/models/{model_id}/download")
+async def download_model(model_id: str) -> dict:
+    try:
+        return await model_store.download(safe_id(model_id))
+    except Failed as exc:
+        raise HTTPException(400, {"code": exc.code, "message": exc.message, "details": ""})
+
+
+@app.post("/api/models/cancel")
+def cancel_model() -> dict:
+    return model_store.cancel()
+
+
+@app.delete("/api/models/{model_id}")
+def delete_model(model_id: str) -> dict:
+    try:
+        return model_store.forget(safe_id(model_id))
+    except Failed as exc:
+        raise HTTPException(400, {"code": exc.code, "message": exc.message, "details": ""})
+
+
+@app.post("/api/models/rescan")
+def rescan_models() -> dict:
+    """Look again, for a model somebody put in the folder by hand."""
+    return model_store.rescan()
 
 
 @app.get("/api/glance", response_class=PlainTextResponse)

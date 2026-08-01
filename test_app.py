@@ -1322,6 +1322,84 @@ async def main() -> None:
     order = [tools.describe(f"/x/{m['filename']}")["rank"] for m in cat["models"]]
     check("the catalogue orders by judgement, not by size", order == sorted(order), str(order))
 
+    print("getting a model without leaving the app")
+    import models as model_store
+    import hashlib, http.server, threading, functools
+
+    body = bytes(range(256)) * 4000          # 1,024,000 bytes of something checkable
+    digest = hashlib.sha256(body).hexdigest()
+    served = TMP / "served"
+    served.mkdir(exist_ok=True)
+    (served / "ggml-fake.bin").write_bytes(body)
+
+    class Ranged(http.server.SimpleHTTPRequestHandler):
+        """Honours Range, which is the whole point of the resume."""
+        def log_message(self, *a): pass
+        def do_GET(self):
+            start = 0
+            asked = self.headers.get("Range", "")
+            if asked.startswith("bytes="):
+                start = int(asked.removeprefix("bytes=").split("-")[0])
+            self.send_response(206 if start else 200)
+            self.send_header("Content-Length", str(len(body) - start))
+            self.end_headers()
+            self.wfile.write(body[start:])
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Ranged)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+
+    where = TMP / "downloaded"
+    where.mkdir(exist_ok=True)
+    was_home, was_cat = model_store.HOME, model_store.catalogue
+    was_dirs = tools.MODEL_DIRS
+    try:
+        model_store.HOME = where
+        tools.MODEL_DIRS = (where,)   # so a model that lands here is found again
+        entry = {"id": "fake", "filename": "ggml-fake.bin", "name": "Fake",
+                 "url": f"http://127.0.0.1:{port}/ggml-fake.bin",
+                 "size_bytes": len(body), "sha256": digest, "description": "For a test.",
+                 "speed": 1, "accuracy": 1, "recommended": False, "rank": 0}
+        model_store.catalogue = lambda: {"ggml-fake.bin": entry}
+
+        # Half of it already on disk, as a cancelled download leaves behind.
+        part = where / "ggml-fake.bin.part"
+        part.write_bytes(body[:400_000])
+        await model_store.download("fake")
+        await model_store.TASK
+        got = where / "ggml-fake.bin"
+        check("the download finishes", got.is_file(), str(list(where.iterdir())))
+        check("and it is the whole file, not the half plus a whole",
+              got.read_bytes() == body, f"{got.stat().st_size} bytes, wanted {len(body)}")
+        check("nothing half-finished is left beside it", not part.exists())
+
+        # A file whose hash does not match is thrown away rather than used: half a
+        # model makes whisper-cli fail in a way nobody could diagnose.
+        got.unlink()
+        model_store.catalogue = lambda: {"ggml-fake.bin": {**entry, "sha256": "0" * 64}}
+        await model_store.download("fake")
+        await model_store.TASK
+        check("a file that is not what was promised is refused", not got.exists())
+        check("and it says so rather than failing silently",
+              (model_store.public() or {}).get("error", "").endswith("Try again."),
+              str(model_store.public()))
+        model_store.BUSY = None
+
+        model_store.catalogue = lambda: {"ggml-fake.bin": entry}
+        check("a model nobody has is offered", model_store.catalogued()[0]["have"] is False)
+        await model_store.download("fake")
+        await model_store.TASK
+        tools.find_models.cache_clear()
+        check("and once it is here it is not offered again",
+              model_store.catalogued()[0]["have"] is True, str(model_store.catalogued()))
+        model_store.forget("fake")
+        check("deleting takes it away", not got.exists())
+    finally:
+        server.shutdown()
+        model_store.HOME, model_store.catalogue = was_home, was_cat
+        tools.MODEL_DIRS = was_dirs
+        tools.find_models.cache_clear()
+
     print("a bad byte does not cost somebody their settings")
     # This was live: a file that would not parse came back as {}, and the next save
     # merged onto that nothing and wrote it out. One corrupt byte plus one visit to
