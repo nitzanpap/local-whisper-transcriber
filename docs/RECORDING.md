@@ -58,9 +58,11 @@ sound on purpose and asking whether it comes back, which is what *Check it works
 asked at the moment of use, the way any other application asks, and `NSAudioCaptureUsageDescription`
 is load-bearing: without it there is no prompt, no row in either pane, and silence forever.
 
-**The two sides arrive at very different levels.** The tap takes the stream before the hardware
-volume; the microphone takes the room. Measured in one recording: −20.7 dB against −31.2 dB, with
-the speakers at about 15%.
+**The two sides arrive at very different levels, and it does not matter.** The tap takes the stream
+before the hardware volume; the microphone takes the room. Measured across every recording with
+sound on both sides, the computer's is +17.2 dB louder on average. That gap sat on the list for a
+fortnight as a suspected cause of bad transcripts and is not one — §4a has the ladder. What does
+matter is the microphone's signal-to-noise, which no amount of gain can improve.
 
 ## 2. Which sources
 
@@ -229,6 +231,53 @@ recovered. What is missing is smaller than it looks:
   offers. The length shown for a recovered recording is therefore wrong. Small, real, worth fixing.
 - Nothing tells you how long you *can* still record. On a full-ish disk that is worth knowing
   before a meeting rather than 35 minutes before the end of one.
+
+## 4a. The two sides arrive at very different levels, and it does not matter
+
+Measured across every recording this app has made that has sound on both sides:
+the computer's side is **+17.2 dB louder on average** — median +15.2, range +5.9 to
++33.9. The tap takes the stream before the hardware volume, so it lands near
+-18 LUFS whatever the speakers are set to, while the microphone lands wherever the
+room puts it, between -27 and -55.
+
+That gap was on this list for a fortnight as a suspected cause of bad transcripts.
+It is not one. The same 90 seconds of real speech, transcribed at eight levels from
+-20 to -55 LUFS with nothing else changed:
+
+| level | vad regions | speech found | words |
+| --- | --- | --- | --- |
+| -20 LUFS | 26 | 75.6 s | 225 |
+| -35 LUFS | 26 | 75.6 s | 227 |
+| -45 LUFS | 28 | 76.1 s | 224 |
+| -55 LUFS | 32 | 74.2 s | 222 |
+
+Words landed within 90 ms of where the loudest run put them, and neighbouring rungs
+disagreed on wording as much as distant ones — which is whisper's own run-to-run
+variation, not the level.
+
+**What matters is signal-to-noise, and gain cannot fix it.** Turning a quiet channel
+up turns its background up with it, which is exactly why the ladder above came back
+flat. So the noise was held still and the speech lowered onto it:
+
+| measured snr | speech found | words | same as clean |
+| --- | --- | --- | --- |
+| 20.5 dB | 72.6 s | 219 | 80% |
+| 15.7 dB | 61.3 s | 187 | 68% |
+| 11.1 dB | 15.1 s | **1** | 0% |
+| 7.2 dB | 0 s | 0 | 0% |
+
+Flat from 52 dB all the way down to 20.5, then it falls off a cliff inside 10 dB.
+
+The microphone channels of real recordings here sit at a **median 23.5 dB** with a
+worst of **13.6 dB** — so some were already over the edge, transcribed badly, with
+nothing anywhere saying why. The computer's side never is: its floor is digital
+zero between sounds, which puts it at 60-105 dB.
+
+`levels.channel_snr` measures it at save time and `LOW_SNR` is 18, set between the
+last ratio that cost nothing and the first that cost words. It is a warning, not a
+refusal, and it is said at the end of a recording on purpose: this is the last
+moment anybody can still move the microphone before the next meeting, and nothing
+done to the audio afterwards can add back what was never there.
 
 ## 5. What belongs on screen while it records
 

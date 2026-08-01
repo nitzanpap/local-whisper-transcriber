@@ -19,12 +19,21 @@ and what not to repeat.
    pipeline: words said at 1.006 / 7.019 / 13.061 s now written at 1.010 / 7.070 / 13.100.
    `docs/PIPELINE.md` is the map; `test_app.py:the_whole_thing` asserts it on every run.
 
-2. **Measure the level gap between the two sides.** The tap takes the stream before
-   the hardware volume, so the computer's side is near full scale whatever the
-   speakers are set to, while the microphone gets whatever the room gives: -20.7 dB
-   against -31.2 dB in one recording. Each channel is transcribed on its own so it
-   may not matter at all — or a quiet voice channel is the one VAD gives up on,
-   which would make it the cause of item 1. Measurable, never measured.
+2. ~~**Measure the level gap between the two sides.**~~ Done 2026-08-01, and the answer
+   was that the gap is the wrong thing to worry about. It is real and larger than this
+   entry guessed — across 15 recordings with sound on both sides, the computer's side is
+   **+17.2 dB louder on average** (median +15.2, range +5.9 to +33.9) — but level alone
+   costs nothing. The same 90 seconds of real speech transcribed at eight levels from
+   -20 to -55 LUFS gave 74-76 s of speech found every time and 213-227 words, with
+   neighbouring rungs differing as much as distant ones.
+
+   What does matter is **signal-to-noise on the microphone**, which normalising cannot
+   fix: turning a quiet channel up turns its hiss up with it. Held the noise still and
+   lowered the speech onto it, the cliff is sharp — flat from 52 dB down to 20.5 dB,
+   then 15.7 dB found 61 s of speech instead of 75, and 11.1 dB produced **one word**.
+   The real recordings on this machine have a median voice SNR of 23.5 dB and a worst of
+   13.6 dB, so some were already over the edge. The recorder measures it at save time
+   now and says so while there is still a next meeting to move the microphone for.
 3. ~~**Split `record.py`.**~~ Done 2026-08-01. It was 1,750 lines against a project norm of
    200-400, and is 789. Six modules came out of it — `syshelper`, `devices`, `levels`,
    `mixing`, `saving`, `selfcheck` — and none of them imports `record`, which is the

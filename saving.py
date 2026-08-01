@@ -31,7 +31,8 @@ import retention
 import watch
 from config import (DEFAULT_EXTRA, Failed, MAX_LOG, RECORDING_PREFIX,
                     TRANSCRIPT_SUFFIX, WORK_DIR, recording_config, settings)
-from levels import EMPTY_WAV, _captured_bytes, captured_sources, channel_levels, silent_sides
+from levels import (EMPTY_WAV, LOW_SNR, _captured_bytes, captured_sources,
+                    channel_levels, channel_snr, noisy_sides, silent_sides)
 from mixing import mix_command, pad_command
 from syshelper import HELPER_DENIED, SYSTEM_AUDIO
 from tools import binary, capture
@@ -168,6 +169,16 @@ async def _save(rec: dict) -> None:
     rec["quiet"] = silent_sides(rec, sources, rec["levels"])
     if rec["quiet"]:
         rec["log"].append("# nothing audible on: " + ", ".join(rec["quiet"]))
+    # And how far the talking sat above the room, which is the measure that decides
+    # whether the transcript will be any good — measured, the difference between a
+    # full transcript and a single word. Said now, while there is still a next
+    # meeting to move the microphone for; nothing done afterwards can add it back.
+    rec["snr"] = await channel_snr(rec["wav"], sources)
+    rec["noisy"] = [side for side in noisy_sides(rec["snr"]) if side not in rec["quiet"]]
+    for side in rec["noisy"]:
+        rec["log"].append(
+            f"# the {side} side is only {rec['snr'][side]:.0f} dB above its own background, "
+            f"and below about {LOW_SNR:.0f} dB the transcript starts losing words")
     stereo = len(rec.get("sources") or rec["devices"]) == 2
     staged = rec["work"] / "recording.m4a"
     cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y",

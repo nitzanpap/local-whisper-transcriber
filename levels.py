@@ -193,6 +193,79 @@ async def channel_levels(path: Path, sources: list[str]) -> dict[str, float | No
     return out
 
 
+# Where a voice stops being clearly above the room, measured rather than chosen.
+#
+# The same 90 seconds of real speech was transcribed at ten signal-to-noise ratios
+# with the level held still. From 52 dB down to 20 dB nothing changed: 72-76
+# seconds of speech found each time, 206-229 words, and the differences between
+# neighbouring rungs as large as between distant ones, which is whisper's own
+# run-to-run variation rather than anything to do with noise. Then it falls off a
+# cliff — 15.7 dB found 61 s of speech instead of 75, and 11.1 dB found 15 s and
+# produced a single word. 7.2 dB produced nothing at all.
+#
+# 18 is set between the flat part and the first rung that lost anything. It is a
+# warning and not a refusal: what it names cannot be fixed after the fact, only
+# before, which is why it is worth saying at all.
+LOW_SNR = 18.0
+
+# 100 ms of a 48 kHz stream. Long enough to hold a syllable, short enough that the
+# gaps between words are their own windows rather than being averaged into speech.
+SNR_WINDOW = 4800
+
+RMS_LEVEL = re.compile(r"lavfi\.astats\.Overall\.RMS_level=(-?\d+(?:\.\d+)?|-?inf)")
+
+
+async def channel_snr(path: Path, sources: list[str]) -> dict[str, float | None]:
+    """How far each side's talking sits above its own quiet, in dB.
+
+    The one measurement that says whether a transcript is going to be any good,
+    and the one thing no amount of processing afterwards can improve: turning a
+    quiet channel up turns its hiss up with it. Measured across the same file at
+    ten ratios, level alone changed nothing over a 35 dB range — this is what
+    mattered instead.
+
+    The 90th percentile of 100 ms windows is the talking and the 10th is the room
+    between words. Percentiles rather than max and min because one door slam
+    should not become the signal, and one impossibly quiet window should not
+    become the floor.
+    """
+    out: dict[str, float | None] = {}
+    for index, label in enumerate(sources):
+        pan = f"c{index}" if len(sources) > 1 else "c0"
+        try:
+            _, text = await capture(
+                [binary("ffmpeg"), "-hide_banner", "-nostdin", "-i", str(path),
+                 "-af", f"pan=mono|c0={pan},aresample=48000,asetnsamples=n={SNR_WINDOW}:p=0,"
+                        "astats=metadata=1:reset=1,"
+                        "ametadata=print:key=lavfi.astats.Overall.RMS_level",
+                 "-f", "null", "-"],
+                timeout=600)
+        except (Failed, OSError):
+            out[label] = None
+            continue
+        # -inf is a window of digital zero, which the tap produces between sounds.
+        # Read as the same -120 used everywhere else for it, so a tap's floor is a
+        # number rather than a gap in the list.
+        windows = sorted(-120.0 if "inf" in raw else float(raw)
+                         for raw in RMS_LEVEL.findall(text))
+        if len(windows) < 10:
+            out[label] = None
+            continue
+        floor = windows[int(len(windows) * 0.10)]
+        speech = windows[int(len(windows) * 0.90)]
+        # A side with nothing in it has no ratio to report. Calling that 0 dB would
+        # raise the alarm that belongs to a quiet voice, for a channel that is
+        # already reported as silent by its own check.
+        out[label] = None if speech <= SILENT_DB else round(speech - floor, 1)
+    return out
+
+
+def noisy_sides(snr: dict[str, float | None]) -> list[str]:
+    """Sides whose talking is too close to their own room to transcribe well."""
+    return [label for label, ratio in snr.items()
+            if ratio is not None and ratio < LOW_SNR]
+
+
 def quiet_sides(levels: dict[str, float | None]) -> list[str]:
     """Which sides came back with nothing audible in them."""
     return [label for label, peak in levels.items()

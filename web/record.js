@@ -293,7 +293,13 @@ function adopt(rec) {
     at: longClock(rec.seconds),
     folder: rec.path.replace(/\/[^/]*$/, ""),
     quiet: (rec.quiet || []).map(side =>
-      side === "voice" ? t("rec.quietVoice") : t("rec.quietComputer")),
+      side === "voice" ? t("rec.quietVoice") : t("rec.quietComputer"))
+      // A side too close to its own background is a different sentence from one
+      // that heard nothing, and it belongs on the same screen: this is the last
+      // moment anybody could move the microphone before the next meeting.
+      .concat((rec.noisy || []).map(side =>
+        t(side === "voice" ? "rec.noisyVoice" : "rec.noisyComputer",
+          { db: Math.round(rec.snr[side]) }))),
   };
   // Whether the finished job still sitting in the state gets the screen. It must
   // not: the transcript of the last thing is not what somebody who just stopped

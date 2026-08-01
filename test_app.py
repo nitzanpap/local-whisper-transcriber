@@ -1685,6 +1685,25 @@ async def main() -> None:
     check("stale scratch removed", not stale.exists())
     check("live scratch kept", fresh.exists())
 
+    print("how far the talking sits above the room")
+    # The threshold is not a taste. It sits between the last signal-to-noise ratio
+    # that cost nothing (20.5 dB: 72.6s of speech found, 219 words) and the first
+    # that cost something (15.7 dB: 61.3s, 187 words), on the same 90 seconds of
+    # real speech transcribed ten times. Below that it collapses — 11.1 dB produced
+    # one word. If somebody moves this number, these are the measurements to redo.
+    check("the warning sits below what was measured as harmless", levels.LOW_SNR <= 20.5)
+    check("and above the first ratio that lost words", levels.LOW_SNR > 15.7)
+    check("a voice close to the room is called out",
+          levels.noisy_sides({"voice": 13.6, "computer": 88.0}) == ["voice"])
+    check("a comfortable one is not", levels.noisy_sides({"voice": 23.5}) == [])
+    # The measured worst and best of the recordings this app has actually made.
+    check("the worst real recording would have been warned about",
+          levels.noisy_sides({"voice": 13.6}) == ["voice"])
+    check("the median one would not", levels.noisy_sides({"voice": 23.5}) == [])
+    # A side that carried nothing has no ratio, and must not be reported as a noisy
+    # one: it already has its own message, and two would contradict each other.
+    check("a side with no ratio is left alone", levels.noisy_sides({"voice": None}) == [])
+
     print("keeping only the last few recordings")
     # Deleting somebody's meetings is the one thing here with no undo, so this
     # asks what must never happen rather than only what should.

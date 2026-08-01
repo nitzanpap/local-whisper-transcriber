@@ -730,6 +730,7 @@ def public() -> dict | None:
         # Named by side rather than by channel number, so the interface can say
         # which of the two it was without knowing how they were arranged.
         "levels": rec.get("levels") or {}, "quiet": rec.get("quiet") or [],
+        "snr": rec.get("snr") or {}, "noisy": rec.get("noisy") or [],
         # What each source is hearing right now, in LUFS, while it records.
         "live": rec.get("live") or {},
         # Sides that were asked for and are producing nothing at all. Given a few

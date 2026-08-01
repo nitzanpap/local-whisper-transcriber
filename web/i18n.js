@@ -116,6 +116,11 @@ const STRINGS = {
     "rec.noDevicesWhat": "ffmpeg listed no recording devices at all. On macOS this usually " +
       "means the app has not been allowed to use the microphone yet: System Settings → " +
       "Privacy & Security → Microphone.",
+    "rec.noisyVoice": "Your voice was only {db} dB above the sound of the room, which is close to " +
+      "the point where words start going missing. A transcript cannot get that back — for the next " +
+      "one, move the microphone nearer or use a headset.",
+    "rec.noisyComputer": "The computer's side was only {db} dB above its own background. Turning the " +
+      "volume up before the next meeting is the fix; nothing after the recording can be.",
     "rec.quietVoice": "Nothing audible was recorded from your microphone. Check that " +
       "it is allowed under System Settings → Privacy & Security → Microphone, that the " +
       "right input is selected, and that it is not muted or asleep.",
@@ -390,6 +395,10 @@ const STRINGS = {
     "rec.noDevicesTitle": "לא נמצאו התקני קלט",
     "rec.noDevicesWhat": "‏ffmpeg לא מצא שום התקן הקלטה. ב‑macOS זה בדרך כלל אומר שלא ניתנה " +
       "לאפליקציה הרשאה למיקרופון: הגדרות המערכת → פרטיות ואבטחה → מיקרופון.",
+    "rec.noisyVoice": "הקול שלכם היה רק {db} דציבל מעל רעש החדר, וזה קרוב לנקודה שבה מילים מתחילות " +
+      "להיעלם. תמליל לא יכול להחזיר את זה — בפעם הבאה קרבו את המיקרופון או השתמשו באוזניות.",
+    "rec.noisyComputer": "צד המחשב היה רק {db} דציבל מעל הרעש שלו. להגביר את עוצמת הקול לפני הפגישה " +
+      "הבאה זה הפתרון; אחרי ההקלטה אי אפשר לתקן את זה.",
     "rec.quietVoice": "לא הוקלט שום דבר שנשמע מהמיקרופון. בדקו שיש לו הרשאה תחת " +
       "הגדרות המערכת ← פרטיות ואבטחה ← מיקרופון, שנבחר הקלט הנכון, ושהוא לא מושתק או רדום.",
     "rec.quietComputer": "לא נקלט כלום מהמחשב. אם לא התנגן בו כלום — זה בדיוק כמו " +
