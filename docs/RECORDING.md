@@ -13,6 +13,23 @@ says so.
 
 ---
 
+## Where the code is
+
+Split on 2026-08-01, bottom up. Nothing in this list imports `record.py`, and that
+is the property to preserve: the moment one of them needs to know about the live
+recording, it belongs back in `record.py`.
+
+| file | what it owns |
+| --- | --- |
+| `syshelper.py` | the Swift capture helper: where it lives, how it is built, the two things it says |
+| `devices.py` | what this machine offers to record from, and remembering a choice by name |
+| `levels.py` | how loud a thing was, and whether audio is still arriving at all |
+| `mixing.py` | the ffmpeg commands, as pure functions of a recording |
+| `saving.py` | everything after the audio stops: pad, mix, keep, queue — and reading an orphan back |
+| `selfcheck.py` | the test tone, and reading what came back from it |
+| `retention.py` | keeping only the last N recordings |
+| `record.py` | the one recording that exists at a time, the processes making it, the state it moves through |
+
 ## 0. What recording is today, in one paragraph
 
 Two captures, started separately, mixed afterwards. The microphone is one ffmpeg reading an

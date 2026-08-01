@@ -25,10 +25,12 @@ and what not to repeat.
    against -31.2 dB in one recording. Each channel is transcribed on its own so it
    may not matter at all — or a quiet voice channel is the one VAD gives up on,
    which would make it the cause of item 1. Measurable, never measured.
-3. **Split `record.py`.** Around 1,600 lines against a project norm of 200-400.
-   Capture, mixing, devices, orphans and permissions are five separable things.
-   Deliberately held while recording behaviour was still moving; it has stopped
-   moving, so this is the moment — but after item 1, not before.
+3. ~~**Split `record.py`.**~~ Done 2026-08-01. It was 1,750 lines against a project norm of
+   200-400, and is 789. Six modules came out of it — `syshelper`, `devices`, `levels`,
+   `mixing`, `saving`, `selfcheck` — and none of them imports `record`, which is the
+   property worth keeping: what stayed behind is exactly what needs the one live
+   recording. Pure code motion, checked by the suite reporting the same 424 checks
+   before and after. See TRAPS §13 for the one thing that nearly went silently wrong.
 
 ## From reading Handy
 
@@ -174,8 +176,10 @@ toggle.
       screen permission, and `afplay` is captured now too — a tap listens to the output device
       rather than to applications on a display.
 
-- [ ] **`record.py` is past the size this project keeps to.** Capture, mixing, orphans, permissions
-      and device handling could be separate.
+- [x] **`record.py` is past the size this project keeps to.** Split on 2026-08-01 into six
+      modules with a one-way dependency: everything that can be asked without a recording
+      running moved out, and the file that keeps the live state imports them rather than the
+      other way round. 1,750 lines to 789.
 - [x] **A level check before recording would beat any device guess.** Done as *Check it works*:
       six seconds, a tone of the app's own, and a verdict per side. Offered on the first screen
       until it passes. What is still missing is the cheaper half — a meter running before the

@@ -204,7 +204,32 @@ an interrupted run went straight into `{was}`, so a Hebrew reader got
 "…, cancelled." in the middle of their own language. Those words are translated
 through `job.was.<status>` now, and the suite checks every status has both.
 
-## 13. This project's own tooling
+## 13. `from x import f` takes a copy, and a copy cannot be patched
+
+Splitting `record.py` moved `system_audio` into `syshelper.py`, and `devices.py`
+picked it up with `from syshelper import system_audio`. Every check still passed
+except one, which failed for a reason that had nothing to do with the code: the
+suite patches `syshelper.system_audio` to stand in for a machine with the helper
+present, and the from-import had already taken its own binding of the old
+function. The patch was writing to a name nothing read.
+
+The failure here was loud, which was luck. The same mistake against a *constant*
+would have been silent — the tests point `syshelper.HELPER_SOURCE` at a path that
+does not exist so that nothing tries to compile Swift, and a module holding a
+stale copy would have gone on looking at the real one and passed anyway, testing
+nothing.
+
+**Import the module for anything that might be replaced; import the name only for
+things that never move.** `devices.py` and `record.py` both call
+`syshelper.system_audio()` through the module now, with the reason written beside
+the import. Constants stay as plain from-imports.
+
+**And when a refactor makes a suite pass, check it still has teeth.** Two things
+were asked of this one: that it reported the same number of checks before and
+after the split — 424 both times — and that deleting the patch line made a check
+fail. It did.
+
+## 14. This project's own tooling
 
 - **The suite runs against fake `ffmpeg` and `whisper-cli` stubs.** `ffprobe` echoes
   `123.5` for every duration. Any check that needs real audio must locate the real
@@ -221,7 +246,7 @@ through `job.was.<status>` now, and the suite checks every status has both.
   point. This orphaned an `afplay` that kept playing and a recording that kept
   running. `bash -n` passes before and after and cannot see it.
 
-## 14. Things an agent working here cannot do
+## 15. Things an agent working here cannot do
 
 - **Screen capture and assistive access are both blocked.** `screencapture` fails
   with "could not create image from display", and System Events refuses with
@@ -238,7 +263,7 @@ through `job.was.<status>` now, and the suite checks every status has both.
   the menu can then only be reached by right-click, which on a trackpad means two
   fingers, and control-click does not reach it either.
 
-## 15. How to measure this app
+## 16. How to measure this app
 
 The methods that produced every real answer, so they can be reused:
 

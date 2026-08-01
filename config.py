@@ -49,6 +49,11 @@ TRANSCRIPT_SUFFIX = "-transcript"
 # both the recorder and the sweep need it and neither may import the other.
 RECORDING_PREFIX = "rec-"
 
+# How much of a recording's own log is kept. Here for the same reason as the
+# line above: the recorder writes it and the orphan reader rebuilds it, and
+# neither of those two files may import the other.
+MAX_LOG = 120
+
 # Recording defaults. Every one of them is a Settings field.
 RECORD_FOLDER = Path.home() / "Recordings"
 RECORD_MAX_MINUTES = 180

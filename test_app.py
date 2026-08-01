@@ -26,8 +26,14 @@ import app  # noqa: E402  (all of these must follow the env var)
 import config  # noqa: E402
 import jobs  # noqa: E402
 import library  # noqa: E402
+import devices  # noqa: E402
+import levels  # noqa: E402
+import mixing  # noqa: E402
 import record  # noqa: E402
 import retention  # noqa: E402
+import saving  # noqa: E402
+import selfcheck  # noqa: E402
+import syshelper  # noqa: E402
 import tools  # noqa: E402
 import transcribe  # noqa: E402
 import watch  # noqa: E402
@@ -108,8 +114,8 @@ def write_fakes() -> dict:
     # a source that is not there is what stops these checks from invoking a real
     # Swift compiler, and from reporting whichever permissions this particular
     # machine happens to have granted. The tests that want it patch it in.
-    record.HELPER_SOURCE = TMP / "no-syscapture.swift"
-    record.HELPER_BIN = TMP / "data" / "no-syscapture"
+    syshelper.HELPER_SOURCE = TMP / "no-syscapture.swift"
+    syshelper.HELPER_BIN = TMP / "data" / "no-syscapture"
     # settings keys are underscored: whisper-cli -> whisper_cli_path
     config.SETTINGS.write_text(json.dumps({f"{k.replace('-', '_')}_path": v for k, v in paths.items()}))
     return paths
@@ -613,19 +619,19 @@ async def main() -> None:
     print("what can be recorded from")
     listing = tools.capture([tools.binary("ffmpeg"), "-list_devices", "true"])
     _, printed = await listing
-    macos = record._parse_avfoundation(printed)
+    macos = devices._parse_avfoundation(printed)
     check("reads the audio half of the mac device list",
           [d["name"] for d in macos] == ["MacBook Pro Microphone", "BlackHole 2ch"], str(macos))
     check("and leaves the cameras out of it", not any("Camera" in d["name"] for d in macos))
     check("indices come back as ffmpeg's own", [d["id"] for d in macos] == ["0", "1"], str(macos))
-    linux = record._parse_pulse(printed)
+    linux = devices._parse_pulse(printed)
     check("reads pulse sources too", len(linux) == 2, str(linux))
     check("using the human name, not the identifier",
           "Built-in Audio Analog Stereo" in [d["name"] for d in linux], str(linux))
-    check("a loopback device is recognised", record.is_loopback({"name": "BlackHole 2ch", "id": "1"}))
+    check("a loopback device is recognised", devices.is_loopback({"name": "BlackHole 2ch", "id": "1"}))
     check("so is a pulse monitor",
-          record.is_loopback({"name": "Monitor of Built-in", "id": "alsa_output.x.monitor"}))
-    check("a microphone is not", not record.is_loopback({"name": "MacBook Pro Microphone", "id": "0"}))
+          devices.is_loopback({"name": "Monitor of Built-in", "id": "alsa_output.x.monitor"}))
+    check("a microphone is not", not devices.is_loopback({"name": "MacBook Pro Microphone", "id": "0"}))
     offered = await record.devices()
     check("the route offers what it found", len(offered["devices"]) >= 2, str(offered)[:120])
     check("and says nothing is missing", offered["advice"] == [], str(offered["advice"]))
@@ -641,7 +647,7 @@ async def main() -> None:
            "wav": TMP / "m.wav", "voice_wav": TMP / "voice.wav",
            "computer_wav": TMP / "computer.wav", "sys_pcm": TMP / "computer.pcm",
            "log": []}
-    commands = record.capture_commands(rec)
+    commands = mixing.capture_commands(rec)
     check("the driverless source needs no ffmpeg of its own", len(commands) == 1, str(commands))
     cmd = " ".join(commands[0])
     check("the microphone is captured on its own", cmd.count("-i ") == 1, cmd)
@@ -662,14 +668,14 @@ async def main() -> None:
           "-ar " not in cmd and "channel_layouts" not in cmd, cmd)
     check("it stops by itself", "-t 60" in cmd, cmd)
     check("no microphone means no ffmpeg for it",
-          record.capture_commands({**rec, "voice": ""}) == [])
-    two = record.capture_commands({**rec, "computer": "1"})
+          mixing.capture_commands({**rec, "voice": ""}) == [])
+    two = mixing.capture_commands({**rec, "computer": "1"})
     check("two real devices become two captures, not two inputs", len(two) == 2, str(two))
     check("each writing its own file",
           "voice.wav" in " ".join(two[0]) and "computer.wav" in " ".join(two[1]))
 
     print("combining the two afterwards, from finished files")
-    mix = " ".join(record.mix_command(rec, ["voice", "computer"]))
+    mix = " ".join(mixing.mix_command(rec, ["voice", "computer"]))
     check("both captures become inputs", mix.count("-i ") == 2, mix)
     check("mixed here, not by the operating system",
           "join=inputs=2:channel_layout=stereo" in mix)
@@ -681,51 +687,51 @@ async def main() -> None:
     check("whose raw format has to be spelled out",
           "-f s16le" in mix and "-ar 48000" in mix, mix)
     check("and the master is what comes out", "m.wav" in mix, mix)
-    one = " ".join(record.mix_command(rec, ["voice"]))
+    one = " ".join(mixing.mix_command(rec, ["voice"]))
     check("one side needs no join", "join=" not in one and one.count("-i ") == 1, one)
 
     print("remembering a device by what it is, not where it sits")
     listing = [{"id": "0", "name": "WH-1000XM3"}, {"id": "1", "name": "MacBook Pro Microphone"}]
     check("a remembered name finds its device again",
-          record.resolve_saved("MacBook Pro Microphone", listing) == "1")
+          devices.resolve_saved("MacBook Pro Microphone", listing) == "1")
     moved = [{"id": "0", "name": "MacBook Pro Microphone"}, {"id": "1", "name": "WH-1000XM3"}]
     check("and still finds it after the indices move",
-          record.resolve_saved("MacBook Pro Microphone", moved) == "0")
+          devices.resolve_saved("MacBook Pro Microphone", moved) == "0")
     check("a device that is gone is not guessed at",
-          record.resolve_saved("Some Old Headset", listing) == "")
+          devices.resolve_saved("Some Old Headset", listing) == "")
     check("an index saved by an older version still works",
-          record.resolve_saved("1", listing) == "1")
+          devices.resolve_saved("1", listing) == "1")
     check("but not once nothing sits at it",
-          record.resolve_saved("7", listing) == "")
+          devices.resolve_saved("7", listing) == "")
     check("the driverless source is not a device to look up",
-          record.resolve_saved(record.SYSTEM_AUDIO, listing) == record.SYSTEM_AUDIO)
+          devices.resolve_saved(record.SYSTEM_AUDIO, listing) == record.SYSTEM_AUDIO)
     check("and a choice is remembered by name",
-          record.name_for("1", listing) == "MacBook Pro Microphone")
+          devices.name_for("1", listing) == "MacBook Pro Microphone")
     check("the driverless one by its own id",
-          record.name_for(record.SYSTEM_AUDIO, listing) == record.SYSTEM_AUDIO)
+          devices.name_for(record.SYSTEM_AUDIO, listing) == record.SYSTEM_AUDIO)
 
     print("a side that recorded nothing is named")
     check("silence is reported by side",
-          record.quiet_sides({"voice": -91.0, "computer": -4.0}) == ["voice"])
+          levels.quiet_sides({"voice": -91.0, "computer": -4.0}) == ["voice"])
     check("a healthy recording says nothing",
-          record.quiet_sides({"voice": -14.0, "computer": -4.0}) == [])
+          levels.quiet_sides({"voice": -14.0, "computer": -4.0}) == [])
     check("a level that could not be measured is not called silent",
-          record.quiet_sides({"voice": None, "computer": -4.0}) == [])
+          levels.quiet_sides({"voice": None, "computer": -4.0}) == [])
     check("both sides can be silent at once",
-          record.quiet_sides({"voice": -91.0, "computer": -91.0}) == ["voice", "computer"])
+          levels.quiet_sides({"voice": -91.0, "computer": -91.0}) == ["voice", "computer"])
     check("a quiet voice is not mistaken for a dead one",
-          record.quiet_sides({"voice": -45.0}) == [])
+          levels.quiet_sides({"voice": -45.0}) == [])
 
     print("which sides actually recorded")
-    (TMP / "voice.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
+    (TMP / "voice.wav").write_bytes(b"x" * (levels.EMPTY_WAV + 1))
     (TMP / "computer.pcm").write_bytes(b"")
     check("a side that caught nothing is not a channel",
-          record.captured_sources(rec) == ["voice"], str(record.captured_sources(rec)))
-    (TMP / "computer.pcm").write_bytes(b"x" * (record.EMPTY_WAV + 1))
-    check("and both are when both did", record.captured_sources(rec) == ["voice", "computer"])
+          levels.captured_sources(rec) == ["voice"], str(levels.captured_sources(rec)))
+    (TMP / "computer.pcm").write_bytes(b"x" * (levels.EMPTY_WAV + 1))
+    check("and both are when both did", levels.captured_sources(rec) == ["voice", "computer"])
     (TMP / "voice.wav").unlink()
     check("a side that never started is not one either",
-          record.captured_sources(rec) == ["computer"])
+          levels.captured_sources(rec) == ["computer"])
     (TMP / "computer.pcm").unlink()
 
     # Dropping it from the channel list is right; dropping it from the conversation
@@ -733,14 +739,14 @@ async def main() -> None:
     # so nothing measured it and nothing mentioned it — the recording just came back
     # mono and the first sign of trouble was a transcript with half a meeting in it.
     both = {**rec, "voice": "1", "computer": record.SYSTEM_AUDIO}
-    said = record.silent_sides(both, ["voice"], {"voice": -12.0})
+    said = levels.silent_sides(both, ["voice"], {"voice": -12.0})
     check("a side that was asked for and never arrived is still said out loud",
           said == ["computer"], str(said))
     check("and a side that arrived silent is still said once, not twice",
-          record.silent_sides(both, ["voice", "computer"],
+          levels.silent_sides(both, ["voice", "computer"],
                               {"voice": -12.0, "computer": -91.0}) == ["computer"])
     check("while a side nobody asked for is not mentioned at all",
-          record.silent_sides({**both, "computer": ""}, ["voice"], {"voice": -12.0}) == [])
+          levels.silent_sides({**both, "computer": ""}, ["voice"], {"voice": -12.0}) == [])
 
     # Each side on its own. This used to add them together and stop as soon as the
     # total moved, so a working microphone answered for a computer channel that was
@@ -750,11 +756,11 @@ async def main() -> None:
     # and the meter can honestly answer for. The tap is a different question and is
     # asked below.
     both = {**rec, "voice": "1", "computer": "2", "status": "recording"}
-    (TMP / "voice.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
+    (TMP / "voice.wav").write_bytes(b"x" * (levels.EMPTY_WAV + 1))
     (TMP / "computer.wav").write_bytes(b"")
     missing = await record._until_audio_arrives(both, timeout=0.3)
     check("one side arriving does not answer for the other", missing == ["computer"], str(missing))
-    (TMP / "computer.wav").write_bytes(b"x" * (record.EMPTY_WAV + 1))
+    (TMP / "computer.wav").write_bytes(b"x" * (levels.EMPTY_WAV + 1))
     check("and nothing is reported once both are arriving",
           await record._until_audio_arrives(both, timeout=0.3) == [])
 
@@ -794,7 +800,7 @@ async def main() -> None:
           "warned about a working tap")
     # The helper's meter line, which is also what gives that side a level bar at last.
     # It names the side now that one process captures both of them.
-    heard = record.HELPER_LEVEL.search("syscapture: computer level -23.4 frames 48000")
+    heard = syshelper.HELPER_LEVEL.search("syscapture: computer level -23.4 frames 48000")
     check("the helper's own meter is read",
           heard is not None and heard.group(1) == "computer"
           and float(heard.group(2)) == -23.4)
@@ -802,7 +808,7 @@ async def main() -> None:
         (TMP / leftover).unlink(missing_ok=True)
 
     print("the computer's audio without a driver")
-    code, message = record._why_nothing_arrived({**rec, "helper_code": record.HELPER_DENIED})
+    code, message = saving._why_nothing_arrived({**rec, "helper_code": syshelper.HELPER_DENIED})
     check("a refused permission is named, not guessed at",
           code == "insufficient_permissions" and "System Audio Recording Only" in message, message)
     # The list it names has to be the list macOS actually puts this app in. It used
@@ -832,11 +838,11 @@ async def main() -> None:
         """devices() as it looks on a machine where the helper exists."""
         async def fake() -> dict:
             return {"helper": Path("/x/syscapture")}
-        was, record.system_audio = record.system_audio, fake
+        was, syshelper.system_audio = syshelper.system_audio, fake
         try:
             return await record.devices()
         finally:
-            record.system_audio = was
+            syshelper.system_audio = was
 
     got = await with_helper(False)
     entry = next((d for d in got["devices"] if d["id"] == record.SYSTEM_AUDIO), None)
@@ -868,26 +874,26 @@ async def main() -> None:
                     "sys_pcm": TMP / "c.pcm", "voice_pcm": TMP / "v.pcm",
                     "devices": ["BuiltInMic", record.SYSTEM_AUDIO], "log": []}
     check("ffmpeg is not asked for the microphone",
-          record.capture_commands(both_at_once) == [],
-          str(record.capture_commands(both_at_once)))
+          mixing.capture_commands(both_at_once) == [],
+          str(mixing.capture_commands(both_at_once)))
     check("and the helper is the one that takes it",
-          record.helper_takes_the_microphone(both_at_once))
+          mixing.helper_takes_the_microphone(both_at_once))
     # A loopback driver picked as the computer's side is an input device like any
     # other, so the helper takes that too. It was ffmpeg's job until it was
     # measured losing an eighth of its samples the same way the microphone did.
     loopback = {**both_at_once, "computer": "MSLoopbackDriverDevice_UID"}
     check("a loopback device on the computer's side is the helper's too",
-          record.capture_commands(loopback) == [], str(record.capture_commands(loopback)))
-    check("and it is named as such", record.helper_takes(loopback, "computer"))
+          mixing.capture_commands(loopback) == [], str(mixing.capture_commands(loopback)))
+    check("and it is named as such", mixing.helper_takes(loopback, "computer"))
     check("while the tap is not an input device to be opened",
-          not record.helper_takes(both_at_once, "computer"))
+          not mixing.helper_takes(both_at_once, "computer"))
     # Without a helper — anything that is not macOS — nothing changes.
     check("and with no helper the microphone goes back to ffmpeg",
-          len(record.capture_commands({**both_at_once, "helper": None,
+          len(mixing.capture_commands({**both_at_once, "helper": None,
                                        "computer": "3"})) == 2)
 
     seen = {}
-    real_helper, real_sysaudio = record._start_helper, record.system_audio
+    real_helper, real_sysaudio = record._start_helper, syshelper.system_audio
 
     async def watching(rec: dict) -> bool:
         seen["captures_up"] = len(record.PROCS)
@@ -896,7 +902,7 @@ async def main() -> None:
     async def pretend() -> dict:
         return {"helper": Path("/x/syscapture")}
 
-    record._start_helper, record.system_audio = watching, pretend
+    record._start_helper, syshelper.system_audio = watching, pretend
     config.save_settings({"recording_folder": str(TMP / "order"), "default_model_path": model})
     try:
         # No microphone here: with one, the helper takes it and there is no ffmpeg
@@ -907,7 +913,7 @@ async def main() -> None:
     except Exception:  # noqa: BLE001 — the fake helper refuses on purpose
         pass
     finally:
-        record._start_helper, record.system_audio = real_helper, real_sysaudio
+        record._start_helper, syshelper.system_audio = real_helper, real_sysaudio
         # Put the module back as it was found. Refusing at the tap leaves the
         # recording half-built, and everything after this answered "a recording is
         # already running" — which is the check breaking the suite, not the code.
@@ -923,25 +929,25 @@ async def main() -> None:
     # made not quiet and the silence stops being ambiguous.
     print("checking it works before it matters")
     both_sides = ["voice", "computer"]
-    good = record.check_verdict(both_sides, {"voice": -24.0, "computer": -18.0})
+    good = selfcheck.check_verdict(both_sides, {"voice": -24.0, "computer": -18.0})
     check("both heard is both working", all(r["heard"] for r in good.values()), str(good))
-    refused = record.check_verdict(both_sides, {"voice": -24.0, "computer": -120.0})
+    refused = selfcheck.check_verdict(both_sides, {"voice": -24.0, "computer": -120.0})
     check("digital silence while our own tone played is a refusal",
           refused["computer"]["why"] == "refused", str(refused["computer"]))
-    absent = record.check_verdict(both_sides, {"computer": -18.0})
+    absent = selfcheck.check_verdict(both_sides, {"computer": -18.0})
     check("a microphone that sent nothing at all is named as such",
           absent["voice"]["why"] == "nothing", str(absent["voice"]))
     # Two faces of the same refusal, and the tone tells them apart. A process with no
     # audio grant at all gets no callbacks rather than silent ones, so "nothing
     # arrived while our own tone was playing" is a refusal too — blaming the speakers
     # for it is what the first run of this check did.
-    silent_tap = record.check_verdict(both_sides, {"voice": -24.0}, tone_played=True)
+    silent_tap = selfcheck.check_verdict(both_sides, {"voice": -24.0}, tone_played=True)
     check("nothing at all, while our tone played, is also a refusal",
           silent_tap["computer"]["why"] == "refused", str(silent_tap["computer"]))
-    no_tone = record.check_verdict(both_sides, {"voice": -24.0}, tone_played=False)
+    no_tone = selfcheck.check_verdict(both_sides, {"voice": -24.0}, tone_played=False)
     check("but if the tone never played, the speakers are what is in doubt",
           no_tone["computer"]["why"] == "output", str(no_tone["computer"]))
-    murmur = record.check_verdict(["voice"], {"voice": -95.0})
+    murmur = selfcheck.check_verdict(["voice"], {"voice": -95.0})
     check("a microphone that heard almost nothing is quiet, not refused",
           murmur["voice"]["why"] == "quiet", str(murmur["voice"]))
 
@@ -949,10 +955,10 @@ async def main() -> None:
     # where every side asked for came back counts; a passing microphone beside a
     # refused tap is exactly the state somebody most needs to be told about again.
     config.save_settings({"capture_checked": 0})
-    record.remember_check(record.check_verdict(both_sides, {"voice": -24.0, "computer": -18.0}))
+    selfcheck.remember_check(selfcheck.check_verdict(both_sides, {"voice": -24.0, "computer": -18.0}))
     check("a check where everything was heard is remembered",
           config.settings().get("capture_checked", 0) > 0)
-    record.remember_check(record.check_verdict(both_sides, {"voice": -24.0, "computer": -120.0}))
+    selfcheck.remember_check(selfcheck.check_verdict(both_sides, {"voice": -24.0, "computer": -120.0}))
     check("and one where something was not puts the offer back",
           not config.settings().get("capture_checked"))
 
@@ -1042,11 +1048,11 @@ async def main() -> None:
     print("a meter that measures something")
     fed = {"log": [], "live": {}}
     check("loudness is read off the capture",
-          record.EBUR128_M.search("[Parsed_ametadata_1 @ 0x1] lavfi.r128.M=-23.400")
+          levels.EBUR128_M.search("[Parsed_ametadata_1 @ 0x1] lavfi.r128.M=-23.400")
           .group(1) == "-23.400")
     check("and a line without it is not mistaken for one",
-          record.EBUR128_M.search("Guessed Channel Layout: mono") is None)
-    cmd = " ".join(record.capture_command(
+          levels.EBUR128_M.search("Guessed Channel Layout: mono") is None)
+    cmd = " ".join(mixing.capture_command(
         {"max_seconds": 60, "voice": "0"}, "0", Path("/tmp/v.wav")))
     check("the capture reports how loud it is", "ebur128=metadata=1" in cmd, cmd)
     check("into an output that keeps nothing", "-f null -" in cmd, cmd)
@@ -1247,7 +1253,7 @@ async def main() -> None:
     both = {"log": deque(maxlen=8), "ever": set()}
     for raw in ("syscapture: voice level -31.2 frames 4800",
                 "syscapture: computer level -20.7 frames 4800"):
-        found = record.HELPER_LEVEL.search(raw)
+        found = syshelper.HELPER_LEVEL.search(raw)
         assert found, raw
         both.setdefault("peak", {})[found.group(1)] = float(found.group(2))
     check("each side's level lands under its own name",
@@ -1256,8 +1262,8 @@ async def main() -> None:
     # Clearing the microphone grant emptied the device listing, and the empty
     # listing was written back over the remembered choice — after which every
     # recording was the computer's side alone, silently.
-    check("a device that cannot be seen keeps its name", record.name_for("uid-1", []) == "uid-1")
-    check("and nothing chosen names nothing", record.name_for("", []) == "")
+    check("a device that cannot be seen keeps its name", devices.name_for("uid-1", []) == "uid-1")
+    check("and nothing chosen names nothing", devices.name_for("", []) == "")
 
     # Picking a file that had already been transcribed refused, so the menu bar
     # opened the window and did nothing — which reads as a broken menu item. The
@@ -1550,7 +1556,7 @@ async def main() -> None:
           and len(record.glance().split()) <= 2, record.glance())
 
     print("a meter that can show a voice")
-    meter_cmd = " ".join(record.capture_commands(rec)[0])
+    meter_cmd = " ".join(mixing.capture_commands(rec)[0])
     check("loudness is still measured, since the checks are built on it",
           "ebur128" in meter_cmd, meter_cmd)
     check("and a peak alongside it, which is what the needle moves on",
@@ -1560,24 +1566,24 @@ async def main() -> None:
     # The output that writes the WAV gets the timeline fix and nothing else. Metering
     # filters on the file being kept would be work done on the one path that cannot
     # afford to fall behind.
-    argv = record.capture_commands(rec)[0]
+    argv = mixing.capture_commands(rec)[0]
     kept = argv[argv.index("-c:a") - 1]
     check("none of the metering reaches the file being kept",
-          kept == record.KEEP_TIME, kept)
+          kept == mixing.KEEP_TIME, kept)
 
     live = {"log": deque(maxlen=8)}
     for line in ("[Parsed_ametadata_3 @ 0x0] lavfi.astats.Overall.Peak_level=-18.06",
                  "[Parsed_ametadata_1 @ 0x0] lavfi.r128.M=-24.5"):
-        found = record.PEAK.search(line)
+        found = levels.PEAK.search(line)
         if found:
             live.setdefault("peak", {})["voice"] = float(found.group(1))
     check("a peak is read off the meter", live["peak"]["voice"] == -18.06)
     # astats calls a window of digital zero -inf, which float() will not take and
     # which would otherwise throw inside the drain loop and end the capture's log.
-    quiet = record.PEAK.search("[Parsed_ametadata_3 @ 0x0] lavfi.astats.Overall.Peak_level=-inf")
+    quiet = levels.PEAK.search("[Parsed_ametadata_3 @ 0x0] lavfi.astats.Overall.Peak_level=-inf")
     check("and digital silence does not come back as a crash", quiet is not None, "no match")
     check("it is read as the -120 the helper already uses for it",
-          record.DIGITAL_SILENCE == -120.0)
+          levels.DIGITAL_SILENCE == -120.0)
 
     record.RECORDING = None
     check("with nothing recording the needles say so and carry nothing",
@@ -1588,20 +1594,20 @@ async def main() -> None:
     # with 31 of 70 seconds missing, both captures alive throughout, and the hole
     # closed up rather than left open — which moves every timestamp after it.
     rec = {"log": deque(maxlen=8)}
-    record._heard(rec, "voice")
+    levels._heard(rec, "voice")
     rec["moved"]["voice"] -= 5.0          # five seconds in which nothing arrived
-    record._heard(rec, "voice")
+    levels._heard(rec, "voice")
     gaps = rec["gaps"]["voice"]
     check("a stall is noticed at all", len(gaps) == 1)
     check("and measured against the wall clock", 4.8 < gaps[0][1] < 5.0)
     check("and placed where the audio stopped", gaps[0][0] == 0.1)
-    check("a side that has just spoken is not called stalled", record.stalled_sides(rec) == [])
-    rec["moved"]["voice"] -= record.STALL + 1
-    check("one that has gone quiet is named", record.stalled_sides(rec) == ["voice"])
+    check("a side that has just spoken is not called stalled", levels.stalled_sides(rec) == [])
+    rec["moved"]["voice"] -= levels.STALL + 1
+    check("one that has gone quiet is named", levels.stalled_sides(rec) == ["voice"])
 
     steady = {"log": deque(maxlen=8)}
     for _ in range(5):
-        record._heard(steady, "voice")
+        levels._heard(steady, "voice")
     check("a capture keeping up is left alone", not steady.get("gaps"))
 
     # Everything above is arithmetic. Whether the silence lands in the right place is
@@ -1644,7 +1650,7 @@ async def main() -> None:
         check("the stall left a two-second file", abs(await seconds(stalled) - 2.0) < 0.1)
         check("with no quiet in it at all", await hole(stalled) == (-1.0, -1.0))
 
-        cmd = record.pad_command(stalled, padded, [(1.0, 2.0)])
+        cmd = mixing.pad_command(stalled, padded, [(1.0, 2.0)])
         cmd[0] = real_ffmpeg
         text = await run(cmd)
         check("the silence goes back in", padded.is_file(), text[-200:])
@@ -1662,12 +1668,12 @@ async def main() -> None:
     silent = {"computer": record.SYSTEM_AUDIO, "ever": set(),
               "sys_pcm": TMP / "quiet.pcm", "voice_wav": TMP / "nothing.wav"}
     silent["sys_pcm"].write_bytes(b"\0" * 480_000)   # five seconds of written-down silence
-    check("silence the tap filled in is not a speaker", record.captured_sources(silent) == [])
+    check("silence the tap filled in is not a speaker", levels.captured_sources(silent) == [])
     silent["ever"] = {"computer"}
-    check("and sound that reached it is", record.captured_sources(silent) == ["computer"])
+    check("and sound that reached it is", levels.captured_sources(silent) == ["computer"])
     del silent["ever"]
     check("a recording rescued from a crash is not second-guessed",
-          record.captured_sources(silent) == ["computer"])
+          levels.captured_sources(silent) == ["computer"])
 
     print("work dir sweep")
     config.WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -1754,10 +1760,10 @@ async def main() -> None:
     # Every recording this app has ever written matches, or the deleting is a
     # no-op nobody would notice. Asked of the name-maker itself, not of a copy.
     check("the pattern matches what this app actually names a recording",
-          retention.MINE.match(f"{record._stamp()}.m4a") is not None, record._stamp())
-    taken = shelf / f"{record._stamp()}.m4a"
+          retention.MINE.match(f"{saving._stamp()}.m4a") is not None, saving._stamp())
+    taken = shelf / f"{saving._stamp()}.m4a"
     taken.write_bytes(b"first one this minute")
-    second = record._unique(taken)
+    second = saving._unique(taken)
     check("and the name a second recording in the same minute gets",
           second != taken and retention.MINE.match(second.name) is not None, second.name)
 
