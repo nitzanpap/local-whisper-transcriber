@@ -103,6 +103,24 @@ async def duration_seconds(path: Path) -> float | None:
         return None
 
 
+async def channels_in(path: Path) -> int:
+    """How many channels a file carries. 0 when that cannot be established.
+
+    Asked before deciding whether a file holds two people. A wrong answer here
+    costs a transcript, so anything unreadable comes back 0 and the caller falls
+    through to treating it as an ordinary file.
+    """
+    code, out = await capture(
+        [binary("ffprobe"), "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=channels",
+         "-of", "default=nokey=1:noprint_wrappers=1", str(path)]
+    )
+    try:
+        return int(out.splitlines()[0]) if code == 0 else 0
+    except (ValueError, IndexError):
+        return 0
+
+
 async def to_wav(job: dict, source: str, wav: Path, channel: int | None = None) -> None:
     """16 kHz mono, which is what whisper wants — optionally from one channel only.
 

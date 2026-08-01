@@ -104,6 +104,15 @@ toggle.
       Confirmed under a real block: `/api/state` answered in 10 ms while the rename sat in a
       worker thread and the main thread waited in `kevent`.
 
+- [x] **A recording transcribed later lost both its speakers.** The thing this app is for, off on
+      the default path. Two-track jobs were built in one place — `saving.enqueue` — which runs only
+      when a recording transcribes itself, and that is off by default on purpose. Record now and
+      transcribe from the Library and the stereo file was downmixed to mono: both people on top of
+      each other, no `Me:`/`Them:` anywhere. Measured on three real recordings, all
+      `tracks=[{channel: None}]`; the captures themselves were flawless. `jobs.tracks_for` now
+      decides from the file for every route into the queue. See TRAPS §14 — the suite covered the
+      one path that worked.
+
 - [ ] **API failures are easy to miss in the interface.** They reach `formError`, which is not
       always on screen. A failed request should be visible wherever the click was.
 - [x] **A quiet channel sorts to the front of a transcript.** A channel carrying continuous sound

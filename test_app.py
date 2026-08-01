@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from collections import deque
@@ -68,7 +69,14 @@ fi
 awk 'BEGIN{ for (i = 0; i < 8192; i++) printf "A" }' > "$out"
 """
 
+# Answers two questions, because the app asks two: how long a file is, and how many
+# channels it has. A stub that replied with a duration to both would have every
+# file read as unreadable, which quietly means one track and no speaker labels —
+# so it says one channel, and the checks that care about two use a real ffprobe.
 FAKE_FFPROBE = """#!/bin/sh
+for arg in "$@"; do
+  case "$arg" in *stream=channels*) echo 1; exit 0 ;; esac
+done
 echo 123.5
 """
 
@@ -1684,6 +1692,49 @@ async def main() -> None:
     jobs.sweep_work_dirs()
     check("stale scratch removed", not stale.exists())
     check("live scratch kept", fresh.exists())
+
+    print("a recording keeps its two speakers however it is transcribed")
+    # The fault this covers shipped for weeks and hid in plain sight: two-track
+    # jobs were only ever built by the recorder's own auto-transcribe, which is
+    # off by default. Everything else — the Transcribe view, a watched folder —
+    # made a one-track job, so a stereo recording was flattened to mono and the
+    # feature the whole app exists for silently did not happen.
+    stereo = TMP / "2026-01-01 09.00.m4a"
+    mono = TMP / "2026-01-01 10.00.m4a"
+    theirs = TMP / "some album track.m4a"
+    # Real files and a real ffprobe: the whole question is how many channels a file
+    # has, and a stub asked that can only give back what the test already assumed.
+    real_ffmpeg, real_ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if real_ffmpeg and real_ffprobe:
+        for path, channels in ((stereo, 2), (mono, 1), (theirs, 2)):
+            subprocess.run([real_ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                            "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                            "-ac", str(channels), "-c:a", "aac", str(path)], check=True)
+        config.save_settings({"record_label_voice": "Me", "record_label_computer": "Them",
+                              "ffprobe_path": real_ffprobe})
+        check("a stereo file is read as two channels",
+              await transcribe.channels_in(stereo) == 2)
+        check("a mono one as one", await transcribe.channels_in(mono) == 1)
+        check("one of our stereo recordings gets a track per speaker",
+              [t["channel"] for t in await jobs.tracks_for(stereo)] == [0, 1])
+        check("labelled with the names from settings",
+              [t["label"] for t in await jobs.tracks_for(stereo)] == ["Me", "Them"])
+        check("one of ours that is mono has nobody to tell apart",
+              await jobs.tracks_for(mono) == list(jobs.ONE_TRACK))
+        check("somebody else's stereo file is left alone",
+              await jobs.tracks_for(theirs) == list(jobs.ONE_TRACK))
+        check("and a file that is not there is not a recording",
+              await jobs.tracks_for(TMP / "2026-02-02 11.00.m4a") == list(jobs.ONE_TRACK))
+        config.save_settings({"ffprobe_path": str(TMP / "bin" / "ffprobe")})
+    else:
+        check("skipped: this machine has no real ffmpeg and ffprobe", True)
+    # The two ways a job gets its tracks must not disagree. `enqueue` decides from
+    # what actually captured and `tracks_for` from the finished file; on a
+    # recording with both sides they have to reach the same answer, or a recording
+    # transcribed now and the same one transcribed later come back different.
+    check("both routes to a two-track job agree",
+          jobs.two_tracks(("Me", "Them")) == [{"channel": 0, "label": "Me"},
+                                              {"channel": 1, "label": "Them"}])
 
     print("how far the talking sits above the room")
     # The threshold is not a taste. It sits between the last signal-to-noise ratio

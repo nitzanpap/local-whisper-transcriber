@@ -152,7 +152,7 @@ runs in about 6 seconds.
 
 **It does not cover rows 1–5** — capture cannot be tested without a device and a
 person. Those are checked by measurement instead, written up in `RECORDING.md`, and
-the way to re-check them is in TRAPS §17: play a known signal and measure what
+the way to re-check them is in TRAPS §18: play a known signal and measure what
 comes back.
 
 ### Checked against a real meeting

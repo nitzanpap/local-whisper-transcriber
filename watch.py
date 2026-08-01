@@ -129,6 +129,9 @@ async def queue_folder(folder: Path, dry_run: bool = False) -> dict:
             vad_model=conf.get("vad_model_path", ""),
             vocabulary=conf.get("vocabulary", ""),
             duration=await duration_seconds(path),
+            # Same reason as the Transcribe view: a watched folder that picks up
+            # one of our own recordings must not flatten its two speakers.
+            tracks=await jobs.tracks_for(path),
         )
         jobs.enqueue(job)
     return {"queued": len(found), "skipped": skipped,

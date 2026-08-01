@@ -17,8 +17,10 @@ import uuid
 from collections import deque
 from pathlib import Path
 
-from config import Cancelled, Failed, HISTORY, RECORDING_PREFIX, WORK_DIR, DATA_DIR
-from transcribe import (merge_tracks, parse_regions, parse_segments, regroup, stamp,
+import retention
+from config import (Cancelled, DATA_DIR, Failed, HISTORY, RECORDING_PREFIX,
+                    WORK_DIR, recording_config)
+from transcribe import (channels_in, merge_tracks, parse_regions, parse_segments, regroup, stamp,
                         to_wav, transcribe,
                         write_outputs)
 
@@ -26,6 +28,46 @@ from transcribe import (merge_tracks, parse_regions, parse_segments, regroup, st
 # run, no speaker labels. Two tracks is a recording made here, where the channels
 # are known to be different people.
 ONE_TRACK = ({"channel": None, "label": ""},)
+
+
+def two_tracks(labels: tuple[str, str] | list[str]) -> list[dict]:
+    """Left is the voice, right is the machine — the order `mix_command` used."""
+    return [{"channel": 0, "label": labels[0]}, {"channel": 1, "label": labels[1]}]
+
+
+async def tracks_for(path: Path | str) -> list[dict]:
+    """Two tracks if this file is one of our own two-source recordings, else one.
+
+    This exists because the app's whole point was quietly not happening. Building
+    a two-track job lived only in `enqueue`, and `enqueue` runs only when a
+    recording is set to transcribe itself — which is off by default, deliberately,
+    because transcribing at the moment a meeting ends is the worst time to seize
+    the machine. So the ordinary path, the one where somebody records now and
+    transcribes later, went through code that had never heard of channels: the
+    stereo file was downmixed to mono, both people arrived on top of each other,
+    and no line carried a name.
+
+    Measured on three real recordings before the fix — all three came back
+    `tracks=[{channel: None}]` with no `Me:` or `Them:` anywhere, and whichever
+    side happened to be louder at a given moment was the only one transcribed.
+    The recordings themselves were perfect: two independent channels, no
+    cross-talk, nothing wrong with the capture at all.
+
+    Two things have to be true and both are cheap: the name is one this app gives
+    a recording, and the file really carries two channels. The folder is
+    deliberately not checked — somebody who moved a recording out of the
+    recordings folder still wants their speakers told apart, and being wrong that
+    way costs a transcript, while being wrong the other way only mislabels a
+    stereo file that happens to be named exactly like one of ours.
+    """
+    path = Path(path)
+    if not retention.MINE.match(path.name):
+        return list(ONE_TRACK)
+    if await channels_in(path) != 2:
+        # A recording where only one side carried anything is saved as mono, and
+        # then there is nobody to tell apart.
+        return list(ONE_TRACK)
+    return two_tracks(recording_config()["labels"])
 
 JOB: dict | None = None
 QUEUE: list[dict] = []

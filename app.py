@@ -245,6 +245,10 @@ async def start(body: StartIn) -> dict:
         vad_model=vad_model(),
         vocabulary=settings().get("vocabulary", ""),
         duration=await duration_seconds(source),
+        # A recording this app made keeps its two speakers apart even when it is
+        # transcribed long afterwards. Without this the file was downmixed to mono
+        # and the whole point of recording two channels was thrown away here.
+        tracks=await jobs.tracks_for(source),
     )
     jobs.enqueue(queued)
     return {"id": queued["id"], "queued_behind": len(jobs.QUEUE) - 1}

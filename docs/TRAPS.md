@@ -229,7 +229,44 @@ were asked of this one: that it reported the same number of checks before and
 after the split — 424 both times — and that deleting the patch line made a check
 fail. It did.
 
-## 14. Another app's loopback driver is not the computer's audio
+## 14. A feature can run only on the path nobody takes
+
+Recordings keep the two speakers in separate channels so the transcript can say
+who said which line. That is the reason this app exists. It was not happening.
+
+Building a two-track job existed in exactly one place — `saving.enqueue`, which
+runs only when a recording is set to transcribe itself. That setting is off by
+default, deliberately and correctly, because seizing the machine the instant a
+meeting ends is the wrong thing to do. So the ordinary path — record now,
+transcribe from the Library later — went through `make_job` with no tracks at
+all and fell through to `ONE_TRACK`. The stereo file was downmixed to mono, both
+people landed on top of each other, and whichever was louder at a given moment
+was the only one transcribed.
+
+Measured on three real recordings: every one came back
+`tracks=[{channel: None}]`, with no `Me:` or `Them:` anywhere in the output.
+
+**Two things hid it, and both are worth recognising again.**
+
+The output looked fine. A mono transcript of a meeting is readable English — it
+is simply missing half the conversation and all the attribution. Nothing is
+empty, nothing errors, and the absence of a `Me:` prefix is not something anybody
+notices in a wall of text. Hours went into measuring levels, dropouts,
+bandwidth, modulation depth and channel correlation on those three files before
+anybody read `tracks` in the history. **The capture was perfect the whole time.**
+
+And the suite covered the wrong half. `the_whole_thing` drives a real recording
+end to end and asserts on labels — through `record.enqueue`. It tested the path
+that had the feature and never the path the user actually takes.
+
+**Cures, in order of how much they would have saved.** When a feature has more
+than one entry point, test the *default* one, not the convenient one. Assert on
+the thing that distinguishes the feature — the label — rather than on output
+existing. And when a symptom is about audio quality, read what the job was
+actually asked to do before measuring the audio: `tracks` was one line of
+history away the entire time.
+
+## 15. Another app's loopback driver is not the computer's audio
 
 Teams installs `MSLoopbackDriverDevice_UID`, Zoom installs
 `zoom.us.zoomaudiodevice.001`. Both show up in the input listing, both answer to
@@ -253,7 +290,7 @@ rebuild and so was genuinely refused as well — two faults, and the loud one wa
 not the one that made the recording. Splitting the file per channel with
 `volumedetect` is what separated them.
 
-## 15. This project's own tooling
+## 16. This project's own tooling
 
 - **The suite runs against fake `ffmpeg` and `whisper-cli` stubs.** `ffprobe` echoes
   `123.5` for every duration. Any check that needs real audio must locate the real
@@ -270,7 +307,7 @@ not the one that made the recording. Splitting the file per channel with
   point. This orphaned an `afplay` that kept playing and a recording that kept
   running. `bash -n` passes before and after and cannot see it.
 
-## 16. Things an agent working here cannot do
+## 17. Things an agent working here cannot do
 
 - **Screen capture and assistive access are both blocked.** `screencapture` fails
   with "could not create image from display", and System Events refuses with
@@ -287,7 +324,7 @@ not the one that made the recording. Splitting the file per channel with
   the menu can then only be reached by right-click, which on a trackpad means two
   fingers, and control-click does not reach it either.
 
-## 17. How to measure this app
+## 18. How to measure this app
 
 The methods that produced every real answer, so they can be reused:
 

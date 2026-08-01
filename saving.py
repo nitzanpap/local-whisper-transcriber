@@ -232,14 +232,15 @@ async def enqueue(rec: dict, path: Path) -> str | None:
     if not model or not Path(model).is_file():
         rec["log"].append("# no model chosen yet, so the recording was not queued")
         return None
+    # From what actually captured, not from the file: this knows a side was asked
+    # for and stayed silent, which `tracks_for` can only infer afterwards. The two
+    # must agree on a recording with both sides, and the suite checks that they do.
     sources = rec.get("sources") or ["voice", "computer"][:len(rec["devices"])]
     if len(sources) == 2:
-        # Left is the voice, right is the machine — the order mix_command used.
-        tracks = [{"channel": 0, "label": rec["labels"][0]},
-                  {"channel": 1, "label": rec["labels"][1]}]
+        tracks = jobs.two_tracks(rec["labels"])
     else:
         # One side only, so there is nobody to tell apart and no label to carry.
-        tracks = [{"channel": None, "label": ""}]
+        tracks = list(jobs.ONE_TRACK)
     job = jobs.make_job(
         str(path), model, watch.output_folder_for(path), f"{path.stem}{TRANSCRIPT_SUFFIX}",
         language=conf.get("default_language", "he"),
