@@ -12,30 +12,12 @@ silence kept where it belongs and dropped where it was asked for, meters that sh
 a voice, and a menu bar item. `docs/TRAPS.md` says what was learned getting there
 and what not to repeat.
 
-1. **Fix the timestamps a multi-track job produces.** Re-tested 2026-08-01 against a file built
-   to prove it: an 18 s stereo recording, left channel saying "one" at 1 s and "five" at 13 s,
-   right channel saying "three" at 7 s over a continuous quiet hum. Every word came back correct.
-   Every time was not:
-
-   | said | written |
-   |---|---|
-   | Me "one" at 1 s | `00:00 --> 00:12` |
-   | Them "three" at 7 s | `00:00 --> 00:18` — the whole recording |
-   | Me "five" at 13 s | `00:12 --> 00:21` — past the end of an 18 s file |
-
-   So the recording work did not touch this, which is what the re-test was for. The sorting is
-   correct given what it is handed; the timestamps are what is wrong. The order came out right
-   here only by accident — "three" spans everything and starts at zero, so it landed second — and
-   with any other arrangement it would not.
-
-   It is also not only the channel carrying continuous sound, which is how this was described
-   before: the clean channel was cut into 12 s and 9 s blocks with interpolated boundaries. VAD is
-   skipped for multi-track jobs on purpose (its segments span the silence it removes), and nothing
-   replaces it, so whisper is left to segment a track by itself and does it coarsely.
-
-   The fix stands as written: use silero VAD only to *locate* speech regions, then transcribe each
-   separately with `--offset-t`, so every segment carries a measured absolute time instead of an
-   interpolated one. VAD's own boundaries stay unused.
+1. ~~**Fix the timestamps a multi-track job produces.**~~ Done 2026-08-01. VAD's placement was
+   always accurate; keeping it off two-speaker jobs left whisper to segment a track by itself.
+   Now `--vad --max-len 1 --split-on-word`, regrouped in `transcribe.regroup` against the
+   `vad_segment_info` regions that were being thrown away as log noise. Measured through the real
+   pipeline: words said at 1.006 / 7.019 / 13.061 s now written at 1.010 / 7.070 / 13.100.
+   `docs/PIPELINE.md` is the map; `test_app.py:the_whole_thing` asserts it on every run.
 
 2. **Measure the level gap between the two sides.** The tap takes the stream before
    the hardware volume, so the computer's side is near full scale whatever the

@@ -265,3 +265,15 @@ State what you expect, measure it, and say which parts were verified and which
 were inferred — in those words, so the difference is visible. Where a measurement
 disagrees with the owner, suspect the measurement first: on this project it has
 been wrong more often than they have.
+
+---
+
+## And the map
+
+`docs/PIPELINE.md` traces sound from the microphone to a line in a transcript, and
+lists every place a time is created, carried or invented. Two of those places
+invent rather than carry — whisper's own segment times, and the VAD regions — and
+every timestamp fault this project has had lives at one of them or where they meet.
+
+Read it before changing anything between capture and the `.srt`.
+
