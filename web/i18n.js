@@ -257,6 +257,7 @@ const STRINGS = {
     "set.outputFolder": "All in one folder",
     "set.checkNow": "Check for new recordings now",
     "quality.best": "Best", "quality.good": "Good",
+    "quality.goodFast": "Good, much faster",
     "quality.quick": "Quick", "quality.roughest": "Roughest",
   },
 
@@ -493,6 +494,7 @@ const STRINGS = {
     "set.outputFolder": "הכול בתיקייה אחת",
     "set.checkNow": "לבדוק עכשיו אם יש הקלטות חדשות",
     "quality.best": "הטוב ביותר", "quality.good": "טוב",
+    "quality.goodFast": "טוב, ומהיר בהרבה",
     "quality.quick": "מהיר", "quality.roughest": "גס",
   },
 };

@@ -29,7 +29,12 @@ const SETTING_FIELDS = {
 
 // How a model file names itself, and what that means to someone who did not
 // choose it. Anything unrecognised keeps its own name.
+// Order matters: the first match wins, so anything more specific comes first.
+// `large-v3-turbo` used to read as "best" purely because "large" is in its name —
+// it is a faster, less accurate cut of large-v3, and calling it the best model on
+// the machine sent people to the slowest choice for the worst reason.
 const QUALITY = [
+  [/large.*turbo/, "goodFast"],
   [/large/, "best"],
   [/medium/, "good"],
   [/small/, "quick"],

@@ -98,10 +98,42 @@ class Cancelled(Exception):
 
 
 def settings() -> dict:
+    """Everything that was saved, or as much of it as can still be read.
+
+    A file that will not parse used to come back as {} — and the next save merged
+    onto that nothing and wrote it out, so a single bad byte plus one visit to
+    settings destroyed the lot: model, folders, devices, labels, tool paths, in
+    silence. Nothing announced it and nothing could get it back.
+
+    So a broken file is salvaged rather than abandoned. Whatever can be read out of
+    it is kept, key by key; only the part that will not parse is lost.
+    """
     try:
-        return json.loads(SETTINGS.read_text())
-    except (OSError, ValueError):
+        raw = SETTINGS.read_text(encoding="utf-8")
+    except OSError:
         return {}
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return _salvage(raw)
+
+
+def _salvage(raw: str) -> dict:
+    """As many whole `"key": value` pairs as survive in a file that will not parse.
+
+    A truncated write leaves a prefix of good JSON, which is the usual way this
+    happens, so parsing the longest valid prefix recovers nearly all of it.
+    """
+    for end in range(len(raw), 1, -1):
+        if raw[end - 1] not in ",{ \t\r\n":
+            continue
+        try:
+            found = json.loads(raw[:end].rstrip().rstrip(",") + "}")
+        except ValueError:
+            continue
+        if isinstance(found, dict):
+            return found
+    return {}
 
 
 def save_settings(values: dict) -> dict:
@@ -113,5 +145,10 @@ def save_settings(values: dict) -> dict:
     """
     merged = settings() | values
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+    # Written beside and moved into place, because writing over the file is what
+    # produces the half-file in the first place: a crash or a full disk in the
+    # middle of a truncating write leaves exactly the wreckage above.
+    spare = SETTINGS.with_suffix(".json.new")
+    spare.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+    os.replace(spare, SETTINGS)
     return merged

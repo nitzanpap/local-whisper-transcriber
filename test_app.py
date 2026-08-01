@@ -1288,6 +1288,51 @@ async def main() -> None:
     except record.Failed as exc:
         check("pausing nothing says so in a sentence", exc.message.endswith("."), exc.message)
 
+    # A model file is described to somebody who did not choose it, so the label has
+    # to be true. large-v3-turbo matched /large/ and read as the best model on the
+    # machine; it is a faster, less accurate cut of large-v3, so the label sent
+    # people to a slow choice for a wrong reason.
+    labels = (config.WEB_DIR / "settings.js").read_text(encoding="utf-8")
+    turbo = labels.index("turbo"), labels.index("[/large/,")
+    check("a turbo model is judged before a large one", turbo[0] < turbo[1], str(turbo))
+    words = (config.WEB_DIR / "i18n.js").read_text(encoding="utf-8")
+    for lang in ("en", "he"):
+        body = words.split(f"  {lang}: {{", 1)[1]
+        check(f"{lang} can say what a turbo model is", '"quality.goodFast"' in body)
+
+    print("a bad byte does not cost somebody their settings")
+    # This was live: a file that would not parse came back as {}, and the next save
+    # merged onto that nothing and wrote it out. One corrupt byte plus one visit to
+    # settings destroyed model, folders, devices, labels and tool paths, silently.
+    keep = dict(config.settings())
+    try:
+        good = {"default_model_path": "/models/big.bin", "record_label_voice": "Me",
+                "recording_folder": "/Users/x/Recordings", "vocabulary": "Kubernetes"}
+        config.save_settings(good)
+        whole = config.SETTINGS.read_text()
+        # A write cut off partway through, which is how the file gets broken at all.
+        config.SETTINGS.write_text(whole[:len(whole) * 2 // 3])
+        rescued = config.settings()
+        check("what can still be read is kept", len(rescued) >= 2, str(rescued))
+        check("and it is the real values, not defaults",
+              rescued.get("default_model_path") == "/models/big.bin", str(rescued))
+        # The moment that used to destroy everything: a save on top of a broken file.
+        config.save_settings({"default_language": "he"})
+        after = config.settings()
+        check("saving on top of it does not wipe the rest",
+              after.get("default_model_path") == "/models/big.bin", str(after))
+        check("and the new value went in", after.get("default_language") == "he")
+        config.SETTINGS.write_text("{ this is not json at all")
+        check("something unreadable costs only itself", config.settings() == {})
+        # Nothing half-written is ever left where the real file is read from.
+        config.save_settings(good)
+        check("the file is replaced rather than overwritten in place",
+              not config.SETTINGS.with_suffix(".json.new").exists())
+        check("and it parses cleanly afterwards",
+              json.loads(config.SETTINGS.read_text())["vocabulary"] == "Kubernetes")
+    finally:
+        config.SETTINGS.write_text(json.dumps(keep, indent=2))
+
     print("the vad model ships with the app")
     # Without one there is no fix at all: measured, word splitting on its own
     # reproduces the same eleven-second spans. It used to be a curl command in
