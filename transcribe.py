@@ -219,6 +219,7 @@ async def transcribe(job: dict, wav: Path, segments_file: Path, resume_ms: int =
 # How the words come back together into sentences.
 GAP_MS = 700          # a silence inside one region long enough to end a sentence
 MAX_SPAN_MS = 12_000  # nothing may run longer than this; a region can be 23 s of talk
+MIN_MS = 200          # the shortest a line may be, so none of them is a point in time
 SLACK_MS = 400        # how far outside a region a word may start and still belong to it
 
 
@@ -322,7 +323,16 @@ def regroup(words: list[tuple[int, int, str]],
         bucket.append((start, end, text))
     flush()
     out.sort(key=lambda seg: (seg[0], seg[1]))
-    return out
+    # Two things a clamp can leave behind, both found in a real 21-minute meeting:
+    # a line with no length at all, when a word started past the end of its region,
+    # and a line beginning before the one above it has finished. Either makes
+    # nonsense of a subtitle and of clicking a line to hear it.
+    tidy: list[tuple[int, int, str]] = []
+    for start, end, text in out:
+        if tidy and start < tidy[-1][1]:
+            start = tidy[-1][1]
+        tidy.append((start, max(end, start + MIN_MS), text))
+    return tidy
 
 
 def write_outputs(job: dict, work: Path, segments: list[tuple[int, int, str]]) -> None:

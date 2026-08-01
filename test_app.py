@@ -1345,6 +1345,15 @@ async def main() -> None:
     # With nothing measured, the words are handed back untouched rather than moved.
     check("no regions means nothing is invented",
           transcribe.regroup(words, []) == words)
+    # Both found in a real 21-minute meeting rather than imagined: a word starting
+    # past the end of its region left a line with no length, and clamping left one
+    # line beginning before the line above it had ended.
+    squashed = transcribe.regroup([(1500, 1500, "Right.")], [(1000, 1500)])
+    check("no line is a single point in time", squashed[0][1] > squashed[0][0], str(squashed))
+    stacked = transcribe.regroup([(1000, 5000, "First."), (2000, 3000, "Second.")],
+                                 [(900, 5100), (1900, 3100)])
+    check("and no line starts before the one above it ends",
+          all(stacked[i][1] <= stacked[i + 1][0] for i in range(len(stacked) - 1)), str(stacked))
 
     print("the interface says everything in one language")
     page = (config.WEB_DIR / "index.html").read_text(encoding="utf-8")
