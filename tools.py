@@ -34,9 +34,18 @@ MODEL_DIRS = (
 # The child process of the moment, so cancel can reach it.
 PROC: asyncio.subprocess.Process | None = None
 
-# One line per detected speech segment is thousands of lines on a long recording,
-# which pushed the command itself out of a 300-line log. Nothing acts on them.
-LOG_NOISE = ("vad_segment_info",)
+# Where whisper says it found speech, in the original file's own timeline:
+#
+#   whisper_vad: vad_segment_info: orig_start: 0.96, orig_end: 1.44, vad_start: 0.00, vad_end: 0.48
+#
+# These are the measured truth about when somebody spoke, and they were being
+# thrown away as noise. They still stay out of the job log — thousands of them on
+# a long recording would push the command itself out of it — but they are written
+# to a file now, because the timestamps in the transcript are built from them.
+REGION_LINE = re.compile(
+    r"^whisper_vad:\s+vad_segment_info:\s+"
+    r"orig_start:\s*(-?\d+\.\d+),\s+orig_end:\s*(-?\d+\.\d+),\s+"
+    r"vad_start:\s*(-?\d+\.\d+),\s+vad_end:\s*(-?\d+\.\d+)\s*$")
 
 
 def locate(name: str) -> str | None:
@@ -120,7 +129,8 @@ async def capture(cmd: list[str], timeout: float = 60) -> tuple[int, str]:
 DETECTED = re.compile(r"auto-detected language:\s*([a-z]{2,3})\s*\(p\s*=\s*([\d.]+)\)")
 
 
-async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | None = None) -> None:
+async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | None = None,
+                 regions_to: Path | None = None) -> None:
     """Run cmd, feed stderr into the job log, parse whisper progress, honour cancel.
 
     whisper-cli prints finished segments to stdout as it goes and logs to stderr.
@@ -130,6 +140,7 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
     global PROC
     job["log"].append("$ " + shlex.join(cmd))
     sink = capture_to.open("ab") if capture_to else None
+    regions = regions_to.open("ab") if regions_to else None
     try:
         PROC = await asyncio.create_subprocess_exec(
             *cmd,
@@ -144,7 +155,14 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
     assert PROC.stderr is not None
     async for raw in PROC.stderr:
         line = raw.decode("utf-8", "replace").rstrip()
-        if not line or any(noise in line for noise in LOG_NOISE):
+        if not line:
+            continue
+        if REGION_LINE.match(line):
+            # Kept, but not in the log: one of these per pause in the conversation
+            # would bury the command line and everything else worth reading.
+            if regions is not None:
+                regions.write(line.encode("utf-8") + b"\n")
+                regions.flush()
             continue
         found = DETECTED.search(line)
         if found:
@@ -168,6 +186,8 @@ async def stream(cmd: list[str], job: dict, error_code: str, capture_to: Path | 
         else:
             job["log"].append(line)
     code = await PROC.wait()
+    if regions is not None:
+        regions.close()
     sampler.cancel()
     PROC = None
     if job["status"] == "cancelling":

@@ -18,7 +18,8 @@ from collections import deque
 from pathlib import Path
 
 from config import Cancelled, Failed, HISTORY, RECORDING_PREFIX, WORK_DIR, DATA_DIR
-from transcribe import (merge_tracks, parse_segments, stamp, to_wav, transcribe,
+from transcribe import (merge_tracks, parse_regions, parse_segments, regroup, stamp,
+                        to_wav, transcribe,
                         write_outputs)
 
 # A job with one unnamed track is an ordinary file: one conversion, one whisper
@@ -91,11 +92,12 @@ def cpu_seconds_used() -> float:
     return used.ru_utime + used.ru_stime
 
 
-def track_files(work: Path, index: int, count: int) -> tuple[Path, Path]:
+def track_files(work: Path, index: int, count: int) -> tuple[Path, Path, Path]:
     """Scratch names for one track. A single-track job keeps the original names,
     so a run interrupted before any of this existed still resumes."""
     suffix = f"-{index}" if count > 1 else ""
-    return work / f"audio{suffix}.wav", work / f"segments{suffix}.txt"
+    return (work / f"audio{suffix}.wav", work / f"segments{suffix}.txt",
+            work / f"regions{suffix}.txt")
 
 
 async def run_job(job: dict) -> None:
@@ -108,7 +110,7 @@ async def run_job(job: dict) -> None:
     try:
         transcribed = []
         for index, track in enumerate(tracks):
-            wav, segments_file = track_files(work, index, len(tracks))
+            wav, segments_file, regions_file = track_files(work, index, len(tracks))
             job["track"] = ({"index": index, "count": len(tracks), "label": track.get("label", "")}
                             if len(tracks) > 1 else None)
             # whisper reports its own progress per run, so each track is given a
@@ -125,10 +127,27 @@ async def run_job(job: dict) -> None:
             stage(job, "transcribing")
             done = parse_segments(segments_file)
             resume_ms = done[-1][1] if done else 0
-            if resume_ms:
+            if resume_ms and job.get("vad_model"):
+                # Never resume a track that VAD is reading. --offset-t is measured
+                # against the silence-removed timeline while the output stays in the
+                # original one, so an offset taken from a finished segment lands far
+                # past the end of what VAD produced: measured, whisper then wrote
+                # nothing at all and exited 0. A track is one channel of one meeting
+                # and costs little to redo; half a transcript reported as a success
+                # costs everything.
+                job["log"].append(f"# starting {wav.name} over rather than resuming, "
+                                  "because an offset means something else under VAD")
+                segments_file.unlink(missing_ok=True)
+                regions_file.unlink(missing_ok=True)
+                resume_ms = 0
+            elif resume_ms:
                 job["log"].append(f"# resuming at {stamp(resume_ms)} ({len(done)} segments already done)")
-            await transcribe(job, wav, segments_file, resume_ms)
-            transcribed.append((track.get("label", ""), parse_segments(segments_file)))
+            await transcribe(job, wav, segments_file, resume_ms, regions_file)
+            # One segment per word out of whisper, back into one per sentence, against
+            # the regions it measured on the way past. See transcribe.regroup.
+            transcribed.append((track.get("label", ""),
+                                regroup(parse_segments(segments_file),
+                                        parse_regions(regions_file))))
 
         job["track"] = None
         stage(job, "saving")
@@ -289,7 +308,7 @@ def heard_so_far(job: dict) -> list[str]:
         return []
     tracks = job.get("tracks") or list(ONE_TRACK)
     index = (job.get("track") or {}).get("index", 0)
-    _, segments_file = track_files(WORK_DIR / job["id"], index, len(tracks))
+    _, segments_file, _regions = track_files(WORK_DIR / job["id"], index, len(tracks))
     return [text for _, _, text in parse_segments(segments_file)][-HEARD_LINES:]
 
 

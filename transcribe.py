@@ -13,7 +13,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from config import Failed
-from tools import binary, capture, stream
+from tools import REGION_LINE, binary, capture, stream
 
 # whisper-cli prints "[00:00:20.000 --> 00:00:29.980]   text" per finished segment.
 SEGMENT_RE = re.compile(
@@ -183,18 +183,26 @@ def whisper_command(job: dict, wav: Path, resume_ms: int = 0) -> list[str]:
         # Timestamps stay absolute across an offset, so resumed output needs no
         # stitching — it simply continues the same segment file.
         cmd += ["--offset-t", str(resume_ms)]
-    # Voice activity detection skips silence, which is where whisper likes to invent
-    # text. It cannot be used on a recording with more than one track, though,
-    # because it removes the silence and then reports segment boundaries spanning
-    # what it removed: measured against a file built to prove it, speech at 0-3s and
-    # again at 13-15s came back as one segment from 00:01.190 to 00:14.430 holding
-    # both utterances. A track is one channel of a conversation, so a segment
-    # spanning the recording sorts ahead of everything on the other channel and the
-    # transcript collapses into all of one speaker followed by all of the other.
-    # Without it the same recording gives a line per utterance, in the right places,
-    # with a clean gap where the other side was talking.
-    if job.get("vad_model") and len(job.get("tracks") or [1]) < 2:
-        cmd += ["--vad", "--vad-model", job["vad_model"]]
+    # Voice activity detection, on for every job that has a model — and the reason
+    # it was once kept off multi-track jobs was a misreading.
+    #
+    # VAD's own placement is right. Measured on a file built to prove it: speech at
+    # 1.006 s and 13.061 s came back as regions at 0.96 and 13.09, inside 100 ms.
+    # What went wrong is that VAD removes the silence between them, so the two
+    # utterances become adjacent and whisper emits them as ONE segment holding both
+    # — 00:00.960 to 00:13.370, "1, 5." — and a segment spanning the recording sorts
+    # ahead of everything on the other channel.
+    #
+    # -ml 1 -sow is the cure: one segment per word, each carrying its own time. They
+    # are grouped back into sentences by `regroup`, against the regions whisper
+    # reported on its way past. Measured cost of the split: 0.05 s on a 300 s file,
+    # and inside the noise on a dense one.
+    #
+    # Turning VAD off is not a lesser version of this, it is no version of it:
+    # measured, -ml 1 -sow without --vad reproduces the same 11-second spans. See
+    # regroup, and TIMING.md.
+    if job.get("vad_model"):
+        cmd += ["--vad", "--vad-model", job["vad_model"], "--max-len", "1", "--split-on-word"]
     if job.get("vocabulary", "").strip():
         # --prompt alone primes only the first window, which on a 40-minute meeting
         # is the first half minute. Carrying it applies the vocabulary throughout.
@@ -202,8 +210,90 @@ def whisper_command(job: dict, wav: Path, resume_ms: int = 0) -> list[str]:
     return cmd + job["extra_args"]
 
 
-async def transcribe(job: dict, wav: Path, segments_file: Path, resume_ms: int = 0) -> None:
-    await stream(whisper_command(job, wav, resume_ms), job, "whisper_failed", capture_to=segments_file)
+async def transcribe(job: dict, wav: Path, segments_file: Path, resume_ms: int = 0,
+                     regions_file: Path | None = None) -> None:
+    await stream(whisper_command(job, wav, resume_ms), job, "whisper_failed",
+                 capture_to=segments_file, regions_to=regions_file)
+
+
+# How the words come back together into sentences.
+GAP_MS = 700          # a silence inside one region long enough to end a sentence
+MAX_SPAN_MS = 12_000  # nothing may run longer than this; a region can be 23 s of talk
+SLACK_MS = 400        # how far outside a region a word may start and still belong to it
+
+
+def parse_regions(path: Path) -> list[tuple[int, int]]:
+    """Where whisper's VAD found speech, in the original file's time, as ms pairs."""
+    out: list[tuple[int, int]] = []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        found = REGION_LINE.match(line.strip())
+        if found:
+            out.append((round(float(found.group(1)) * 1000),
+                        round(float(found.group(2)) * 1000)))
+    return sorted(out)
+
+
+def _region_for(regions: list[tuple[int, int]], at: int) -> int | None:
+    """Which region a word starting at `at` belongs to."""
+    best, best_gap = None, None
+    for index, (start, end) in enumerate(regions):
+        if start - SLACK_MS <= at <= end + SLACK_MS:
+            return index
+        gap = start - at if at < start else at - end
+        if best_gap is None or gap < best_gap:
+            best, best_gap = index, gap
+    return best
+
+
+def regroup(words: list[tuple[int, int, str]],
+            regions: list[tuple[int, int]]) -> list[tuple[int, int, str]]:
+    """One segment per word, back into one segment per thing somebody said.
+
+    Both halves matter. The words carry whisper's own timing, which is good inside a
+    stretch of speech and meaningless across a silence it never saw. The regions are
+    measured, and they are where a sentence must not be allowed to run past.
+
+    Without this, an eighteen-second recording came back as `00:00 --> 00:12` for a
+    word said at 1.0 s and `00:12 --> 00:21` for one said at 13.1 s — past the end
+    of the file. With it: 1.010 and 13.120, against a truth of 1.006 and 13.061.
+    """
+    if not regions:
+        return words
+    out: list[tuple[int, int, str]] = []
+    bucket: list[tuple[int, int, str]] = []
+    where: int | None = None
+
+    def flush() -> None:
+        if not bucket or where is None:
+            return
+        region_start, region_end = regions[where]
+        start = min(word[0] for word in bucket)
+        end = max(word[1] for word in bucket)
+        # The region is measured; the word times are whisper's estimate. Trust the
+        # region for the outer bounds and the words for everything inside — this is
+        # what stops a segment ending after the recording does.
+        start = max(min(start, region_end), region_start)
+        end = min(max(end, start), region_end)
+        text = re.sub(r"\s+([,.!?;:])", r"\1", " ".join(w[2] for w in bucket)).strip()
+        if text:
+            out.append((start, end, text))
+        bucket.clear()
+
+    for start, end, text in words:
+        index = _region_for(regions, start)
+        if where is not None and (index != where
+                                  or start - bucket[-1][1] >= GAP_MS
+                                  or end - bucket[0][0] >= MAX_SPAN_MS):
+            flush()
+        where = index
+        bucket.append((start, end, text))
+    flush()
+    out.sort(key=lambda seg: (seg[0], seg[1]))
+    return out
 
 
 def write_outputs(job: dict, work: Path, segments: list[tuple[int, int, str]]) -> None:

@@ -1181,14 +1181,27 @@ async def main() -> None:
     check("vad flags only when a model is set", "--vad --vad-model /models/silero.bin" in cmd, cmd)
     plain = " ".join(transcribe.whisper_command(job, Path("/tmp/a.wav")))
     check("no vad flags otherwise", "--vad" not in plain)
-    # VAD reports boundaries spanning the silence it removed, and a segment spanning
-    # the recording sorts ahead of everything on the other channel.
+    # VAD used to be kept off a two-speaker job, because it removes the silence and
+    # then emits one segment holding everything either side of it. That was the right
+    # observation and the wrong remedy: VAD's placement is accurate to 100 ms, and
+    # turning it off left whisper to segment a whole track by itself — which is how a
+    # word said at 13.061 s came back as `00:12 --> 00:21` in an 18-second file.
+    #
+    # The remedy is one segment per word, regrouped afterwards against the regions
+    # VAD measured. So the invariant is no longer "no VAD here" but "never VAD
+    # without the splitting", which is the combination that merges.
     two_track = jobs.make_job(src, model, str(out), "two", vad_model="/models/silero.bin",
                               tracks=[{"channel": 0, "label": "Me"},
                                       {"channel": 1, "label": "Them"}])
     both = " ".join(transcribe.whisper_command(two_track, Path("/tmp/a.wav")))
-    check("and none at all when two speakers have to be ordered against each other",
-          "--vad" not in both, both)
+    check("two speakers get vad as well", "--vad --vad-model /models/silero.bin" in both, both)
+    for name, line in (("one speaker", cmd), ("two speakers", both)):
+        check(f"and {name} never gets vad without word splitting",
+              "--vad" not in line or "--max-len 1 --split-on-word" in line, line)
+    check("nothing is asked to split when there is no vad to repair",
+          "--max-len" not in plain, plain)
+    # -np would silence the region lines the timestamps are rebuilt from.
+    check("and the regions are never suppressed", "-np" not in both.split(), both)
 
     vocab_job = jobs.make_job(src, model, str(out), "vocab", vocabulary=" Grafana, escalation  ")
     cmd = transcribe.whisper_command(vocab_job, Path("/tmp/a.wav"))
@@ -1274,6 +1287,43 @@ async def main() -> None:
         raise AssertionError("FAIL: paused something that was not recording")
     except record.Failed as exc:
         check("pausing nothing says so in a sentence", exc.message.endswith("."), exc.message)
+
+    print("words are put back where they were said")
+    # The exact shape of the fault, as measured: an 18-second file, "one" at 1.006 s
+    # and "five" at 13.061 s on one channel. VAD found both to within 100 ms; whisper
+    # then handed back a single segment covering the pair, and without VAD it invented
+    # `00:12 --> 00:21` — three seconds past the end of the recording.
+    lines = ("whisper_vad: vad_segment_info: orig_start: 0.96, orig_end: 1.44, "
+             "vad_start: 0.00, vad_end: 0.48\n"
+             "whisper_vad: vad_segment_info: orig_start: 13.09, orig_end: 13.47, "
+             "vad_start: 0.68, vad_end: 1.06\n")
+    regions_file = TMP / "regions.txt"
+    regions_file.write_text(lines)
+    found = transcribe.parse_regions(regions_file)
+    check("the regions whisper measured are read back", found == [(960, 1440), (13090, 13470)],
+          str(found))
+
+    # One segment per word, which is what --max-len 1 --split-on-word produces. The
+    # second word's end is deliberately absurd — whisper really does run a segment
+    # past the end of the audio it was given, and the region has to stop it.
+    words = [(1010, 1300, "One,"), (13120, 21000, "five.")]
+    said = transcribe.regroup(words, found)
+    check("each word goes back into its own region", len(said) == 2, str(said))
+    check("the first is where it was said", abs(said[0][0] - 1006) < 500, str(said[0]))
+    check("and so is the second", abs(said[1][0] - 13061) < 500, str(said[1]))
+    check("nothing ends after the recording does", said[1][1] <= 13470, str(said[1]))
+    check("and nothing spans the silence between them", said[0][1] < said[1][0], str(said))
+
+    # Two words inside one region are one sentence, not two.
+    together = transcribe.regroup([(1000, 1200, "One"), (1250, 1400, "two.")], [(960, 1440)])
+    check("words in one breath stay in one line", len(together) == 1
+          and together[0][2] == "One two.", str(together))
+    # A pause long enough to be a full stop splits, even inside a region.
+    apart = transcribe.regroup([(1000, 1200, "One"), (3000, 3200, "two.")], [(900, 4000)])
+    check("a long pause inside a region still splits", len(apart) == 2, str(apart))
+    # With nothing measured, the words are handed back untouched rather than moved.
+    check("no regions means nothing is invented",
+          transcribe.regroup(words, []) == words)
 
     print("the interface says everything in one language")
     page = (config.WEB_DIR / "index.html").read_text(encoding="utf-8")
