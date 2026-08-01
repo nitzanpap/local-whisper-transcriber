@@ -1169,8 +1169,13 @@ async def main() -> None:
     try:
         tools.MODEL_DIRS = (models_dir,)
         tools.find_models.cache_clear()
-        names = [m["name"] for m in tools.find_models()]
-        check("offers real models", "medium" in names, str(names))
+        found = tools.find_models()
+        names = [m["name"] for m in found]
+        # The catalogue's name for it, not the file's stem: what is offered to
+        # somebody choosing should read like a choice, not like a filename.
+        check("offers real models", "Medium" in names, str(names))
+        check("and says what that one is like",
+              found[0]["description"].startswith("Between"), str(found[0]))
         check("never offers the vad model as a transcriber", "silero-v5.1.2" not in names, str(names))
     finally:
         tools.MODEL_DIRS = real_model_dirs
@@ -1292,13 +1297,30 @@ async def main() -> None:
     # to be true. large-v3-turbo matched /large/ and read as the best model on the
     # machine; it is a faster, less accurate cut of large-v3, so the label sent
     # people to a slow choice for a wrong reason.
-    labels = (config.WEB_DIR / "settings.js").read_text(encoding="utf-8")
-    turbo = labels.index("turbo"), labels.index("[/large/,")
-    check("a turbo model is judged before a large one", turbo[0] < turbo[1], str(turbo))
-    words = (config.WEB_DIR / "i18n.js").read_text(encoding="utf-8")
-    for lang in ("en", "he"):
-        body = words.split(f"  {lang}: {{", 1)[1]
-        check(f"{lang} can say what a turbo model is", '"quality.goodFast"' in body)
+    # What a model is called is said by the catalogue, not guessed from its file
+    # name. The guess read `ggml-large-v3-turbo.bin` as the best model on the
+    # machine because "large" is in it — it is a faster, less accurate cut.
+    cat = json.loads(config.CATALOGUE.read_text(encoding="utf-8"))
+    check("the catalogue is generated, not hand-written",
+          "gen_models.py" in (Path("tools/gen_models.py").read_text()[:400]))
+    check("and pinned to a revision", len(cat.get("revision", "")) >= 20, str(cat.get("revision")))
+    for m in cat["models"]:
+        check(f"{m['id']} carries a size and a hash to check it by",
+              m["size_bytes"] > 1_000_000 and len(m["sha256"]) == 64, str(m)[:120])
+        check(f"and says what it is like in a sentence",
+              m["description"].endswith(".") and len(m["description"]) > 20, m["description"])
+    turbo = tools.describe("/x/ggml-large-v3-turbo.bin")
+    big = tools.describe("/x/ggml-large-v3.bin")
+    check("turbo is not called the best model there is",
+          turbo["accuracy"] < big["accuracy"] and turbo["speed"] > big["speed"], str(turbo))
+    check("but it is the one offered first", turbo["rank"] < big["rank"])
+    stranger = tools.describe("/x/ggml-somebody-elses.bin")
+    check("a model nobody knows keeps its name and claims nothing",
+          stranger["accuracy"] is None and stranger["rank"] == 999, str(stranger))
+    # Largest-first meant the interface preselected whatever was biggest, so a
+    # machine with Small and Large v3 defaulted to three slow gigabytes.
+    order = [tools.describe(f"/x/{m['filename']}")["rank"] for m in cat["models"]]
+    check("the catalogue orders by judgement, not by size", order == sorted(order), str(order))
 
     print("a bad byte does not cost somebody their settings")
     # This was live: a file that would not parse came back as {}, and the next save

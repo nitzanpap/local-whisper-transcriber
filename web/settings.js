@@ -29,31 +29,22 @@ const SETTING_FIELDS = {
 
 // How a model file names itself, and what that means to someone who did not
 // choose it. Anything unrecognised keeps its own name.
-// Order matters: the first match wins, so anything more specific comes first.
-// `large-v3-turbo` used to read as "best" purely because "large" is in its name —
-// it is a faster, less accurate cut of large-v3, and calling it the best model on
-// the machine sent people to the slowest choice for the worst reason.
-const QUALITY = [
-  [/large.*turbo/, "goodFast"],
-  [/large/, "best"],
-  [/medium/, "good"],
-  [/small/, "quick"],
-  [/base|tiny/, "roughest"],
-];
-
 const VAD_DOWNLOAD =
   "curl -L -o ~/whisper-models/ggml-silero-v5.1.2.bin " +
   "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin";
 
 let knownModels = [];
 
+// What a model is called and how big it is. The backend says which is which now,
+// from a catalogue shipped beside the code — this used to be a regex on the file
+// name here, and it read `ggml-large-v3-turbo.bin` as the best model on the
+// machine because "large" is in it. It is a faster, less accurate cut of Large v3,
+// so the label sent people to a slow choice for a wrong reason.
+//
+// Name and size only: three scripts on one line clips and reads badly, and the
+// description sits under the dropdown where there is room for it.
 function qualityLabel(model) {
-  const name = (model.name || "").toLowerCase();
-  const found = QUALITY.find(([pattern]) => pattern.test(name));
-  // Grade and size only: three scripts in one line clips and reads badly, and
-  // the file name is right there under Expert for anyone who wants it.
-  const grade = found ? t("quality." + found[1]) : model.name;
-  return found ? `${grade} · ${size(model.size)}` : `${model.name} · ${size(model.size)}`;
+  return `${model.name} · ${size(model.size)}`;
 }
 
 async function openSettings() {
@@ -74,9 +65,13 @@ async function openSettings() {
     .map(m => `<option value="${escAttr(m.path)}">${escAttr(qualityLabel(m))}</option>`)
     .join("") || `<option value="">${escAttr(t("set.noModels"))}</option>`;
   $("set-quality").value = chosen;
-  $("model-help").textContent = knownModels.length
-    ? t("set.modelFound")
-    : t("set.modelMissing");
+  // What the chosen model is actually like, in a sentence, from the catalogue.
+  // Better than "found 2 models": the question somebody has here is whether the
+  // one selected is the right one, and a file name cannot answer it.
+  const picked = knownModels.find(m => m.path === chosen);
+  $("model-help").textContent = !knownModels.length ? t("set.modelMissing")
+    : (picked && picked.description) ? picked.description
+    : t("set.modelFound");
 
   // A model ships with the app, so this is normally ready without anybody doing
   // anything. The download line is kept for a build that somehow has none.
