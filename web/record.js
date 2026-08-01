@@ -41,7 +41,13 @@ function recOptions(select, devices, chosen, preferLoopback) {
   // For the voice, the machine's own default input before anything else. Taking
   // the first device in the list instead is what once put a Bluetooth headset on
   // somebody's voice channel and recorded nothing at all from it.
+  //
+  // For the computer, our own tap before any other loopback. A machine with Teams
+  // or Zoom installed lists their drivers too, and those carry audio only while
+  // those apps route into them — so guessing one of those recorded a channel of
+  // digital silence and said nothing was wrong.
   const guess = (!preferLoopback && devices.find(d => d.default && !d.loopback))
+    || (preferLoopback && devices.find(d => d.loopback && d.builtin))
     || devices.find(d => (preferLoopback ? d.loopback : !d.loopback));
   select.value = guess ? guess.id : NONE;
 }
