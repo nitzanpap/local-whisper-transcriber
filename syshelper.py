@@ -30,6 +30,10 @@ HELPER_DENIED = 3
 # The helper's own meter, once a second, so the computer's side has one too.
 # The helper captures both sides now, so it says which one it is speaking for.
 HELPER_LEVEL = re.compile(r"syscapture: (\w+) level (-?\d+(?:\.\d+)?) frames (\d+)")
+# Which output device the tap was built on, said once at startup. The tap stays
+# on it for the life of the recording, so this is what a computer side that went
+# deaf halfway is diagnosed against.
+HELPER_OUTPUT = re.compile(r"syscapture: output (.+)$")
 # Digital zero, which the helper reports as -120 and no real signal ever reaches.
 # Frames arriving with nothing in them at all is what a refused tap looks like;
 # frames not arriving is only a quiet machine.

@@ -53,7 +53,7 @@ from levels import (DIGITAL_SILENCE, EBUR128_M, EMPTY_WAV, PEAK, _captured_bytes
                     _heard, stalled_sides)
 from mixing import capture_commands, helper_takes, helper_takes_the_microphone
 from saving import _checkpoint, _failed, _finish, _stamp
-from syshelper import HELPER_LEVEL, SYSTEM_AUDIO
+from syshelper import HELPER_LEVEL, HELPER_OUTPUT, SYSTEM_AUDIO
 
 # The one being made, if any. Its whole life happens in TASK.
 RECORDING: dict | None = None
@@ -199,6 +199,10 @@ async def start(voice: str, computer: str) -> dict:
     for key, side in (("record_voice_device", "voice"),
                       ("record_computer_device", "computer")):
         name = name_for(rec[side], known)
+        # Kept on the recording as well as in settings. An id on its own is what
+        # the Teams-loopback fault looked like from outside: a stored string
+        # nobody could read as "that is not the computer's audio at all".
+        rec.setdefault("device_names", {})[side] = name
         if name:
             remember[key] = name
     if remember:
@@ -324,11 +328,21 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
             line = raw.decode("utf-8", "replace").rstrip()
             if not line:
                 continue
+            said = HELPER_OUTPUT.search(line)
+            if said:
+                rec["output_device"] = said.group(1)
             found = HELPER_LEVEL.search(line)
             if found:
                 # Kept out of the log, like ffmpeg's: ten lines a second would
                 # bury everything worth reading.
                 side, level = found.group(1), float(found.group(2))
+                # The one place a helper-captured side can be seen to still be
+                # arriving. Without this the live "gone quiet" warning was wired
+                # only to the ffmpeg reader — and on macOS the helper captures
+                # both sides, so nothing on this machine could ever trip it. A tap
+                # that died when the output device changed went unmentioned for
+                # 75 seconds of a 132-second recording; see docs/TRAPS.md.
+                _heard(rec, side, already_padded=True)
                 rec.setdefault("live", {})[side] = level
                 # The helper only speaks when frames actually arrived, so this is
                 # the one honest record that sound ever reached it — its files now

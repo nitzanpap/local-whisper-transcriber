@@ -30,6 +30,7 @@ import library  # noqa: E402
 import devices  # noqa: E402
 import levels  # noqa: E402
 import mixing  # noqa: E402
+import diagnostics  # noqa: E402
 import record  # noqa: E402
 import retention  # noqa: E402
 import saving  # noqa: E402
@@ -1692,6 +1693,77 @@ async def main() -> None:
     jobs.sweep_work_dirs()
     check("stale scratch removed", not stale.exists())
     check("live scratch kept", fresh.exists())
+
+    print("a stall is noticed on the path macOS actually uses")
+    # The live "gone quiet" warning read rec["moved"], which only _drain — the
+    # ffmpeg reader — ever wrote. On macOS the Swift helper captures both sides,
+    # so nothing on this machine could trip it: a tap that died 57 seconds into a
+    # 132-second recording was never mentioned. Found by ear, twice.
+    stalling = {"log": [], "moved": {"computer": time.monotonic() - 5.0},
+                "heard": {"computer": 3.0}}
+    levels._heard(stalling, "computer", already_padded=True)
+    check("a helper side that went quiet is recorded as a stall",
+          [side for side in stalling["stalls"]] == ["computer"])
+    check("and it says so in the log", any("handed over nothing" in line
+                                           for line in stalling["log"]))
+    # The helper keeps its own clock and writes the silence it missed as it goes.
+    # Recording a gap here would have _pad_gaps insert that silence a second time
+    # and push everything after it out of place.
+    check("but no padding is asked for, because the helper already did it",
+          "gaps" not in stalling)
+    ffmpeg_side = {"log": [], "moved": {"voice": time.monotonic() - 5.0}, "heard": {"voice": 3.0}}
+    levels._heard(ffmpeg_side, "voice")
+    check("an ffmpeg side still asks to be padded", "gaps" in ffmpeg_side)
+    check("and both routes agree it stalled", "stalls" in ffmpeg_side)
+    check("the warning can now see a helper side",
+          levels.stalled_sides({"moved": {"computer": time.monotonic() - 5.0}}) == ["computer"])
+
+    print("what a recording writes down about itself")
+    # Every fault so far was diagnosed by hand from the file afterwards, because
+    # what the app knew at the time was thrown away. These are the questions that
+    # actually cost time.
+    quiet_then_loud = [-120.0] * 20 + [-30.0] * 50 + [-120.0] * 30
+    check("silence at the ends is not a hole", diagnostics.holes(quiet_then_loud) == [])
+    broken = [-120.0] * 10 + [-30.0] * 20 + [-120.0] * 15 + [-30.0] * 20 + [-120.0] * 10
+    found = diagnostics.holes(broken)
+    check("a silence with sound on both sides is", len(found) == 1, str(found))
+    check("timed from where it starts", found[0]["at"] == 3.0, str(found))
+    check("and measured", found[0]["seconds"] == 1.5, str(found))
+    check("a blink between two sounds is not worth reporting",
+          diagnostics.holes([-30.0] * 10 + [-120.0] * 2 + [-30.0] * 10) == [])
+    check("nothing at all has no holes to report", diagnostics.holes([-120.0] * 40) == [])
+
+    saved = {"id": "abc123", "path": str(TMP / "nope.m4a"), "started_at": 1.0,
+             "status": "saved", "devices": ["0", "system"], "voice": "0",
+             "computer": "system", "device_names": {"voice": "Built-in", "computer": "system"},
+             "output_device": "SpeakerUID", "sources": ["voice", "computer"],
+             "labels": ["Me", "Them"], "log": ["# something happened"],
+             "stalls": {"computer": [(3.0, 14.2)]}, "helper_code": 0, "helper": "/x"}
+    told = diagnostics.about(saved)
+    check("the devices are written by name as well as by id",
+          told["devices"]["computer"]["name"] == "system"
+          and told["devices"]["voice"]["name"] == "Built-in", str(told["devices"]))
+    check("which output the tap was built on is kept",
+          told["output_device"] == "SpeakerUID")
+    check("so are the stalls seen while recording",
+          told["stalls_seen"] == {"computer": [[3.0, 14.2]]}, str(told["stalls_seen"]))
+    check("and the log, which used to die with the scratch directory",
+          told["log"] == ["# something happened"])
+    was_file = diagnostics.RECORDINGS
+    try:
+        diagnostics.RECORDINGS = TMP / "recordings.jsonl"
+        diagnostics.remember(saved)
+        check("it survives a round trip", diagnostics.recent()[0]["id"] == "abc123")
+        for n in range(30):
+            diagnostics.remember({**saved, "id": f"n{n}"})
+        diagnostics.trim(keep=10)
+        check("and the file does not grow without limit", len(diagnostics.recent(100)) == 10,
+              str(len(diagnostics.recent(100))))
+        # A diagnostic that can lose somebody's meeting is worse than none.
+        diagnostics.remember({"path": object()})     # not serialisable on purpose
+        check("an unwritable record is swallowed rather than raised", True)
+    finally:
+        diagnostics.RECORDINGS = was_file
 
     print("a recording keeps its two speakers however it is transcribed")
     # The fault this covers shipped for weeks and hid in plain sight: two-track

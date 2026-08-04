@@ -134,6 +134,24 @@ toggle.
       channel came back with no gaps at all.
 - [ ] **Orphan durations assume 48 kHz.** The microphone is recorded at whatever rate it offers now,
       so the length shown for a recovered recording is wrong.
+- [ ] **The tap is nailed to whichever output device was default at the start.** `syscapture.swift`
+      reads `defaultOutputUID()` once and builds the aggregate around it; there is no property
+      listener anywhere in the file. Move the machine's output afterwards — headphones plugged in,
+      a headset chosen, macOS following a device whose microphone was selected — and the tap goes
+      on listening to something nothing is playing through and delivers silence with no error.
+      Measured on `2026-08-04 02.29.m4a`: two stutters, a 14.2 s hole, then permanent silence at
+      57 s of a 132 s recording, with the voice channel clean throughout. The same fault is in
+      `2026-08-02 01.14.m4a`, an 11.1 s hole, which was wrongly explained away as a pause.
+      **The fix is to follow the default output device rather than pin to one**, and the same
+      disease is on the input side and behind "Default as a device choice" below: this project
+      resolves a device once and binds to it, everywhere.
+
+- [x] **A stall on the path macOS actually uses was invisible.** `_heard` was called only from
+      `_drain`, the ffmpeg reader, and on macOS the helper captures both sides — so `rec["moved"]`
+      was never written and the live "gone quiet" warning could not fire at all. Now called from
+      `_drain_helper` too, with `already_padded=True` so the helper's own silence is not inserted
+      a second time.
+
 - [ ] **A source that dies is survived but never reopened.** A Bluetooth microphone that drops and
       comes back leaves a hole for the rest of the meeting. Narrower than it was: a source that
       merely goes quiet — a sleep, or nothing playing — now keeps its place in time, so this is

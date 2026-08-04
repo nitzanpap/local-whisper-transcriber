@@ -290,7 +290,34 @@ rebuild and so was genuinely refused as well — two faults, and the loud one wa
 not the one that made the recording. Splitting the file per channel with
 `volumedetect` is what separated them.
 
-## 16. This project's own tooling
+## 16. Ask the app before measuring the file
+
+Three faults in a row were diagnosed by hand — a person listening, an agent
+measuring the recording afterwards — and all three were questions the app knew
+the answer to and had thrown away.
+
+- *Which device was actually opened?* Never written down. The Teams-loopback
+  fault (§15) cost hours because the answer was one unreadable id in settings.
+- *How many tracks did the job have?* One line of `history.jsonl`. Instead an
+  evening went on levels, dropouts, bandwidth, modulation depth and spectrograms
+  of an audio file that turned out to be perfect (§14).
+- *Are there holes in this channel?* Never asked at all. Found by ear, twice.
+
+`diagnostics.py` writes a line per recording to `recordings.jsonl` now — devices
+by name *and* id, which output the tap was built on, the levels, the stalls seen
+live, holes measured in the finished file, the helper's exit code, and the log
+that used to die with the scratch directory. `tools/diagnose.py` prints it, and
+leads with the three questions above because those are the ones that go wrong.
+
+**Run it first.** `python3 tools/diagnose.py` before measuring anything by hand.
+`--backfill` reconstructs what is still recoverable from recordings made before
+any of this existed; `--all` lists every recording with a clean/holes verdict.
+
+**The general rule this is an instance of:** when a diagnosis needs a fact that
+only existed at the moment of the fault, that fact is not a debugging detail, it
+is part of the feature. Write it down while it is knowable.
+
+## 17. This project's own tooling
 
 - **The suite runs against fake `ffmpeg` and `whisper-cli` stubs.** `ffprobe` echoes
   `123.5` for every duration. Any check that needs real audio must locate the real
@@ -307,7 +334,7 @@ not the one that made the recording. Splitting the file per channel with
   point. This orphaned an `afplay` that kept playing and a recording that kept
   running. `bash -n` passes before and after and cannot see it.
 
-## 17. Things an agent working here cannot do
+## 18. Things an agent working here cannot do
 
 - **Screen capture and assistive access are both blocked.** `screencapture` fails
   with "could not create image from display", and System Events refuses with
@@ -324,7 +351,7 @@ not the one that made the recording. Splitting the file per channel with
   the menu can then only be reached by right-click, which on a trackpad means two
   fingers, and control-click does not reach it either.
 
-## 18. How to measure this app
+## 19. How to measure this app
 
 The methods that produced every real answer, so they can be reused:
 

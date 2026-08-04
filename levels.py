@@ -117,8 +117,14 @@ HEARD_PER_LINE = 0.1
 STALL = 2.0
 
 
-def _heard(rec: dict, side: str) -> None:
+def _heard(rec: dict, side: str, already_padded: bool = False) -> None:
     """A tenth of a second more audio, and a note if the wall clock ran on without it.
+
+    `already_padded` is for the sides the Swift helper captures, which is both of
+    them on macOS. The helper keeps its own clock and writes the silence it missed
+    as it goes, so a gap recorded here would be inserted a *second* time later by
+    `_pad_gaps` and push everything after it out of place. The stall is still worth
+    noticing and saying out loud — it just needs no repair.
 
     This is how a stall is caught. A recording left open across a sleep came back
     31 seconds short of the 70 seconds it was open for: both captures kept their
@@ -138,11 +144,18 @@ def _heard(rec: dict, side: str) -> None:
     if last is not None:
         missed = (now - last) - HEARD_PER_LINE
         if missed >= STALL:
-            rec.setdefault("gaps", {}).setdefault(side, []).append(
+            rec.setdefault("stalls", {}).setdefault(side, []).append(
                 (round(heard, 3), round(missed, 3)))
-            rec["log"].append(
-                f"# the {side} capture handed over nothing for {missed:.1f}s; that "
-                "silence goes back in before the recording is saved")
+            if already_padded:
+                rec["log"].append(
+                    f"# the {side} capture handed over nothing for {missed:.1f}s; it "
+                    "keeps its own clock, so the silence is already in the right place")
+            else:
+                rec.setdefault("gaps", {}).setdefault(side, []).append(
+                    (round(heard, 3), round(missed, 3)))
+                rec["log"].append(
+                    f"# the {side} capture handed over nothing for {missed:.1f}s; that "
+                    "silence goes back in before the recording is saved")
     rec["moved"][side] = now
     rec["heard"][side] = heard + HEARD_PER_LINE
 

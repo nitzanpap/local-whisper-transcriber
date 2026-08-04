@@ -28,6 +28,7 @@
       "../../library.py": "backend/library.py",
       "../../models.py": "backend/models.py",
       "../../models.json": "backend/models.json",
+      "../../diagnostics.py": "backend/diagnostics.py",
       "../../record.py": "backend/record.py",
       "../../selfcheck.py": "backend/selfcheck.py",
       "../../saving.py": "backend/saving.py",

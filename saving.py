@@ -26,6 +26,7 @@ import uuid
 from collections import deque
 from pathlib import Path
 
+import diagnostics
 import jobs
 import retention
 import watch
@@ -221,6 +222,12 @@ async def _save(rec: dict) -> None:
         gone = await asyncio.to_thread(retention.prune, Path(rec["folder"]), keep, busy)
         if gone:
             rec["log"].append(f"# keeping the last {keep}, so these went: " + ", ".join(gone))
+    # Written down before the scratch directory takes the log with it. Everything
+    # this project has diagnosed by hand was knowable here and thrown away one
+    # line later; see the note at the top of diagnostics.py. Off the loop because
+    # it reads the whole recording back, and never allowed to fail the save.
+    await asyncio.to_thread(diagnostics.remember, rec)
+    await asyncio.to_thread(diagnostics.trim)
     # The WAV has served its purpose; the .m4a is out of scratch and safe.
     shutil.rmtree(rec["work"], ignore_errors=True)
 

@@ -51,6 +51,12 @@ func fail(_ message: String, _ code: Int32 = 1) -> Never {
     exit(code)
 }
 
+/// The same channel as `fail`, without the dying. Everything written here ends up
+/// in the recording's log and then in its diagnostic record.
+func note(_ message: String) {
+    FileHandle.standardError.write(Data("syscapture: \(message)\n".utf8))
+}
+
 /// The UID of whatever the machine is playing through right now. The tap has to
 /// hang off a real output device, and that is the one carrying the meeting.
 func defaultOutputUID() -> String? {
@@ -499,6 +505,16 @@ let sink = tapSink!
 guard let outputUID = defaultOutputUID() else {
     fail("no default output device to tap", 2)
 }
+
+// Said out loud, because it is the one fact about a recording that nothing else
+// can recover afterwards and that explains a whole class of failure. The tap is
+// built on this device and stays on it for the life of the recording: if the
+// machine's output moves — headphones plugged in, a headset chosen, macOS
+// following a device whose microphone was selected — the tap goes on listening to
+// something nothing is playing through, and delivers silence with no error at
+// all. A recording whose computer side went deaf halfway is diagnosed in one line
+// by comparing this against what the machine's default output is now.
+note("output \(outputUID)")
 
 // A global tap: everything the machine is playing. Nothing is excluded, which is
 // what the ScreenCaptureKit version amounted to as well — it excluded the helper
