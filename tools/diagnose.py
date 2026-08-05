@@ -136,6 +136,10 @@ def full(rec: dict) -> None:
     else:
         print(f"\n  {DIM}no padding figures — recorded before the capture reported them{OFF}")
 
+    for side, where in (rec.get("rescued") or {}).items():
+        print(f"  {GREEN}what actually arrived on the {side} side was kept as "
+              f"{Path(where).name}{OFF}")
+
     print(f"\n{BOLD}channels{OFF}")
     for side, report in (rec.get("channels") or {}).items():
         if not report.get("measured"):

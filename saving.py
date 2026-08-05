@@ -33,7 +33,8 @@ import watch
 from config import (DEFAULT_EXTRA, Failed, MAX_LOG, RECORDING_PREFIX,
                     TRANSCRIPT_SUFFIX, WORK_DIR, recording_config, settings)
 from levels import (EMPTY_WAV, LOW_SNR, _captured_bytes, captured_sources,
-                    channel_levels, channel_snr, noisy_sides, silent_sides)
+                    channel_levels, channel_snr, noisy_sides, padded_sides,
+                    silent_sides)
 from mixing import mix_command, pad_command
 from syshelper import HELPER_DENIED, SYSTEM_AUDIO
 from tools import binary, capture
@@ -157,6 +158,49 @@ def _why_nothing_arrived(rec: dict) -> tuple[str, str]:
                                 "The process log below says what it reported.")
 
 
+async def _keep_what_arrived(rec: dict) -> None:
+    """Save the unpadded copy of any side that padded too much to be usable.
+
+    The helper writes every side twice: once padded to the clock, which is the
+    recording, and once as only what the device handed over. The second is thrown
+    away with the scratch directory nearly always, and rightly — it is the same
+    audio and half the point of the padding is that timestamps survive a pause.
+
+    It is kept when a side padded past `LOW_SNR`’s sibling threshold, because
+    then the padding is not standing in for a pause, it is standing in for the
+    meeting. Measured on the one that made this necessary: a two-hour client call
+    where the computer side ran at 14-28% padding and came back as speech chopped
+    into fragments, unintelligible and untranscribable, with nothing to go back to.
+    This is that something to go back to. The timing in it is wrong — everything
+    that never arrived is simply absent — but the words are there, which is the
+    part that could not be recovered any other way.
+    """
+    for side in padded_sides(rec.get("padding") or {}):
+        source = rec.get("voice_pcm" if side == "voice" else "sys_pcm")
+        raw = Path(str(source) + ".raw") if source else None
+        if raw is None or not raw.is_file() or raw.stat().st_size <= EMPTY_WAV:
+            continue
+        share = (rec["padding"][side] or {}).get("fraction", 0)
+        kept = _unique(Path(rec["folder"]) /
+                       f"{rec['basename']} ({side} as it arrived).m4a")
+        cmd = [binary("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+               "-f", "s16le", "-ar", "48000", "-ac", "1", "-i", str(raw),
+               "-c:a", "aac", "-b:a", "96k", str(kept)]
+        try:
+            code, _ = await capture(cmd, timeout=1800)
+        except (Failed, OSError) as exc:
+            rec["log"].append(f"# the unpadded {side} copy could not be saved: {exc}")
+            continue
+        if code != 0 or not kept.is_file():
+            rec["log"].append(f"# the unpadded {side} copy could not be saved")
+            continue
+        rec.setdefault("rescued", {})[side] = str(kept)
+        rec["log"].append(
+            f"# {share * 100:.0f}% of the {side} side was padding, so what actually arrived "
+            f"was kept beside the recording as {kept.name} — the timing in it is wrong "
+            f"and the words are not")
+
+
 async def _save(rec: dict) -> None:
     """Turn the scratch WAV into the .m4a that gets kept, and queue it."""
     rec["status"] = "saving"
@@ -174,6 +218,7 @@ async def _save(rec: dict) -> None:
     # whether the transcript will be any good — measured, the difference between a
     # full transcript and a single word. Said now, while there is still a next
     # meeting to move the microphone for; nothing done afterwards can add it back.
+    await _keep_what_arrived(rec)
     rec["snr"] = await channel_snr(rec["wav"], sources)
     rec["noisy"] = [side for side in noisy_sides(rec["snr"]) if side not in rec["quiet"]]
     for side in rec["noisy"]:

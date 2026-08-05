@@ -279,6 +279,32 @@ refusal, and it is said at the end of a recording on purpose: this is the last
 moment anybody can still move the microphone before the next meeting, and nothing
 done to the audio afterwards can add back what was never there.
 
+## 4b. Every side is written twice, and why
+
+`Sink` writes each side to two files. `<side>.pcm` is padded to the clock and is
+the recording; `<side>.pcm.raw` is only what the device actually handed over.
+
+The padding is right and stays. Without it a pause is cut out rather than kept,
+every word after it carries a timestamp earlier than the moment it was said, and
+the two channels drift apart from each other — measured once at 31 seconds
+missing from a 70-second recording.
+
+But padding is a *transformation*, and it was the only copy. A two-hour client
+call came back with the other side chopped into unintelligible fragments: the tap
+delivered roughly half its samples, `catchUp` faithfully wrote silence in place of
+the rest, and there was nothing to go back to. The words were not recoverable
+because the only file that had ever held them had silence spliced through it.
+
+So the raw copy exists, and it is thrown away with the scratch directory in the
+ordinary case — it is the same audio, and the padded version is the better one.
+It is **kept** when a side padded past `levels.TOO_MUCH_PADDING`, encoded beside
+the recording as `<name> (<side> as it arrived).m4a`. Its timing is wrong, because
+everything that never arrived is simply absent from it, and it says so in the log.
+The words are there, which is the part nothing else could recover.
+
+**The rule worth carrying past this feature:** never let a transformation be the
+only copy of something a person cannot make again.
+
 ## 5. What belongs on screen while it records
 
 Most of the PRD's complaint here has since been answered: there is a clock, a size, a level meter

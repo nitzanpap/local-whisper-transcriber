@@ -134,6 +134,13 @@ toggle.
       channel came back with no gaps at all.
 - [ ] **Orphan durations assume 48 kHz.** The microphone is recorded at whatever rate it offers now,
       so the length shown for a recovered recording is wrong.
+- [x] **A fault in the padding could lose a meeting, and did.** `Sink` writes each side twice
+      now: padded to the clock, which is the recording, and raw, which is only what the device
+      handed over. The raw copy goes with the scratch directory in the ordinary case and is kept
+      beside the recording when a side padded past the threshold. Its timing is wrong and its
+      words are not, which is the half that could not be recovered from the client call. See
+      `docs/RECORDING.md` §4b — never let a transformation be the only copy.
+
 - [ ] **The tap loses audio from some applications and not others, on the same output device.**
       A real two-hour client meeting: Zoom for the first half, Google Meet for the second, the
       same Bluetooth headphones throughout, the client heard clearly the whole time. Zoom's audio

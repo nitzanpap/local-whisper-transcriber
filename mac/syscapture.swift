@@ -133,6 +133,12 @@ func rightNow() -> UInt64 { clock_gettime_nsec_np(CLOCK_MONOTONIC) }
 /// other. Measured once at 31 seconds missing from a 70-second recording.
 final class Sink {
     private let fd: Int32
+    // The same audio again, with none of the padding: only what the device
+    // actually handed over. It exists because padding is a transformation and this
+    // class used to write it as the only copy — so when the padding turned out to
+    // be standing in for half a client meeting, there was nothing left to go back
+    // to. Whatever else is wrong, what arrived is still here.
+    private let rawFd: Int32
     private let lock = NSLock()
     private(set) var gone = false
     private var started: UInt64 = 0
@@ -159,8 +165,9 @@ final class Sink {
 
     private let name: String
 
-    init(fd: Int32, name: String = "capture") {
+    init(fd: Int32, rawFd: Int32, name: String = "capture") {
         self.fd = fd
+        self.rawFd = rawFd
         self.name = name
     }
 
@@ -202,6 +209,7 @@ final class Sink {
         guard started != 0, pausedAt == 0 else { lock.unlock(); return }
         catchUp()
         put(samples)
+        put(samples, to: rawFd)
         written += samples.count
         // Said once, when sound comes back, rather than once a second while it is
         // away: the app keeps the last 120 lines of this, and a meeting full of
@@ -259,15 +267,16 @@ final class Sink {
     }
 
     /// Caller holds the lock.
-    private func put(_ samples: UnsafeBufferPointer<Int16>) {
-        guard var p = UnsafeRawPointer(samples.baseAddress) else { return }
+    private func put(_ samples: UnsafeBufferPointer<Int16>, to target: Int32? = nil) {
+        let out = target ?? fd
+        guard out >= 0, var p = UnsafeRawPointer(samples.baseAddress) else { return }
         var left = samples.count * MemoryLayout<Int16>.size
         while left > 0 {
             // write(2) rather than FileHandle.write, which raises an Objective-C
             // exception on a broken pipe that Swift cannot catch — the process
             // simply dies. And a broken pipe is the normal end of every recording:
             // ffmpeg reaches its -t limit or is stopped, and stops reading.
-            let n = Darwin.write(fd, p, left)
+            let n = Darwin.write(out, p, left)
             if n > 0 {
                 p += n
                 left -= n
@@ -276,7 +285,9 @@ final class Sink {
             // EINTR is worth retrying; anything else means the reader is gone and
             // there is nothing useful left to do with these samples.
             if n < 0 && errno == EINTR { continue }
-            gone = true
+            // Only the padded stream going away ends the recording. The raw copy is
+            // insurance, and insurance must never be what stops the capture.
+            if out == fd { gone = true }
             return
         }
     }
@@ -397,7 +408,12 @@ signal(SIGPIPE, SIG_IGN)
 func openSink(_ path: String, _ name: String) -> Sink {
     let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
     if fd < 0 { fail("cannot write to \(path)", 2) }
-    return Sink(fd: fd, name: name)
+    // Beside it, derived rather than asked for, so the caller needs no new
+    // argument and an older caller still works. If this one cannot be opened the
+    // recording goes ahead without it: insurance is not worth a meeting.
+    let raw = open(path + ".raw", O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+    if raw < 0 { note("no raw copy of \(name); recording anyway") }
+    return Sink(fd: fd, rawFd: raw, name: name)
 }
 
 // Named the way the meter names them, so one side's padding and one side's level

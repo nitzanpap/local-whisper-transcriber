@@ -167,6 +167,10 @@ def about(rec: dict) -> dict:
         # What the helper itself said it was writing in place of audio. Ground
         # truth: nothing that reads the finished file can recover this.
         "padding": rec.get("padding") or {},
+        # Where the unpadded copy went, for a side that padded so much the
+        # recording is not usable. The only thing standing between a fault in
+        # the padding and a meeting nobody can get back.
+        "rescued": rec.get("rescued") or {},
         "levels": rec.get("levels") or {},
         "snr": rec.get("snr") or {},
         "quiet": rec.get("quiet") or [],

@@ -1745,6 +1745,58 @@ async def main() -> None:
     check("a level line is not mistaken for one",
           syshelper.HELPER_PADDING.search("syscapture: computer level -21.0 frames 4800") is None)
 
+    print("what actually arrived is kept when the padding took over")
+    # The change this covers is the difference between losing a meeting and being
+    # inconvenienced by one. The helper writes each side twice — padded to the
+    # clock, which is the recording, and raw, which is only what the device handed
+    # over — and the raw copy is thrown away with the scratch directory unless the
+    # padding got out of hand. A two-hour client call was lost because the padded
+    # copy was the only copy and half of it was padding.
+    rescue = TMP / "rescue"
+    rescue.mkdir(exist_ok=True)
+    if real_ffmpeg:
+        # Real audio, so the encode either works or the check says so.
+        raw = rescue / "computer.pcm.raw"
+        subprocess.run([real_ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                        "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+                        "-ar", "48000", "-ac", "1", "-f", "s16le", str(raw)], check=True)
+        base = {"folder": str(rescue), "basename": "2026-01-01 09.00",
+                "sys_pcm": rescue / "computer.pcm", "voice_pcm": rescue / "voice.pcm",
+                "log": []}
+
+        losing = {**base, "padding": {"computer": {"fraction": 0.28, "seconds": 10, "of": 36}}}
+        await saving._keep_what_arrived(losing)
+        kept = losing.get("rescued", {}).get("computer")
+        check("a side that padded 28% has what arrived kept beside the recording",
+              bool(kept) and Path(kept).is_file(), str(losing.get("rescued")))
+        check("named so it cannot be mistaken for the recording",
+              bool(kept) and "as it arrived" in Path(kept).name, str(kept))
+        check("and the log says the timing in it is wrong",
+              any("timing in it is wrong" in line for line in losing["log"]))
+        check("what was kept is real audio, not an empty file",
+              bool(kept) and Path(kept).stat().st_size > 2048)
+
+        healthy = {**base, "log": [], "padding": {"computer": {"fraction": 0.001}}}
+        await saving._keep_what_arrived(healthy)
+        check("an ordinary recording keeps no second copy", "rescued" not in healthy)
+
+        # Insurance must never be what fails a recording.
+        missing = {**base, "log": [], "sys_pcm": rescue / "not-there.pcm",
+                   "padding": {"computer": {"fraction": 0.5}}}
+        await saving._keep_what_arrived(missing)
+        check("a raw copy that is not there is not an error", "rescued" not in missing)
+    else:
+        check("skipped: this machine has no real ffmpeg", True)
+    # The helper has to actually write it, or none of the above ever runs.
+    swift = Path("mac/syscapture.swift").read_text()
+    check("the helper opens a raw file beside the padded one",
+          'open(path + ".raw"' in swift)
+    check("and writes real audio to both", "put(samples, to: rawFd)" in swift)
+    check("but never padding to the raw one",
+          swift.count("silence.withUnsafeBufferPointer") == 1)
+    check("and a raw copy that cannot be written does not stop the recording",
+          "if out == fd { gone = true }" in swift)
+
     print("what a recording writes down about itself")
     # Every fault so far was diagnosed by hand from the file afterwards, because
     # what the app knew at the time was thrown away. These are the questions that
