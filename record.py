@@ -50,10 +50,10 @@ from config import (Failed, MAX_LOG, RECORDING_PREFIX, WORK_DIR, recording_confi
                     save_settings)
 from devices import devices, known_inputs, name_for
 from levels import (DIGITAL_SILENCE, EBUR128_M, EMPTY_WAV, PEAK, _captured_bytes,
-                    _heard, stalled_sides)
+                    _heard, padded_sides, stalled_sides)
 from mixing import capture_commands, helper_takes, helper_takes_the_microphone
 from saving import _checkpoint, _failed, _finish, _stamp
-from syshelper import HELPER_LEVEL, HELPER_OUTPUT, SYSTEM_AUDIO
+from syshelper import HELPER_LEVEL, HELPER_OUTPUT, HELPER_PADDING, SYSTEM_AUDIO
 
 # The one being made, if any. Its whole life happens in TASK.
 RECORDING: dict | None = None
@@ -331,6 +331,14 @@ async def _drain_helper(rec: dict, proc: asyncio.subprocess.Process) -> None:
             said = HELPER_OUTPUT.search(line)
             if said:
                 rec["output_device"] = said.group(1)
+            filling = HELPER_PADDING.search(line)
+            if filling:
+                side, padded, elapsed = (filling.group(1), float(filling.group(2)),
+                                         float(filling.group(3)))
+                rec.setdefault("padding", {})[side] = {
+                    "seconds": round(padded, 1), "of": round(elapsed, 1),
+                    "fraction": round(padded / elapsed, 4) if elapsed else 0.0}
+                continue
             found = HELPER_LEVEL.search(line)
             if found:
                 # Kept out of the log, like ffmpeg's: ten lines a second would
@@ -745,6 +753,10 @@ def public() -> dict | None:
         # which of the two it was without knowing how they were arranged.
         "levels": rec.get("levels") or {}, "quiet": rec.get("quiet") or [],
         "snr": rec.get("snr") or {}, "noisy": rec.get("noisy") or [],
+        # Said while it is still happening, which is the whole point of it.
+        "padding": rec.get("padding") or {},
+        "losing": padded_sides(rec.get("padding") or {})
+        if rec["status"] == "recording" and not rec.get("checking") else [],
         # What each source is hearing right now, in LUFS, while it records.
         "live": rec.get("live") or {},
         # Sides that were asked for and are producing nothing at all. Given a few

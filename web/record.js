@@ -277,6 +277,17 @@ function renderRecording(rec, orphans, settings) {
       $("rec-stalled-what").textContent =
         stalled.map(side => t("rec.stalled." + side)).join("\n\n");
     }
+    // A side that is arriving but arriving broken. Different from both of the
+    // above and worse than either: the meter moves, the file grows, and what is
+    // being written is silence standing in for audio that never came. Two hours
+    // of a client meeting were lost to this with nothing on screen at all.
+    const losing = (rec.losing || []).filter(side => !dead.includes(side));
+    show($("rec-losing"), losing.length > 0);
+    if (losing.length) {
+      $("rec-losing-what").textContent = losing.map(side =>
+        t("rec.losing." + side,
+          { pct: Math.round(((rec.padding || {})[side] || {}).fraction * 100) })).join("\n\n");
+    }
     $("rec-stop").disabled = rec.status !== "recording";
     $("rec-throw").disabled = rec.status !== "recording";
   }

@@ -86,6 +86,13 @@ const STRINGS = {
       "check that macOS has allowed the microphone and that the right input is selected.",
     "rec.notArriving.computer": "The capture of your computer's audio has stopped. " +
       "Whatever it plays from now on will not be in the recording.",
+    "rec.losingTitle": "This side is losing audio",
+    "rec.losing.voice": "{pct}% of your microphone track is silence written in place of audio " +
+      "that never arrived. Speech chopped like this cannot be transcribed. Stop, change what is " +
+      "producing the sound, and start again — nothing after this point is recoverable.",
+    "rec.losing.computer": "{pct}% of the computer's track is silence written in place of audio " +
+      "that never arrived. The sound is reaching your speakers but not this app. Stop and start " +
+      "again — and if a meeting app is playing it, try leaving and rejoining the call.",
     "rec.stalledTitle": "This has gone quiet",
     "rec.stalled.voice": "Your microphone was working and has stopped handing anything " +
       "over. The recording is still running and will pick it up again by itself — the " +
@@ -369,6 +376,13 @@ const STRINGS = {
       "רגע שקט זה יסתדר — אבל אם זה נשאר, בדקו שיש הרשאת מיקרופון ושנבחר הקלט הנכון.",
     "rec.notArriving.computer": "הקליטה של האודיו מהמחשב נעצרה. כל מה שיתנגן מכאן " +
       "והלאה לא ייכנס להקלטה.",
+    "rec.losingTitle": "הצד הזה מאבד אודיו",
+    "rec.losing.voice": "{pct}% מרצועת המיקרופון הם שקט שנכתב במקום אודיו שמעולם לא הגיע. " +
+      "דיבור שנקטע כך לא ניתן לתמלול. עצרו, שנו את מה שמשמיע את הקול, והתחילו מחדש — מה שמכאן " +
+      "והלאה לא ניתן לשחזור.",
+    "rec.losing.computer": "{pct}% מרצועת המחשב הם שקט שנכתב במקום אודיו שמעולם לא הגיע. הקול " +
+      "מגיע לרמקולים אבל לא ליישום הזה. עצרו והתחילו מחדש — ואם יישום פגישות משמיע אותו, נסו " +
+      "לצאת ולהצטרף מחדש לשיחה.",
     "rec.stalledTitle": "השתררה כאן דממה",
     "rec.stalled.voice": "המיקרופון עבד והפסיק להעביר משהו. ההקלטה עדיין רצה והיא תרים " +
       "אותו מחדש מעצמה — השקט שבאמצע נשמר, כך ששום דבר שייאמר אחריו לא יזוז ממקומו.",

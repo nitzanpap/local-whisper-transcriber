@@ -53,8 +53,20 @@ def jobs_for(rec_id: str, source: str | None) -> list[dict]:
 
 
 def verdict(rec: dict) -> list[str]:
-    """The three things that have actually gone wrong, asked directly."""
+    """The things that have actually gone wrong, asked directly."""
     said = []
+
+    # First, because it is ground truth and everything below it is inference. The
+    # helper knows how much it wrote in place of audio; a finished file never can.
+    for side, said_about in (rec.get("padding") or {}).items():
+        share = (said_about or {}).get("fraction", 0)
+        if share >= 0.05:
+            said.append(f"{RED}{share*100:.0f}% of the {side} side is silence the helper wrote "
+                        f"in place of audio that never arrived{OFF} — that side is chopped and "
+                        f"cannot be transcribed. This is measured by the capture itself, not "
+                        f"guessed from the file.")
+        elif share:
+            said.append(f"{DIM}the {side} side padded {share*100:.1f}%, which is ordinary{OFF}")
 
     # 1. Did the computer's side stop mid-recording? The tap is built on one output
     #    device and never moves; if the machine's output changes, it goes deaf.
@@ -63,10 +75,10 @@ def verdict(rec: dict) -> list[str]:
             continue
         if report.get("holes"):
             biggest = max(h["seconds"] for h in report["holes"])
-            said.append(f"{RED}the {side} side has {len(report['holes'])} hole(s) in it, "
-                        f"the longest {biggest:.1f}s{OFF} — a capture that stopped while it "
-                        f"was still delivering. For the computer's side this is usually the "
-                        f"output device changing under the tap.")
+            said.append(f"the {side} side has {len(report['holes'])} silence(s) inside its "
+                        f"audio, the longest {biggest:.1f}s — {DIM}this cannot tell a capture "
+                        f"that stopped from a spell when nothing was playing. The padding "
+                        f"figures above can; read those first.{OFF}")
     output = rec.get("output_device")
     if output:
         said.append(f"{DIM}the tap was built on output device {output}{OFF}")
@@ -112,6 +124,17 @@ def full(rec: dict) -> None:
     print(f"  {'output':<10} {rec.get('output_device') or '—'}   "
           f"{DIM}(what the tap was built on){OFF}")
     print(f"  {'helper':<10} used={rec.get('helper_used')}  exit={rec.get('helper_exit')}")
+
+    padding = rec.get("padding") or {}
+    if padding:
+        print(f"\n{BOLD}what the capture itself reported{OFF}")
+        for side, said in padding.items():
+            share = (said or {}).get("fraction", 0)
+            mark = RED if share >= 0.05 else ""
+            print(f"  {side:<10} {mark}{said.get('seconds', 0):>7.1f}s of "
+                  f"{said.get('of', 0):>7.1f}s written as padding ({share*100:>4.1f}%){OFF}")
+    else:
+        print(f"\n  {DIM}no padding figures — recorded before the capture reported them{OFF}")
 
     print(f"\n{BOLD}channels{OFF}")
     for side, report in (rec.get("channels") or {}).items():

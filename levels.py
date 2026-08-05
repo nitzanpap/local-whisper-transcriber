@@ -221,6 +221,14 @@ async def channel_levels(path: Path, sources: list[str]) -> dict[str, float | No
 # before, which is why it is worth saying at all.
 LOW_SNR = 18.0
 
+# How much of a side may be silence written in place of audio that never arrived
+# before that is a broken capture rather than a quiet room. Measured on the one
+# that made this necessary: a two-hour client meeting where the computer side ran
+# at 14-28% padding for half an hour and came back as gibberish, against 0.1% on
+# the microphone recorded by the same process at the same time. Ordinary jitter
+# does not reach 5%; anything that does is losing audio.
+TOO_MUCH_PADDING = 0.05
+
 # 100 ms of a 48 kHz stream. Long enough to hold a syllable, short enough that the
 # gaps between words are their own windows rather than being averaged into speech.
 SNR_WINDOW = 4800
@@ -271,6 +279,19 @@ async def channel_snr(path: Path, sources: list[str]) -> dict[str, float | None]
         # already reported as silent by its own check.
         out[label] = None if speech <= SILENT_DB else round(speech - floor, 1)
     return out
+
+
+def padded_sides(padding: dict[str, dict]) -> list[str]:
+    """Sides where too much of what was written is silence standing in for audio.
+
+    The one measure that catches a capture being destroyed while it is being
+    destroyed. Everything else here reads the finished file, and a finished file
+    cannot tell silence that was played from silence invented to replace what
+    never came — the helper is the only thing that knows the difference, and it
+    now says so once every ten seconds.
+    """
+    return [side for side, said in (padding or {}).items()
+            if (said or {}).get("fraction", 0) >= TOO_MUCH_PADDING]
 
 
 def noisy_sides(snr: dict[str, float | None]) -> list[str]:

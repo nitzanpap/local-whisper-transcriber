@@ -1718,6 +1718,33 @@ async def main() -> None:
     check("the warning can now see a helper side",
           levels.stalled_sides({"moved": {"computer": time.monotonic() - 5.0}}) == ["computer"])
 
+    print("a capture that is losing audio says so while it is losing it")
+    # The fault this covers cost a two-hour client meeting. The computer side ran
+    # at 14-28% padding for half an hour — silence written in place of audio that
+    # never arrived — and came back as gibberish transcribed as the wrong
+    # language. Nothing said a word, because the only message that existed fired
+    # for a single gap of two seconds or more and every piece of this was under a
+    # millisecond. Measured against 0.1% on the microphone captured by the same
+    # process at the same time, so the threshold is not a guess.
+    check("a side losing a third of itself is named",
+          levels.padded_sides({"computer": {"fraction": 0.33}}) == ["computer"])
+    check("and one losing a seventh, which is what the meeting ran at",
+          levels.padded_sides({"computer": {"fraction": 0.142}}) == ["computer"])
+    check("ordinary jitter is not", levels.padded_sides({"voice": {"fraction": 0.001}}) == [])
+    check("nor is a side with nothing to report", levels.padded_sides({}) == [])
+    check("the threshold sits above what a healthy capture does",
+          levels.TOO_MUCH_PADDING > 0.001)
+    check("and below what a broken one did", levels.TOO_MUCH_PADDING < 0.142)
+    # Parsed from the helper's own words, which is the only place it is known.
+    line = "syscapture: computer padding 12.3s of 45.6s (27%)"
+    found = syshelper.HELPER_PADDING.search(line)
+    check("the helper's padding report is understood", found is not None)
+    check("with the side it speaks for", found and found.group(1) == "computer")
+    check("and both numbers", found and (float(found.group(2)), float(found.group(3)))
+          == (12.3, 45.6))
+    check("a level line is not mistaken for one",
+          syshelper.HELPER_PADDING.search("syscapture: computer level -21.0 frames 4800") is None)
+
     print("what a recording writes down about itself")
     # Every fault so far was diagnosed by hand from the file afterwards, because
     # what the app knew at the time was thrown away. These are the questions that

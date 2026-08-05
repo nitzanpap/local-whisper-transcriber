@@ -138,6 +138,15 @@ final class Sink {
     private var started: UInt64 = 0
     private var written = 0                                    // frames, padding included
     private var padded = 0.0                                   // seconds since sound last arrived
+    // The same total, never reset, and the count of frames that actually arrived.
+    // These two are the ground truth about a capture and nothing else has it: a
+    // file cannot tell silence the tap sent from silence this class invented to
+    // stand in for audio that never came. A meeting was lost for want of the
+    // difference — half of one side was padding, and because each individual
+    // piece of it was under a millisecond, nothing ever said so.
+    private var paddedTotal = 0.0
+    private var arrived = 0
+    private var toldAt = 0.0
     // A pause is time the recording is told not to count. An interruption — a
     // sleep, a device going quiet — is kept as the silence it was, because the
     // meeting carried on in the room and the timestamps after it have to survive.
@@ -148,7 +157,12 @@ final class Sink {
     private var pausedTotal: UInt64 = 0                        // nanoseconds not counted
     private let silence = [Int16](repeating: 0, count: 4800)   // a tenth of a second
 
-    init(fd: Int32) { self.fd = fd }
+    private let name: String
+
+    init(fd: Int32, name: String = "capture") {
+        self.fd = fd
+        self.name = name
+    }
 
     /// Second zero of the recording. Everything written is measured from here.
     func begin() {
@@ -194,12 +208,27 @@ final class Sink {
         // ordinary pauses would otherwise push every other message out of it.
         let quiet = padded
         padded = 0
+        arrived += samples.count
+        // How much of this side is audio that arrived, against silence written in
+        // its place — said every ten seconds, whatever the size of the individual
+        // pieces. The old message only fired for a single gap of two seconds or
+        // more, so a capture losing half of everything in sub-millisecond slivers
+        // ran for two hours in silence. This is the number that would have said so.
+        let elapsed = Double(written) / OUT_RATE
+        var say: String? = nil
+        if elapsed - toldAt >= 10 {
+            toldAt = elapsed
+            say = String(format: "syscapture: %@ padding %.1fs of %.1fs (%.0f%%)",
+                         name, paddedTotal, elapsed,
+                         elapsed > 0 ? paddedTotal / elapsed * 100 : 0)
+        }
         lock.unlock()
         if quiet >= 2 {
             FileHandle.standardError.write(
                 Data(String(format: "syscapture: nothing played for %.1fs; that silence is in "
                             + "the recording rather than cut out of it\n", quiet).utf8))
         }
+        if let say { FileHandle.standardError.write(Data((say + "\n").utf8)) }
     }
 
     /// Called on a timer too, so a long silence is written down as it passes rather
@@ -226,6 +255,7 @@ final class Sink {
         }
         written += short - left
         padded += Double(short - left) / OUT_RATE
+        paddedTotal += Double(short - left) / OUT_RATE
     }
 
     /// Caller holds the lock.
@@ -364,15 +394,17 @@ signal(SIGPIPE, SIG_IGN)
 /// only in the one place a FIFO had already been created. A FIFO still works:
 /// opening one for writing blocks until the reader arrives, which is the handshake
 /// that keeps the two ends from racing.
-func openSink(_ path: String) -> Sink {
+func openSink(_ path: String, _ name: String) -> Sink {
     let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
     if fd < 0 { fail("cannot write to \(path)", 2) }
-    return Sink(fd: fd)
+    return Sink(fd: fd, name: name)
 }
 
-let tapSink = tapPath.isEmpty ? nil : openSink(tapPath)
-let micSink = micPath.isEmpty ? nil : openSink(micPath)
-let otherSink = otherPath.isEmpty ? nil : openSink(otherPath)
+// Named the way the meter names them, so one side's padding and one side's level
+// read as the same side on the far end.
+let tapSink = tapPath.isEmpty ? nil : openSink(tapPath, "computer")
+let micSink = micPath.isEmpty ? nil : openSink(micPath, "voice")
+let otherSink = otherPath.isEmpty ? nil : openSink(otherPath, "computer")
 let meter = Meter("computer")
 let micMeter = Meter("voice")
 // Named for the side it stands for, not for how it is captured: to everything

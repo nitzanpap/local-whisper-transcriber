@@ -134,6 +134,26 @@ toggle.
       channel came back with no gaps at all.
 - [ ] **Orphan durations assume 48 kHz.** The microphone is recorded at whatever rate it offers now,
       so the length shown for a recovered recording is wrong.
+- [ ] **The tap loses audio from some applications and not others, on the same output device.**
+      A real two-hour client meeting: Zoom for the first half, Google Meet for the second, the
+      same Bluetooth headphones throughout, the client heard clearly the whole time. Zoom's audio
+      came back with **14-28% of the computer side written as padding** — silence standing in for
+      samples that never reached the tap — and transcribed as gibberish in the wrong language.
+      Google Meet's audio, later in the same recording through the same everything, is clean.
+      So the output device is not the variable and Bluetooth is not the cause; the application
+      producing the audio is. Zoom installs its own audio device (`ZoomAudioDevice`), which is the
+      obvious thing to look at first. **Next step is a controlled reproduction**: play the same
+      audio through Zoom and through a browser, one recording each, and compare the padding
+      figures the capture now reports.
+
+- [x] **A capture losing audio said nothing while it lost it.** `catchUp` pads any shortfall down
+      to a single sample, and the only message that existed fired for a single gap of two seconds
+      or more — so a capture writing half of one side as padding, in slivers under a millisecond,
+      ran for two hours in silence. The helper now reports `padding Xs of Ys` every ten seconds;
+      it is shown on the recording screen above 5%, kept in the diagnostic record, and it is the
+      first thing `tools/diagnose.py` prints because it is the only ground truth — a finished file
+      cannot tell silence that was played from silence invented to replace what never came.
+
 - [ ] **The tap is nailed to whichever output device was default at the start.** `syscapture.swift`
       reads `defaultOutputUID()` once and builds the aggregate around it; there is no property
       listener anywhere in the file. Move the machine's output afterwards — headphones plugged in,

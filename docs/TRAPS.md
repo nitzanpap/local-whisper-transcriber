@@ -317,7 +317,41 @@ any of this existed; `--all` lists every recording with a clean/holes verdict.
 only existed at the moment of the fault, that fact is not a debugging detail, it
 is part of the feature. Write it down while it is knowable.
 
-## 17. This project's own tooling
+## 17. A meter that moves is not a capture that works
+
+A two-hour client meeting came back with the other side as gibberish, transcribed
+as English though the client spoke Hebrew. Nothing warned anybody, and every
+existing check said the recording was healthy: audio arrived continuously, the
+meter moved, the file was full length, the levels were good, and the
+signal-to-noise on that side measured 71 dB.
+
+Half of it was silence. The capture had written padding in place of audio that
+never came — in slivers under a millisecond, thousands a second — and `catchUp`
+does exactly that by design, for gaps of any size down to a single sample. The
+only message that existed fired for a single gap of **two seconds or more**, so
+a capture destroying half of everything ran for two hours in silence.
+
+**Three wrong turns worth not repeating.**
+
+*The file cannot answer this.* Silence a tap delivered and silence invented to
+stand in for it are the same bytes. Every measurement made from the recording —
+levels, bandwidth, modulation depth, holes at 100 ms — said it was fine. Only the
+capture knows, and it now says so: `syscapture: <side> padding 12.3s of 45.6s`,
+every ten seconds, kept in the diagnostic record and shown on screen above 5%.
+
+*Silence inside audio is not a fault by itself.* The hole detector reported a
+231-second outage and called it the tap dying. It was the gap between one call
+ending and the next beginning — nothing was playing. That reading was confidently
+wrong, and the padding figures are what tell the two apart.
+
+*Beware the tidy correlate.* The output device was Bluetooth, and Bluetooth is a
+famously flaky path, so it got the blame. Then the owner said the damage stopped
+partway through — same headphones throughout, Zoom for the first half and Google
+Meet for the second, and only Zoom's audio was destroyed. The constant was not
+the cause. **What changed is the cause; what stayed the same is not**, and the
+owner usually knows what changed.
+
+## 18. This project's own tooling
 
 - **The suite runs against fake `ffmpeg` and `whisper-cli` stubs.** `ffprobe` echoes
   `123.5` for every duration. Any check that needs real audio must locate the real
@@ -334,7 +368,7 @@ is part of the feature. Write it down while it is knowable.
   point. This orphaned an `afplay` that kept playing and a recording that kept
   running. `bash -n` passes before and after and cannot see it.
 
-## 18. Things an agent working here cannot do
+## 19. Things an agent working here cannot do
 
 - **Screen capture and assistive access are both blocked.** `screencapture` fails
   with "could not create image from display", and System Events refuses with
@@ -351,7 +385,7 @@ is part of the feature. Write it down while it is knowable.
   the menu can then only be reached by right-click, which on a trackpad means two
   fingers, and control-click does not reach it either.
 
-## 19. How to measure this app
+## 20. How to measure this app
 
 The methods that produced every real answer, so they can be reused:
 

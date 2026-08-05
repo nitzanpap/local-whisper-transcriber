@@ -34,6 +34,16 @@ HELPER_LEVEL = re.compile(r"syscapture: (\w+) level (-?\d+(?:\.\d+)?) frames (\d
 # on it for the life of the recording, so this is what a computer side that went
 # deaf halfway is diagnosed against.
 HELPER_OUTPUT = re.compile(r"syscapture: output (.+)$")
+
+# How much of a side is silence the helper wrote in place of audio that never
+# arrived. The one number that says a capture is being destroyed while it is
+# being destroyed, and nothing outside the helper has it: a finished file cannot
+# tell silence the tap delivered from silence invented to stand in for it. A
+# two-hour client meeting was lost for want of this — half of one side was
+# padding, in slivers under a millisecond each, and the only message that existed
+# fired for single gaps of two seconds or more, so nothing was ever said.
+HELPER_PADDING = re.compile(
+    r"syscapture: (\w+) padding ([\d.]+)s of ([\d.]+)s")
 # Digital zero, which the helper reports as -120 and no real signal ever reaches.
 # Frames arriving with nothing in them at all is what a refused tap looks like;
 # frames not arriving is only a quiet machine.

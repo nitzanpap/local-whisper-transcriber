@@ -164,6 +164,9 @@ def about(rec: dict) -> dict:
                         for side, runs in (rec.get("stalls") or {}).items()},
         "padded": {side: list(map(list, runs))
                    for side, runs in (rec.get("gaps") or {}).items()},
+        # What the helper itself said it was writing in place of audio. Ground
+        # truth: nothing that reads the finished file can recover this.
+        "padding": rec.get("padding") or {},
         "levels": rec.get("levels") or {},
         "snr": rec.get("snr") or {},
         "quiet": rec.get("quiet") or [],
